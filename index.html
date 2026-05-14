@@ -571,7 +571,7 @@ let HUB_DATA     = null; // { usuario, modulos, usuarios }
 function iniciarLogin() {
   const client = google.accounts.oauth2.initTokenClient({
     client_id: G_CLIENT_ID,
-    scope: 'email profile',
+    scope: 'email profile https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets.readonly',
     callback: async (resp) => {
       if (resp.error) { showToast('Error al iniciar sesión'); return; }
       ACCESS_TOKEN = resp.access_token;
