@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ReCircula 360 - Redes Con Rostro</title>
+<link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiUmVDaXJjdWxhIDM2MCIsInNob3J0X25hbWUiOiJSZUNpcmN1bGEiLCJzdGFydF91cmwiOiIuIiwiZGlzcGxheSI6InN0YW5kYWxvbmUiLCJiYWNrZ3JvdW5kX2NvbG9yIjoiI2U4ZjRmZCIsInRoZW1lX2NvbG9yIjoiIzMzQThERSJ9">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -32,6 +33,8 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+html { scroll-behavior: smooth; }
+
 body {
   font-family: 'Outfit', sans-serif;
   color: var(--tx);
@@ -48,6 +51,22 @@ body {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+
+/* ── Offline Banner ──────────────────────────────────────── */
+#offline-banner {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  background: #c91a44;
+  color: #fff;
+  text-align: center;
+  padding: 8px 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  z-index: 10000;
+  transform: translateY(-100%);
+  transition: transform 0.3s;
+}
+#offline-banner.show { transform: translateY(0); }
 
 /* ── Spinner ─────────────────────────────────────────────── */
 .spinner {
@@ -129,6 +148,7 @@ body {
   transition: background 0.15s, border-color 0.15s;
 }
 .login-google-btn:hover { background: #f8fbfd; border-color: var(--b1); }
+.login-google-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .login-google-icon { width: 20px; height: 20px; }
 .login-domain-note { margin-top: 16px; font-size: 11.5px; color: var(--tl); }
 
@@ -255,7 +275,7 @@ body {
 
 .modulos-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: 16px;
 }
 
@@ -340,6 +360,7 @@ body {
   max-width: 540px;
   max-height: 90vh;
   overflow-y: auto;
+  scroll-behavior: smooth;
   box-shadow: 0 20px 60px rgba(0,0,0,0.15);
 }
 
@@ -478,22 +499,33 @@ tbody tr:hover .td-actions { opacity: 1; }
 .badge-warn  { background: #fff8e4; color: #854f0b; }
 
 /* Responsive */
+@media (max-width: 768px) {
+  .modulos-grid { grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+}
+
 @media (max-width: 600px) {
   .hub-main { padding: 24px 16px; }
-  .hub-header { padding: 14px 16px; }
-  .modulos-grid { grid-template-columns: 1fr 1fr; }
+  .hub-header { padding: 14px 16px; flex-wrap: wrap; gap: 10px; }
+  .modulos-grid { grid-template-columns: 1fr; }
   .hub-bienvenido { font-size: 20px; }
+  .td-actions { opacity: 1; }
+  .form-grid-2 { grid-template-columns: 1fr; }
 }
 </style>
 </head>
 <body>
+
+<!-- Offline Banner -->
+<div id="offline-banner">
+  <i class="ti ti-wifi-off"></i> Sin conexion — Mostrando datos en cache
+</div>
 
 <!-- LOGIN -->
 <div id="screen-login">
   <div class="login-card">
     <div class="login-logo grad-text">ReCircula 360</div>
     <div class="login-brand">Una app de Redes Con Rostro</div>
-    <button class="login-google-btn" onclick="iniciarLogin()">
+    <button class="login-google-btn" id="btn-login" onclick="iniciarLogin()">
       <svg class="login-google-icon" viewBox="0 0 24 24">
         <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
         <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -532,18 +564,18 @@ tbody tr:hover .td-actions { opacity: 1; }
   </div>
 
   <div class="hub-main">
-    <div class="hub-bienvenido" id="hub-bienvenido">Bienvenido 👋</div>
-    <div class="hub-desc">Selecciona un módulo para continuar</div>
+    <div class="hub-bienvenido" id="hub-bienvenido">Bienvenido</div>
+    <div class="hub-desc">Selecciona un modulo para continuar</div>
 
     <div class="modulos-header">
-      <div class="modulos-titulo">Módulos disponibles</div>
+      <div class="modulos-titulo">Modulos disponibles</div>
       <button class="btn-config hidden" id="btn-config" onclick="abrirConfiguracion()">
-        <i class="ti ti-settings"></i> Configuración
+        <i class="ti ti-settings"></i> Configuracion
       </button>
     </div>
 
     <div class="modulos-grid" id="modulos-grid">
-      <div style="color:var(--tl);font-size:13px">Cargando módulos...</div>
+      <div style="color:var(--tl);font-size:13px">Cargando modulos...</div>
     </div>
   </div>
 </div>
@@ -552,468 +584,563 @@ tbody tr:hover .td-actions { opacity: 1; }
 <div id="toast"></div>
 
 <script>
-// ============================================================
-// CONSTANTES
-// ============================================================
-const SCRIPT_URL  = 'https://script.google.com/macros/s/AKfycbyy_lNvMjFiJvUkwPhLXZsIlHJ_2vzDGmSV1TGOvBZVsgP3cndSJPwwYzwcLdgUSw4GCw/exec';
-const G_CLIENT_ID = '783730193199-d7nhahv3ou4rmps7nrpoop5cpor079ej.apps.googleusercontent.com';
-const DOMAIN      = 'redesconrostro.org';
+(function() {
+  'use strict';
 
-let SESSION      = null;
-let ACCESS_TOKEN = null;
-let TOKEN_EXPIRY = 0;
-let HUB_DATA     = null; // { usuario, modulos, usuarios }
+  const SCRIPT_URL  = 'https://script.google.com/macros/s/AKfycbyy_lNvMjFiJvUkwPhLXZsIlHJ_2vzDGmSV1TGOvBZVsgP3cndSJPwwYzwcLdgUSw4GCw/exec';
+  const G_CLIENT_ID = '783730193199-d7nhahv3ou4rmps7nrpoop5cpor079ej.apps.googleusercontent.com';
+  const DOMAIN      = 'redesconrostro.org';
+  const TOKEN_MARGIN_MS = 5 * 60 * 1000;
 
-// ============================================================
-// LOGIN
-// ============================================================
+  let session      = null;
+  let accessToken  = null;
+  let tokenExpiry  = 0;
+  let hubData      = null;
+  let isOnline     = navigator.onLine;
 
-function iniciarLogin() {
-  const client = google.accounts.oauth2.initTokenClient({
-    client_id: G_CLIENT_ID,
-    scope: 'email profile https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/spreadsheets.readonly',
-    callback: async (resp) => {
-      if (resp.error) { showToast('Error al iniciar sesión'); return; }
-      ACCESS_TOKEN = resp.access_token;
-      TOKEN_EXPIRY = Date.now() + (resp.expires_in - 60) * 1000;
-      await verificarUsuario();
-    },
-  });
-  client.requestAccessToken();
-}
-
-async function verificarUsuario() {
-  mostrarLoading();
-  try {
-    const res  = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { Authorization: 'Bearer ' + ACCESS_TOKEN }
-    });
-    const info = await res.json();
-
-    if (!info.email.endsWith('@' + DOMAIN)) {
-      showToast('Solo cuentas @' + DOMAIN);
-      mostrarLogin();
-      return;
-    }
-
-    // Una sola llamada — trae usuario + módulos + usuarios
-    const data = await apiGet({ action: 'getDatos', email: info.email });
-    if (!data.ok) {
-      showToast('Usuario no autorizado. Contacta al administrador.');
-      mostrarLogin();
-      return;
-    }
-
-    SESSION = {
-      nombre: data.data.usuario.nombre || info.given_name,
-      email:  info.email,
-      rol:    data.data.usuario.rol,
-    };
-    HUB_DATA = data.data;
-
-    sessionStorage.setItem('rcr_hub_session', JSON.stringify(SESSION));
-    sessionStorage.setItem('rcr_hub_token',   ACCESS_TOKEN);
-    sessionStorage.setItem('rcr_hub_exp',     TOKEN_EXPIRY);
-
-    iniciarHub();
-  } catch(e) {
-    console.error(e);
-    showToast('Error de conexión');
-    mostrarLogin();
-  }
-}
-
-function recuperarSesion() {
-  const s   = sessionStorage.getItem('rcr_hub_session');
-  const t   = sessionStorage.getItem('rcr_hub_token');
-  const exp = sessionStorage.getItem('rcr_hub_exp');
-  if (s && t && exp && Date.now() < parseInt(exp)) {
-    SESSION      = JSON.parse(s);
-    ACCESS_TOKEN = t;
-    TOKEN_EXPIRY = parseInt(exp);
-    return true;
-  }
-  return false;
-}
-
-function cerrarSesion() {
-  sessionStorage.clear();
-  SESSION = null; ACCESS_TOKEN = null; HUB_DATA = null;
-  mostrarLogin();
-  try { google.accounts.id.disableAutoSelect(); } catch(e) {}
-}
-
-// ============================================================
-// INICIAR HUB
-// ============================================================
-
-function iniciarHub() {
-  const iniciales = SESSION.nombre.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase();
-  document.getElementById('hub-avatar').textContent   = iniciales;
-  document.getElementById('hub-username').textContent = SESSION.nombre;
-  document.getElementById('hub-role').textContent     = SESSION.rol;
-  document.getElementById('hub-bienvenido').textContent = `Bienvenido, ${SESSION.nombre.split(' ')[0]} 👋`;
-
-  if (SESSION.rol === 'Admin') {
-    document.getElementById('btn-config').classList.remove('hidden');
+  function esc(str) {
+    if (str === null || str === undefined) return '';
+    const div = document.createElement('div');
+    div.textContent = String(str);
+    return div.innerHTML;
   }
 
-  renderModulos(HUB_DATA.modulos);
-  mostrarHub();
-}
-
-function renderModulos(modulos) {
-  const grid = document.getElementById('modulos-grid');
-  if (!modulos || !modulos.length) {
-    grid.innerHTML = '<p style="color:var(--tl);font-size:13px">No hay módulos disponibles</p>';
-    return;
+  function isValidUrl(str) {
+    try {
+      const u = new URL(str);
+      return u.protocol === 'http:' || u.protocol === 'https:';
+    } catch { return false; }
   }
 
-  grid.innerHTML = modulos.map(m => {
-    const activo  = m['Activo'] === true || m['Activo'] === 'TRUE';
-    const tieneURL = m['URL'] && m['URL'].toString().trim() !== '';
-    const clases  = activo && tieneURL ? '' : (SESSION.rol === 'Admin' ? 'inactivo-admin' : 'inactivo');
-
-    return `
-      <div class="modulo-card ${clases}" onclick="${activo && tieneURL ? `abrirModulo('${m['URL']}')` : SESSION.rol === 'Admin' ? `editarModulo('${m['ID_Modulo']}')` : ''}">
-        <div class="modulo-emoji">${m['Emoji'] || '📦'}</div>
-        <div>
-          <div class="modulo-nombre">${m['Nombre']}</div>
-          <div class="modulo-desc" style="margin-top:4px">${m['Descripcion'] || ''}</div>
-        </div>
-        <span class="modulo-badge ${activo ? 'activo' : ''}">
-          ${activo ? 'Disponible' : 'Próximamente'}
-        </span>
-        ${SESSION.rol === 'Admin' ? `
-          <button onclick="event.stopPropagation();editarModulo('${m['ID_Modulo']}')"
-            style="position:absolute;top:12px;right:12px;border:none;background:none;cursor:pointer;color:var(--tl);font-size:16px">
-            <i class="ti ti-pencil"></i>
-          </button>` : ''}
-      </div>`;
-  }).join('');
-}
-
-function abrirModulo(url) {
-  // Pasar sesión al módulo via sessionStorage (mismo dominio)
-  sessionStorage.setItem('rcr_session',   JSON.stringify(SESSION));
-  sessionStorage.setItem('rcr_token',     ACCESS_TOKEN);
-  sessionStorage.setItem('rcr_token_exp', TOKEN_EXPIRY);
-  window.location.href = url;
-}
-
-// ============================================================
-// CONFIGURACIÓN (solo admin)
-// ============================================================
-
-let CONFIG_TAB = 'modulos';
-
-function abrirConfiguracion() {
-  abrirModal(`
-    <div class="modal" style="max-width:660px">
-      <div class="modal-head">
-        <div class="modal-title"><i class="ti ti-settings"></i> Configuración</div>
-        <button class="modal-close" onclick="cerrarModal()"><i class="ti ti-x"></i></button>
-      </div>
-      <div class="modal-body">
-        <div class="tabs-bar">
-          <button class="tab-btn active" id="cfg-tab-modulos" onclick="switchCfgTab('modulos')">
-            <i class="ti ti-layout-grid"></i> Módulos
-          </button>
-          <button class="tab-btn" id="cfg-tab-usuarios" onclick="switchCfgTab('usuarios')">
-            <i class="ti ti-users"></i> Usuarios
-          </button>
-        </div>
-        <div id="cfg-content"></div>
-      </div>
-    </div>
-  `);
-  switchCfgTab('modulos');
-}
-
-function switchCfgTab(tab) {
-  CONFIG_TAB = tab;
-  document.querySelectorAll('[id^="cfg-tab-"]').forEach(el => el.classList.remove('active'));
-  document.getElementById('cfg-tab-' + tab)?.classList.add('active');
-  if (tab === 'modulos')  renderCfgModulos();
-  if (tab === 'usuarios') renderCfgUsuarios();
-}
-
-// ── Módulos ───────────────────────────────────────────────
-function renderCfgModulos() {
-  const modulos = HUB_DATA.modulos || [];
-  const filas   = modulos.map(m => `
-    <tr>
-      <td>${m['Emoji'] || '—'}</td>
-      <td style="font-weight:500">${m['Nombre']}</td>
-      <td style="font-size:12px;color:var(--tm);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m['URL'] || '—'}</td>
-      <td><span class="badge ${m['Activo']===true||m['Activo']==='TRUE'?'badge-green':'badge-warn'}">${m['Activo']===true||m['Activo']==='TRUE'?'Activo':'Inactivo'}</span></td>
-      <td>
-        <div class="td-actions">
-          <button class="btn btn-glass btn-sm" onclick="editarModulo('${m['ID_Modulo']}')">
-            <i class="ti ti-pencil"></i>
-          </button>
-        </div>
-      </td>
-    </tr>`).join('');
-
-  document.getElementById('cfg-content').innerHTML = `
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Emoji</th><th>Nombre</th><th>URL</th><th>Estado</th><th></th></tr></thead>
-        <tbody>${filas || '<tr><td colspan="5" style="text-align:center;color:var(--tl);padding:20px">Sin módulos</td></tr>'}</tbody>
-      </table>
-    </div>`;
-}
-
-function editarModulo(id) {
-  const m = (HUB_DATA.modulos || []).find(x => x['ID_Modulo'] === id);
-  if (!m) return;
-
-  const contenido = `
-    <div style="padding:16px 0">
-      <div class="form-group">
-        <label class="form-label">Nombre</label>
-        <input type="text" class="form-input" id="mod-nombre" value="${m['Nombre'] || ''}" readonly
-          style="background:#f8fbfd;color:var(--tm)">
-      </div>
-      <div class="form-group">
-        <label class="form-label">URL *</label>
-        <input type="url" class="form-input" id="mod-url" placeholder="https://..."
-          value="${m['URL'] || ''}">
-      </div>
-      <div class="form-grid-2">
-        <div class="form-group">
-          <label class="form-label">Emoji</label>
-          <input type="text" class="form-input" id="mod-emoji" value="${m['Emoji'] || ''}" maxlength="4">
-        </div>
-        <div class="form-group">
-          <label class="form-label">Activo</label>
-          <select class="form-select" id="mod-activo">
-            <option value="TRUE"  ${m['Activo']===true||m['Activo']==='TRUE'?'selected':''}>Sí</option>
-            <option value="FALSE" ${m['Activo']===false||m['Activo']==='FALSE'?'selected':''}>No</option>
-          </select>
-        </div>
-      </div>
-      <div class="form-group">
-        <label class="form-label">Descripción</label>
-        <input type="text" class="form-input" id="mod-desc" value="${m['Descripcion'] || ''}">
-      </div>
-      <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:8px">
-        <button class="btn btn-glass" onclick="switchCfgTab('modulos')">Cancelar</button>
-        <button class="btn btn-primary" onclick="guardarModulo('${id}')">
-          <i class="ti ti-check"></i> Guardar
-        </button>
-      </div>
-    </div>`;
-
-  document.getElementById('cfg-content').innerHTML = contenido;
-}
-
-async function guardarModulo(id) {
-  const url    = document.getElementById('mod-url')?.value?.trim();
-  const emoji  = document.getElementById('mod-emoji')?.value?.trim();
-  const activo = document.getElementById('mod-activo')?.value === 'TRUE';
-  const desc   = document.getElementById('mod-desc')?.value?.trim();
-
-  try {
-    const m = (HUB_DATA.modulos || []).find(x => x['ID_Modulo'] === id);
-    const res = await apiPost({ action: 'saveModulo', data: {
-      ID_Modulo: id, Nombre: m?.['Nombre'], URL: url,
-      Emoji: emoji, Activo: activo, Descripcion: desc,
-    }});
-    if (!res.ok) { showToast('Error al guardar'); return; }
-
-    // Actualizar local
-    const idx = HUB_DATA.modulos.findIndex(x => x['ID_Modulo'] === id);
-    if (idx >= 0) {
-      HUB_DATA.modulos[idx] = { ...HUB_DATA.modulos[idx], URL: url, Emoji: emoji, Activo: activo, Descripcion: desc };
-    }
-
-    showToast('Módulo actualizado ✓');
-    renderModulos(HUB_DATA.modulos);
-    switchCfgTab('modulos');
-  } catch(e) { showToast('Error de conexión'); }
-}
-
-// ── Usuarios ──────────────────────────────────────────────
-function renderCfgUsuarios() {
-  const usuarios = HUB_DATA.usuarios || [];
-  const filas    = usuarios.map(u => `
-    <tr>
-      <td style="font-weight:500">${u['Nombre']}</td>
-      <td style="font-size:12px;color:var(--tm)">${u['Email']}</td>
-      <td><span class="badge ${u['Rol']==='Admin'?'badge-blue':u['Rol']==='Editor'?'badge-green':'badge-warn'}">${u['Rol']}</span></td>
-      <td><span class="badge ${u['Activo']===true||u['Activo']==='TRUE'?'badge-green':'badge-warn'}">${u['Activo']===true||u['Activo']==='TRUE'?'Activo':'Inactivo'}</span></td>
-      <td>
-        <div class="td-actions">
-          <button class="btn btn-glass btn-sm" onclick="editarUsuario('${u['ID_Usuario']}')">
-            <i class="ti ti-pencil"></i>
-          </button>
-        </div>
-      </td>
-    </tr>`).join('');
-
-  document.getElementById('cfg-content').innerHTML = `
-    <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
-      <button class="btn btn-primary btn-sm" onclick="nuevoUsuario()">
-        <i class="ti ti-plus"></i> Nuevo usuario
-      </button>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Activo</th><th></th></tr></thead>
-        <tbody>${filas || '<tr><td colspan="5" style="text-align:center;color:var(--tl);padding:20px">Sin usuarios</td></tr>'}</tbody>
-      </table>
-    </div>`;
-}
-
-function nuevoUsuario() { editarUsuario(null); }
-
-function editarUsuario(id) {
-  const u = id ? (HUB_DATA.usuarios || []).find(x => x['ID_Usuario'] === id) : null;
-
-  const form = `
-    <div style="padding:16px 0">
-      <div class="form-group">
-        <label class="form-label">Nombre *</label>
-        <input type="text" class="form-input" id="usr-nombre" value="${u?.['Nombre']||''}">
-      </div>
-      <div class="form-group">
-        <label class="form-label">Email *</label>
-        <input type="email" class="form-input" id="usr-email" value="${u?.['Email']||''}"
-          placeholder="nombre@redesconrostro.org" ${u?'readonly style="background:#f8fbfd;color:var(--tm)"':''}>
-      </div>
-      <div class="form-grid-2">
-        <div class="form-group">
-          <label class="form-label">Rol</label>
-          <select class="form-select" id="usr-rol">
-            <option value="Admin"        ${u?.['Rol']==='Admin'?'selected':''}>Admin</option>
-            <option value="Editor"       ${u?.['Rol']==='Editor'?'selected':''}>Editor</option>
-            <option value="Visualizador" ${u?.['Rol']==='Visualizador'?'selected':''}>Visualizador</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">Activo</label>
-          <select class="form-select" id="usr-activo">
-            <option value="true"  ${u?.['Activo']!==false?'selected':''}>Sí</option>
-            <option value="false" ${u?.['Activo']===false?'selected':''}>No</option>
-          </select>
-        </div>
-      </div>
-      <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:8px">
-        <button class="btn btn-glass" onclick="switchCfgTab('usuarios')">Cancelar</button>
-        <button class="btn btn-primary" onclick="guardarUsuario('${id||''}')">
-          <i class="ti ti-check"></i> ${u ? 'Actualizar' : 'Guardar'}
-        </button>
-      </div>
-    </div>`;
-
-  document.getElementById('cfg-content').innerHTML = form;
-}
-
-async function guardarUsuario(id) {
-  const nombre = document.getElementById('usr-nombre')?.value?.trim();
-  const email  = document.getElementById('usr-email')?.value?.trim();
-  const rol    = document.getElementById('usr-rol')?.value;
-  const activo = document.getElementById('usr-activo')?.value === 'true';
-
-  if (!nombre || !email) { showToast('Nombre y email son obligatorios'); return; }
-  if (!email.endsWith('@' + DOMAIN)) { showToast('Solo cuentas @' + DOMAIN); return; }
-
-  try {
-    const res = await apiPost({ action: 'saveUsuario', data: {
-      ID_Usuario: id || '', Nombre: nombre, Email: email, Rol: rol, Activo: activo,
-    }});
-    if (!res.ok) { showToast('Error al guardar'); return; }
-
-    // Actualizar local
-    if (id) {
-      const idx = HUB_DATA.usuarios.findIndex(x => x['ID_Usuario'] === id);
-      if (idx >= 0) HUB_DATA.usuarios[idx] = { ...HUB_DATA.usuarios[idx], Nombre: nombre, Rol: rol, Activo: activo };
+  function updateOnlineStatus() {
+    isOnline = navigator.onLine;
+    const banner = document.getElementById('offline-banner');
+    if (!isOnline) {
+      banner.classList.add('show');
     } else {
-      HUB_DATA.usuarios.push({ ID_Usuario: res.id, Nombre: nombre, Email: email, Rol: rol, Activo: activo });
+      banner.classList.remove('show');
     }
+  }
 
-    showToast(id ? 'Usuario actualizado ✓' : 'Usuario creado ✓');
-    switchCfgTab('usuarios');
-  } catch(e) { showToast('Error de conexión'); }
-}
+  window.addEventListener('online', updateOnlineStatus);
+  window.addEventListener('offline', updateOnlineStatus);
+  updateOnlineStatus();
 
-// ============================================================
-// HELPERS
-// ============================================================
+  function cacheData(data) {
+    try {
+      localStorage.setItem('rcr_hub_data', JSON.stringify(data));
+      localStorage.setItem('rcr_hub_cache_time', String(Date.now()));
+    } catch(e) { console.warn('Cache write failed', e); }
+  }
 
-async function apiGet(params) {
-  const qs  = new URLSearchParams(params).toString();
-  const res = await fetch(SCRIPT_URL + '?' + qs);
-  return res.json();
-}
+  function getCachedData() {
+    try {
+      const raw = localStorage.getItem('rcr_hub_data');
+      if (raw) return JSON.parse(raw);
+    } catch(e) { console.warn('Cache read failed', e); }
+    return null;
+  }
 
-async function apiPost(body) {
-  const res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(body) });
-  return res.json();
-}
+  function iniciarLogin() {
+    const btn = document.getElementById('btn-login');
+    btn.disabled = true;
+    try {
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: G_CLIENT_ID,
+        scope: 'email profile https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/spreadsheets.readonly',
+        callback: async (resp) => {
+          btn.disabled = false;
+          if (resp.error) { showToast('Error al iniciar sesion'); return; }
+          accessToken = resp.access_token;
+          tokenExpiry = Date.now() + (resp.expires_in - 60) * 1000;
+          await verificarUsuario();
+        },
+      });
+      client.requestAccessToken();
+    } catch(e) {
+      btn.disabled = false;
+      showToast('Error al cargar Google Sign-In');
+    }
+  }
 
-function mostrarLogin()   {
-  document.getElementById('screen-login').classList.remove('hidden');
-  document.getElementById('screen-loading').classList.add('hidden');
-  document.getElementById('screen-hub').classList.add('hidden');
-}
-function mostrarLoading() {
-  document.getElementById('screen-login').classList.add('hidden');
-  document.getElementById('screen-loading').classList.remove('hidden');
-  document.getElementById('screen-hub').classList.add('hidden');
-}
-function mostrarHub()     {
-  document.getElementById('screen-login').classList.add('hidden');
-  document.getElementById('screen-loading').classList.add('hidden');
-  document.getElementById('screen-hub').classList.remove('hidden');
-}
-
-function showToast(msg, dur = 3500) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), dur);
-}
-
-function abrirModal(html) {
-  cerrarModal();
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  overlay.id = 'modal-overlay';
-  overlay.innerHTML = html;
-  overlay.addEventListener('click', e => { if (e.target === overlay) cerrarModal(); });
-  document.body.appendChild(overlay);
-}
-
-function cerrarModal() {
-  const m = document.getElementById('modal-overlay');
-  if (m) m.remove();
-}
-
-// ============================================================
-// INICIO
-// ============================================================
-
-window.addEventListener('load', async () => {
-  if (recuperarSesion()) {
+  async function verificarUsuario() {
     mostrarLoading();
     try {
-      const data = await apiGet({ action: 'getDatos', email: SESSION.email });
-      if (data.ok) {
-        HUB_DATA = data.data;
-        iniciarHub();
-      } else {
+      const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+        headers: { Authorization: 'Bearer ' + accessToken }
+      });
+      if (!res.ok) throw new Error('userinfo failed');
+      const info = await res.json();
+
+      if (!info.email || !info.email.endsWith('@' + DOMAIN)) {
+        showToast('Solo cuentas @' + DOMAIN);
         mostrarLogin();
+        return;
       }
+
+      const data = await apiGet({ action: 'getDatos', email: info.email });
+      if (!data.ok) {
+        showToast('Usuario no autorizado. Contacta al administrador.');
+        mostrarLogin();
+        return;
+      }
+
+      session = {
+        nombre: data.data.usuario.nombre || info.given_name || 'Usuario',
+        email:  info.email,
+        rol:    data.data.usuario.rol || 'Visualizador',
+      };
+      hubData = data.data;
+
+      cacheData(hubData);
+
+      sessionStorage.setItem('rcr_hub_session', JSON.stringify(session));
+      sessionStorage.setItem('rcr_hub_token',   accessToken);
+      sessionStorage.setItem('rcr_hub_exp',     String(tokenExpiry));
+
+      iniciarHub();
     } catch(e) {
+      console.error('verificarUsuario:', e);
+      const cached = getCachedData();
+      const savedSession = sessionStorage.getItem('rcr_hub_session');
+      if (cached && savedSession) {
+        session = JSON.parse(savedSession);
+        hubData = cached;
+        showToast('Modo sin conexion — datos en cache');
+        iniciarHub();
+        return;
+      }
+      showToast('Error de conexion');
       mostrarLogin();
     }
-  } else {
-    mostrarLogin();
   }
-});
+
+  function recuperarSesion() {
+    const s   = sessionStorage.getItem('rcr_hub_session');
+    const t   = sessionStorage.getItem('rcr_hub_token');
+    const exp = sessionStorage.getItem('rcr_hub_exp');
+    if (s && t && exp && Date.now() < parseInt(exp) - TOKEN_MARGIN_MS) {
+      session      = JSON.parse(s);
+      accessToken  = t;
+      tokenExpiry  = parseInt(exp);
+      return true;
+    }
+    return false;
+  }
+
+  function cerrarSesion() {
+    sessionStorage.clear();
+    try { localStorage.removeItem('rcr_hub_data'); localStorage.removeItem('rcr_hub_cache_time'); } catch(e) {}
+    session = null; accessToken = null; hubData = null;
+    mostrarLogin();
+    try { google.accounts.id.disableAutoSelect(); } catch(e) {}
+  }
+
+  function iniciarHub() {
+    if (!session || !session.nombre) {
+      mostrarLogin();
+      return;
+    }
+
+    const nombre = session.nombre;
+    const partes = nombre.trim().split(/\s+/).filter(Boolean);
+    const iniciales = partes.length >= 2
+      ? (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
+      : nombre.substring(0, 2).toUpperCase();
+
+    document.getElementById('hub-avatar').textContent   = iniciales;
+    document.getElementById('hub-username').textContent = nombre;
+    document.getElementById('hub-role').textContent     = session.rol;
+    document.getElementById('hub-bienvenido').textContent = 'Bienvenido, ' + partes[0];
+
+    if (session.rol === 'Admin') {
+      document.getElementById('btn-config').classList.remove('hidden');
+    }
+
+    renderModulos(hubData.modulos);
+    mostrarHub();
+  }
+
+  function renderModulos(modulos) {
+    const grid = document.getElementById('modulos-grid');
+    if (!modulos || !modulos.length) {
+      grid.innerHTML = '<p style="color:var(--tl);font-size:13px">No hay modulos disponibles</p>';
+      return;
+    }
+
+    grid.innerHTML = modulos.map(function(m) {
+      var activo   = m['Activo'] === true || m['Activo'] === 'TRUE';
+      var tieneURL = m['URL'] && m['URL'].toString().trim() !== '';
+      var idMod    = m['ID_Modulo'] || '';
+      var url      = m['URL'] || '';
+      var clases   = activo && tieneURL ? '' : (session.rol === 'Admin' ? 'inactivo-admin' : 'inactivo');
+      var onclick  = activo && tieneURL ? "App.abrirModulo('" + url.replace(/'/g, "\\'") + "')"
+                       : session.rol === 'Admin' ? "App.editarModulo('" + idMod.replace(/'/g, "\\'") + "')"
+                       : '';
+
+      return '<div class="modulo-card ' + clases + '" onclick="' + onclick + '">' +
+        '<div class="modulo-emoji">' + esc(m['Emoji'] || '\uD83D\uDCE6') + '</div>' +
+        '<div>' +
+          '<div class="modulo-nombre">' + esc(m['Nombre']) + '</div>' +
+          '<div class="modulo-desc" style="margin-top:4px">' + esc(m['Descripcion'] || '') + '</div>' +
+        '</div>' +
+        '<span class="modulo-badge ' + (activo ? 'activo' : '') + '">' +
+          (activo ? 'Disponible' : 'Proximamente') +
+        '</span>' +
+        (session.rol === 'Admin'
+          ? '<button onclick="event.stopPropagation();App.editarModulo(\'' + idMod.replace(/'/g, "\\'") + '\')" style="position:absolute;top:12px;right:12px;border:none;background:none;cursor:pointer;color:var(--tl);font-size:16px"><i class="ti ti-pencil"></i></button>'
+          : '') +
+      '</div>';
+    }).join('');
+  }
+
+  function abrirModulo(url) {
+    if (!isValidUrl(url)) {
+      showToast('URL invalida');
+      return;
+    }
+    sessionStorage.setItem('rcr_session',   JSON.stringify(session));
+    sessionStorage.setItem('rcr_token',     accessToken);
+    sessionStorage.setItem('rcr_token_exp', String(tokenExpiry));
+    window.location.href = url;
+  }
+
+  var CONFIG_TAB = 'modulos';
+
+  function abrirConfiguracion() {
+    abrirModal(
+      '<div class="modal" style="max-width:660px">' +
+        '<div class="modal-head">' +
+          '<div class="modal-title"><i class="ti ti-settings"></i> Configuracion</div>' +
+          '<button class="modal-close" onclick="App.cerrarModal()"><i class="ti ti-x"></i></button>' +
+        '</div>' +
+        '<div class="modal-body">' +
+          '<div class="tabs-bar">' +
+            '<button class="tab-btn active" id="cfg-tab-modulos" onclick="App.switchCfgTab(\'modulos\')"><i class="ti ti-layout-grid"></i> Modulos</button>' +
+            '<button class="tab-btn" id="cfg-tab-usuarios" onclick="App.switchCfgTab(\'usuarios\')"><i class="ti ti-users"></i> Usuarios</button>' +
+          '</div>' +
+          '<div id="cfg-content"></div>' +
+        '</div>' +
+      '</div>'
+    );
+    switchCfgTab('modulos');
+  }
+
+  function switchCfgTab(tab) {
+    CONFIG_TAB = tab;
+    document.querySelectorAll('[id^="cfg-tab-"]').forEach(function(el) { el.classList.remove('active'); });
+    var tabEl = document.getElementById('cfg-tab-' + tab);
+    if (tabEl) tabEl.classList.add('active');
+    if (tab === 'modulos')  renderCfgModulos();
+    if (tab === 'usuarios') renderCfgUsuarios();
+  }
+
+  function isActivo(val) { return val === true || val === 'TRUE'; }
+
+  function renderCfgModulos() {
+    var modulos = hubData.modulos || [];
+    var filas = modulos.map(function(m) {
+      var a = isActivo(m['Activo']);
+      return '<tr>' +
+        '<td>' + esc(m['Emoji'] || '\u2014') + '</td>' +
+        '<td style="font-weight:500">' + esc(m['Nombre']) + '</td>' +
+        '<td style="font-size:12px;color:var(--tm);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(m['URL'] || '') + '">' + esc(m['URL'] || '\u2014') + '</td>' +
+        '<td><span class="badge ' + (a ? 'badge-green' : 'badge-warn') + '">' + (a ? 'Activo' : 'Inactivo') + '</span></td>' +
+        '<td><div class="td-actions">' +
+          '<button class="btn btn-glass btn-sm" onclick="App.editarModulo(\'' + (m['ID_Modulo'] || '').replace(/'/g, "\\'") + '\')"><i class="ti ti-pencil"></i></button>' +
+        '</div></td>' +
+      '</tr>';
+    }).join('');
+
+    document.getElementById('cfg-content').innerHTML =
+      '<div class="table-wrap">' +
+        '<table>' +
+          '<thead><tr><th>Emoji</th><th>Nombre</th><th>URL</th><th>Estado</th><th></th></tr></thead>' +
+          '<tbody>' + (filas || '<tr><td colspan="5" style="text-align:center;color:var(--tl);padding:20px">Sin modulos</td></tr>') + '</tbody>' +
+        '</table>' +
+      '</div>';
+  }
+
+  function editarModulo(id) {
+    var m = (hubData.modulos || []).find(function(x) { return x['ID_Modulo'] === id; });
+    if (!m) return;
+
+    var a = isActivo(m['Activo']);
+    var contenido =
+      '<div style="padding:16px 0">' +
+        '<div class="form-group">' +
+          '<label class="form-label">Nombre</label>' +
+          '<input type="text" class="form-input" id="mod-nombre" value="' + esc(m['Nombre'] || '') + '" readonly style="background:#f8fbfd;color:var(--tm)">' +
+        '</div>' +
+        '<div class="form-group">' +
+          '<label class="form-label">URL *</label>' +
+          '<input type="url" class="form-input" id="mod-url" placeholder="https://..." value="' + esc(m['URL'] || '') + '">' +
+        '</div>' +
+        '<div class="form-grid-2">' +
+          '<div class="form-group">' +
+            '<label class="form-label">Emoji</label>' +
+            '<input type="text" class="form-input" id="mod-emoji" value="' + esc(m['Emoji'] || '') + '" maxlength="4">' +
+          '</div>' +
+          '<div class="form-group">' +
+            '<label class="form-label">Activo</label>' +
+            '<select class="form-select" id="mod-activo">' +
+              '<option value="TRUE"' + (a ? ' selected' : '') + '>Si</option>' +
+              '<option value="FALSE"' + (!a ? ' selected' : '') + '>No</option>' +
+            '</select>' +
+          '</div>' +
+        '</div>' +
+        '<div class="form-group">' +
+          '<label class="form-label">Descripcion</label>' +
+          '<input type="text" class="form-input" id="mod-desc" value="' + esc(m['Descripcion'] || '') + '">' +
+        '</div>' +
+        '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:8px">' +
+          '<button class="btn btn-glass" onclick="App.switchCfgTab(\'modulos\')">Cancelar</button>' +
+          '<button class="btn btn-primary" onclick="App.guardarModulo(\'' + id.replace(/'/g, "\\'") + '\')"><i class="ti ti-check"></i> Guardar</button>' +
+        '</div>' +
+      '</div>';
+
+    document.getElementById('cfg-content').innerHTML = contenido;
+  }
+
+  async function guardarModulo(id) {
+    var urlEl    = document.getElementById('mod-url');
+    var emojiEl  = document.getElementById('mod-emoji');
+    var activoEl = document.getElementById('mod-activo');
+    var descEl   = document.getElementById('mod-desc');
+    if (!urlEl || !emojiEl || !activoEl || !descEl) { showToast('Error en el formulario'); return; }
+
+    var url    = urlEl.value.trim();
+    var emoji  = emojiEl.value.trim();
+    var activo = activoEl.value === 'TRUE';
+    var desc   = descEl.value.trim();
+
+    if (url && !isValidUrl(url)) { showToast('URL invalida'); return; }
+
+    try {
+      var m = (hubData.modulos || []).find(function(x) { return x['ID_Modulo'] === id; });
+      var res = await apiPost({ action: 'saveModulo', data: {
+        ID_Modulo: id, Nombre: m ? m['Nombre'] : '', URL: url,
+        Emoji: emoji, Activo: activo, Descripcion: desc,
+      }});
+      if (!res.ok) { showToast('Error al guardar'); return; }
+
+      var idx = hubData.modulos.findIndex(function(x) { return x['ID_Modulo'] === id; });
+      if (idx >= 0) {
+        hubData.modulos[idx] = Object.assign({}, hubData.modulos[idx], { URL: url, Emoji: emoji, Activo: activo, Descripcion: desc });
+      }
+
+      cacheData(hubData);
+      showToast('Modulo actualizado');
+      renderModulos(hubData.modulos);
+      switchCfgTab('modulos');
+    } catch(e) {
+      console.error('guardarModulo:', e);
+      showToast('Error de conexion');
+    }
+  }
+
+  function renderCfgUsuarios() {
+    var usuarios = hubData.usuarios || [];
+    var filas = usuarios.map(function(u) {
+      var rolClass = u['Rol'] === 'Admin' ? 'badge-blue' : u['Rol'] === 'Editor' ? 'badge-green' : 'badge-warn';
+      var a = isActivo(u['Activo']);
+      return '<tr>' +
+        '<td style="font-weight:500">' + esc(u['Nombre']) + '</td>' +
+        '<td style="font-size:12px;color:var(--tm)">' + esc(u['Email']) + '</td>' +
+        '<td><span class="badge ' + rolClass + '">' + esc(u['Rol']) + '</span></td>' +
+        '<td><span class="badge ' + (a ? 'badge-green' : 'badge-warn') + '">' + (a ? 'Activo' : 'Inactivo') + '</span></td>' +
+        '<td><div class="td-actions">' +
+          '<button class="btn btn-glass btn-sm" onclick="App.editarUsuario(\'' + (u['ID_Usuario'] || '').replace(/'/g, "\\'") + '\')"><i class="ti ti-pencil"></i></button>' +
+        '</div></td>' +
+      '</tr>';
+    }).join('');
+
+    document.getElementById('cfg-content').innerHTML =
+      '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">' +
+        '<button class="btn btn-primary btn-sm" onclick="App.nuevoUsuario()"><i class="ti ti-plus"></i> Nuevo usuario</button>' +
+      '</div>' +
+      '<div class="table-wrap">' +
+        '<table>' +
+          '<thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Activo</th><th></th></tr></thead>' +
+          '<tbody>' + (filas || '<tr><td colspan="5" style="text-align:center;color:var(--tl);padding:20px">Sin usuarios</td></tr>') + '</tbody>' +
+        '</table>' +
+      '</div>';
+  }
+
+  function nuevoUsuario() { editarUsuario(null); }
+
+  function editarUsuario(id) {
+    var u = id ? (hubData.usuarios || []).find(function(x) { return x['ID_Usuario'] === id; }) : null;
+
+    var form =
+      '<div style="padding:16px 0">' +
+        '<div class="form-group">' +
+          '<label class="form-label">Nombre *</label>' +
+          '<input type="text" class="form-input" id="usr-nombre" value="' + esc(u ? u['Nombre'] : '') + '">' +
+        '</div>' +
+        '<div class="form-group">' +
+          '<label class="form-label">Email *</label>' +
+          '<input type="email" class="form-input" id="usr-email" value="' + esc(u ? u['Email'] : '') + '" placeholder="nombre@redesconrostro.org"' + (u ? ' readonly style="background:#f8fbfd;color:var(--tm)"' : '') + '>' +
+        '</div>' +
+        '<div class="form-grid-2">' +
+          '<div class="form-group">' +
+            '<label class="form-label">Rol</label>' +
+            '<select class="form-select" id="usr-rol">' +
+              '<option value="Admin"' + (u && u['Rol'] === 'Admin' ? ' selected' : '') + '>Admin</option>' +
+              '<option value="Editor"' + (u && u['Rol'] === 'Editor' ? ' selected' : '') + '>Editor</option>' +
+              '<option value="Visualizador"' + (u && u['Rol'] === 'Visualizador' ? ' selected' : '') + '>Visualizador</option>' +
+            '</select>' +
+          '</div>' +
+          '<div class="form-group">' +
+            '<label class="form-label">Activo</label>' +
+            '<select class="form-select" id="usr-activo">' +
+              '<option value="true"' + (!u || u['Activo'] !== false ? ' selected' : '') + '>Si</option>' +
+              '<option value="false"' + (u && u['Activo'] === false ? ' selected' : '') + '>No</option>' +
+            '</select>' +
+          '</div>' +
+        '</div>' +
+        '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:8px">' +
+          '<button class="btn btn-glass" onclick="App.switchCfgTab(\'usuarios\')">Cancelar</button>' +
+          '<button class="btn btn-primary" onclick="App.guardarUsuario(\'' + (id || '') + '\')"><i class="ti ti-check"></i> ' + (u ? 'Actualizar' : 'Guardar') + '</button>' +
+        '</div>' +
+      '</div>';
+
+    document.getElementById('cfg-content').innerHTML = form;
+  }
+
+  async function guardarUsuario(id) {
+    var nombreEl = document.getElementById('usr-nombre');
+    var emailEl  = document.getElementById('usr-email');
+    var rolEl    = document.getElementById('usr-rol');
+    var activoEl = document.getElementById('usr-activo');
+    if (!nombreEl || !emailEl || !rolEl || !activoEl) { showToast('Error en el formulario'); return; }
+
+    var nombre = nombreEl.value.trim();
+    var email  = emailEl.value.trim();
+    var rol    = rolEl.value;
+    var activo = activoEl.value === 'true';
+
+    if (!nombre || !email) { showToast('Nombre y email son obligatorios'); return; }
+    if (!email.endsWith('@' + DOMAIN)) { showToast('Solo cuentas @' + DOMAIN); return; }
+
+    try {
+      var res = await apiPost({ action: 'saveUsuario', data: {
+        ID_Usuario: id || '', Nombre: nombre, Email: email, Rol: rol, Activo: activo,
+      }});
+      if (!res.ok) { showToast('Error al guardar'); return; }
+
+      if (id) {
+        var idx = hubData.usuarios.findIndex(function(x) { return x['ID_Usuario'] === id; });
+        if (idx >= 0) hubData.usuarios[idx] = Object.assign({}, hubData.usuarios[idx], { Nombre: nombre, Rol: rol, Activo: activo });
+      } else {
+        hubData.usuarios.push({ ID_Usuario: res.id, Nombre: nombre, Email: email, Rol: rol, Activo: activo });
+      }
+
+      cacheData(hubData);
+      showToast(id ? 'Usuario actualizado' : 'Usuario creado');
+      switchCfgTab('usuarios');
+    } catch(e) {
+      console.error('guardarUsuario:', e);
+      showToast('Error de conexion');
+    }
+  }
+
+  async function apiGet(params) {
+    var qs  = new URLSearchParams(params).toString();
+    var res = await fetch(SCRIPT_URL + '?' + qs);
+    if (!res.ok) throw new Error('apiGet failed: ' + res.status);
+    return res.json();
+  }
+
+  async function apiPost(body) {
+    var res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(body) });
+    if (!res.ok) throw new Error('apiPost failed: ' + res.status);
+    return res.json();
+  }
+
+  function mostrarLogin() {
+    document.getElementById('screen-login').classList.remove('hidden');
+    document.getElementById('screen-loading').classList.add('hidden');
+    document.getElementById('screen-hub').classList.add('hidden');
+  }
+  function mostrarLoading() {
+    document.getElementById('screen-login').classList.add('hidden');
+    document.getElementById('screen-loading').classList.remove('hidden');
+    document.getElementById('screen-hub').classList.add('hidden');
+  }
+  function mostrarHub() {
+    document.getElementById('screen-login').classList.add('hidden');
+    document.getElementById('screen-loading').classList.add('hidden');
+    document.getElementById('screen-hub').classList.remove('hidden');
+  }
+
+  function showToast(msg, dur) {
+    dur = dur || 3500;
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(function() { t.classList.remove('show'); }, dur);
+  }
+
+  function abrirModal(html) {
+    cerrarModal();
+    var overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'modal-overlay';
+    overlay.innerHTML = html;
+    overlay.addEventListener('click', function(e) { if (e.target === overlay) cerrarModal(); });
+    document.body.appendChild(overlay);
+  }
+
+  function cerrarModal() {
+    var m = document.getElementById('modal-overlay');
+    if (m) m.remove();
+  }
+
+  window.App = {
+    abrirModulo: abrirModulo,
+    editarModulo: editarModulo,
+    guardarModulo: guardarModulo,
+    switchCfgTab: switchCfgTab,
+    cerrarModal: cerrarModal,
+    nuevoUsuario: nuevoUsuario,
+    editarUsuario: editarUsuario,
+    guardarUsuario: guardarUsuario,
+  };
+
+  window.iniciarLogin = iniciarLogin;
+  window.cerrarSesion = cerrarSesion;
+  window.abrirConfiguracion = abrirConfiguracion;
+
+  window.addEventListener('load', async function() {
+    if (recuperarSesion()) {
+      mostrarLoading();
+      try {
+        var data = await apiGet({ action: 'getDatos', email: session.email });
+        if (data.ok) {
+          hubData = data.data;
+          cacheData(hubData);
+          iniciarHub();
+        } else {
+          mostrarLogin();
+        }
+      } catch(e) {
+        console.error('load:', e);
+        var cached = getCachedData();
+        if (cached) {
+          hubData = cached;
+          showToast('Modo sin conexion — datos en cache');
+          iniciarHub();
+        } else {
+          mostrarLogin();
+        }
+      }
+    } else {
+      mostrarLogin();
+    }
+  });
+
+})();
 </script>
 </body>
 </html>
