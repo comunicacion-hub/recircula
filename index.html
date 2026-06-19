@@ -7,7 +7,6 @@
 <link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiUmVDaXJjdWxhIDM2MCIsInNob3J0X25hbWUiOiJSZUNpcmN1bGEiLCJzdGFydF91cmwiOiIuIiwiZGlzcGxheSI6InN0YW5kYWxvbmUiLCJiYWNrZ3JvdW5kX2NvbG9yIjoiI2U4ZjRmZCIsInRoZW1lX2NvbG9yIjoiIzMzQThERSJ9">
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
-<script src="https://accounts.google.com/gsi/client" async defer></script>
 
 <style>
 :root {
@@ -309,7 +308,21 @@ body {
   border-style: dashed;
 }
 
-.modulo-emoji { font-size: 36px; }
+/* Mosaico de módulo (reemplaza al emoji) */
+.modulo-icon {
+  width: 52px; height: 52px;
+  border-radius: var(--radius-md);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff;
+  font-size: 22px;
+  font-weight: 800;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+.mi-0 { background: linear-gradient(135deg, var(--b1), var(--b2)); }
+.mi-1 { background: linear-gradient(135deg, var(--g1), var(--g2)); }
+.mi-2 { background: linear-gradient(135deg, var(--c1), var(--c2)); }
+.mi-3 { background: linear-gradient(135deg, var(--d1), var(--d2)); }
 
 .modulo-nombre {
   font-size: 15px;
@@ -428,6 +441,32 @@ body {
 .form-input:focus, .form-select:focus { outline: none; border-color: var(--b1); }
 .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 
+/* Lista de módulos por usuario (checkboxes) */
+.mod-check-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  max-height: 190px;
+  overflow-y: auto;
+}
+.mod-check-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+  color: var(--tx);
+  padding: 7px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.mod-check-item:hover { background: #f4f8fb; }
+.mod-check-item input { width: 16px; height: 16px; accent-color: var(--b1); cursor: pointer; }
+.mod-check-item .mci-id { font-size: 11px; color: var(--tl); margin-left: auto; }
+
 /* Buttons */
 .btn {
   display: inline-flex;
@@ -521,7 +560,7 @@ tbody tr:hover .td-actions { opacity: 1; }
 </div>
 
 <!-- LOGIN -->
-<div id="screen-login">
+<div id="screen-login" class="hidden">
   <div class="login-card">
     <div class="login-logo grad-text">ReCircula 360</div>
     <div class="login-brand">Una app de Redes Con Rostro</div>
@@ -539,7 +578,7 @@ tbody tr:hover .td-actions { opacity: 1; }
 </div>
 
 <!-- LOADING -->
-<div id="screen-loading" class="hidden">
+<div id="screen-loading">
   <div class="spinner"></div>
   <div class="load-text">Cargando ReCircula 360...</div>
 </div>
@@ -583,564 +622,634 @@ tbody tr:hover .td-actions { opacity: 1; }
 <!-- Toast -->
 <div id="toast"></div>
 
-<script>
-(function() {
-  'use strict';
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import {
+  getAuth, GoogleAuthProvider, signInWithPopup, signOut,
+  onAuthStateChanged, setPersistence, browserSessionPersistence
+} from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import {
+  initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+  collection, getDocs, query, where, doc, updateDoc, addDoc
+} from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 
-  const SCRIPT_URL  = 'https://script.google.com/macros/s/AKfycbyy_lNvMjFiJvUkwPhLXZsIlHJ_2vzDGmSV1TGOvBZVsgP3cndSJPwwYzwcLdgUSw4GCw/exec';
-  const G_CLIENT_ID = '783730193199-d7nhahv3ou4rmps7nrpoop5cpor079ej.apps.googleusercontent.com';
-  const DOMAIN      = 'redesconrostro.org';
-  const TOKEN_MARGIN_MS = 5 * 60 * 1000;
+// ── Configuración Firebase ─────────────────────────────────
+const firebaseConfig = {
+  apiKey: "AIzaSyApr5rH2FzuINhO26VgeYJWJAr1jznP6WI",
+  authDomain: "recircula360.firebaseapp.com",
+  projectId: "recircula360",
+  storageBucket: "recircula360.firebasestorage.app",
+  messagingSenderId: "871869415100",
+  appId: "1:871869415100:web:6fe89ec7d5f632eb7a5ab9"
+};
 
-  let session      = null;
-  let accessToken  = null;
-  let tokenExpiry  = 0;
-  let hubData      = null;
-  let isOnline     = navigator.onLine;
-
-  function esc(str) {
-    if (str === null || str === undefined) return '';
-    const div = document.createElement('div');
-    div.textContent = String(str);
-    return div.innerHTML;
-  }
-
-  function isValidUrl(str) {
-    try {
-      const u = new URL(str);
-      return u.protocol === 'http:' || u.protocol === 'https:';
-    } catch { return false; }
-  }
-
-  function updateOnlineStatus() {
-    isOnline = navigator.onLine;
-    const banner = document.getElementById('offline-banner');
-    if (!isOnline) {
-      banner.classList.add('show');
-    } else {
-      banner.classList.remove('show');
-    }
-  }
-
-  window.addEventListener('online', updateOnlineStatus);
-  window.addEventListener('offline', updateOnlineStatus);
-  updateOnlineStatus();
-
-  function cacheData(data) {
-    try {
-      localStorage.setItem('rcr_hub_data', JSON.stringify(data));
-      localStorage.setItem('rcr_hub_cache_time', String(Date.now()));
-    } catch(e) { console.warn('Cache write failed', e); }
-  }
-
-  function getCachedData() {
-    try {
-      const raw = localStorage.getItem('rcr_hub_data');
-      if (raw) return JSON.parse(raw);
-    } catch(e) { console.warn('Cache read failed', e); }
-    return null;
-  }
-
-  function iniciarLogin() {
-    const btn = document.getElementById('btn-login');
-    btn.disabled = true;
-    try {
-      const client = google.accounts.oauth2.initTokenClient({
-        client_id: G_CLIENT_ID,
-        scope: 'email profile https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/spreadsheets.readonly',
-        callback: async (resp) => {
-          btn.disabled = false;
-          if (resp.error) { showToast('Error al iniciar sesion'); return; }
-          accessToken = resp.access_token;
-          tokenExpiry = Date.now() + (resp.expires_in - 60) * 1000;
-          await verificarUsuario();
-        },
-      });
-      client.requestAccessToken();
-    } catch(e) {
-      btn.disabled = false;
-      showToast('Error al cargar Google Sign-In');
-    }
-  }
-
-  async function verificarUsuario() {
-    mostrarLoading();
-    try {
-      const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-        headers: { Authorization: 'Bearer ' + accessToken }
-      });
-      if (!res.ok) throw new Error('userinfo failed');
-      const info = await res.json();
-
-      if (!info.email || !info.email.endsWith('@' + DOMAIN)) {
-        showToast('Solo cuentas @' + DOMAIN);
-        mostrarLogin();
-        return;
-      }
-
-      const data = await apiGet({ action: 'getDatos', email: info.email });
-      if (!data.ok) {
-        showToast('Usuario no autorizado. Contacta al administrador.');
-        mostrarLogin();
-        return;
-      }
-
-      session = {
-        nombre: data.data.usuario.nombre || info.given_name || 'Usuario',
-        email:  info.email,
-        rol:    data.data.usuario.rol || 'Visualizador',
-      };
-      hubData = data.data;
-
-      cacheData(hubData);
-
-      sessionStorage.setItem('rcr_hub_session', JSON.stringify(session));
-      sessionStorage.setItem('rcr_hub_token',   accessToken);
-      sessionStorage.setItem('rcr_hub_exp',     String(tokenExpiry));
-
-      iniciarHub();
-    } catch(e) {
-      console.error('verificarUsuario:', e);
-      const cached = getCachedData();
-      const savedSession = sessionStorage.getItem('rcr_hub_session');
-      if (cached && savedSession) {
-        session = JSON.parse(savedSession);
-        hubData = cached;
-        showToast('Modo sin conexion — datos en cache');
-        iniciarHub();
-        return;
-      }
-      showToast('Error de conexion');
-      mostrarLogin();
-    }
-  }
-
-  function recuperarSesion() {
-    const s   = sessionStorage.getItem('rcr_hub_session');
-    const t   = sessionStorage.getItem('rcr_hub_token');
-    const exp = sessionStorage.getItem('rcr_hub_exp');
-    if (s && t && exp && Date.now() < parseInt(exp) - TOKEN_MARGIN_MS) {
-      session      = JSON.parse(s);
-      accessToken  = t;
-      tokenExpiry  = parseInt(exp);
-      return true;
-    }
-    return false;
-  }
-
-  function cerrarSesion() {
-    sessionStorage.clear();
-    try { localStorage.removeItem('rcr_hub_data'); localStorage.removeItem('rcr_hub_cache_time'); } catch(e) {}
-    session = null; accessToken = null; hubData = null;
-    mostrarLogin();
-    try { google.accounts.id.disableAutoSelect(); } catch(e) {}
-  }
-
-  function iniciarHub() {
-    if (!session || !session.nombre) {
-      mostrarLogin();
-      return;
-    }
-
-    const nombre = session.nombre;
-    const partes = nombre.trim().split(/\s+/).filter(Boolean);
-    const iniciales = partes.length >= 2
-      ? (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
-      : nombre.substring(0, 2).toUpperCase();
-
-    document.getElementById('hub-avatar').textContent   = iniciales;
-    document.getElementById('hub-username').textContent = nombre;
-    document.getElementById('hub-role').textContent     = session.rol;
-    document.getElementById('hub-bienvenido').textContent = 'Bienvenido, ' + partes[0];
-
-    if (session.rol === 'Admin') {
-      document.getElementById('btn-config').classList.remove('hidden');
-    }
-
-    renderModulos(hubData.modulos);
-    mostrarHub();
-  }
-
-  function renderModulos(modulos) {
-    const grid = document.getElementById('modulos-grid');
-    if (!modulos || !modulos.length) {
-      grid.innerHTML = '<p style="color:var(--tl);font-size:13px">No hay modulos disponibles</p>';
-      return;
-    }
-
-    grid.innerHTML = modulos.map(function(m) {
-      var activo   = m['Activo'] === true || m['Activo'] === 'TRUE';
-      var tieneURL = m['URL'] && m['URL'].toString().trim() !== '';
-      var idMod    = m['ID_Modulo'] || '';
-      var url      = m['URL'] || '';
-      var clases   = activo && tieneURL ? '' : (session.rol === 'Admin' ? 'inactivo-admin' : 'inactivo');
-      var onclick  = activo && tieneURL ? "App.abrirModulo('" + url.replace(/'/g, "\\'") + "')"
-                       : session.rol === 'Admin' ? "App.editarModulo('" + idMod.replace(/'/g, "\\'") + "')"
-                       : '';
-
-      return '<div class="modulo-card ' + clases + '" onclick="' + onclick + '">' +
-        '<div class="modulo-emoji">' + esc(m['Emoji'] || '\uD83D\uDCE6') + '</div>' +
-        '<div>' +
-          '<div class="modulo-nombre">' + esc(m['Nombre']) + '</div>' +
-          '<div class="modulo-desc" style="margin-top:4px">' + esc(m['Descripcion'] || '') + '</div>' +
-        '</div>' +
-        '<span class="modulo-badge ' + (activo ? 'activo' : '') + '">' +
-          (activo ? 'Disponible' : 'Proximamente') +
-        '</span>' +
-        (session.rol === 'Admin'
-          ? '<button onclick="event.stopPropagation();App.editarModulo(\'' + idMod.replace(/'/g, "\\'") + '\')" style="position:absolute;top:12px;right:12px;border:none;background:none;cursor:pointer;color:var(--tl);font-size:16px"><i class="ti ti-pencil"></i></button>'
-          : '') +
-      '</div>';
-    }).join('');
-  }
-
-  function abrirModulo(url) {
-    if (!isValidUrl(url)) {
-      showToast('URL invalida');
-      return;
-    }
-    sessionStorage.setItem('rcr_session',   JSON.stringify(session));
-    sessionStorage.setItem('rcr_token',     accessToken);
-    sessionStorage.setItem('rcr_token_exp', String(tokenExpiry));
-    window.location.href = url;
-  }
-
-  var CONFIG_TAB = 'modulos';
-
-  function abrirConfiguracion() {
-    abrirModal(
-      '<div class="modal" style="max-width:660px">' +
-        '<div class="modal-head">' +
-          '<div class="modal-title"><i class="ti ti-settings"></i> Configuracion</div>' +
-          '<button class="modal-close" onclick="App.cerrarModal()"><i class="ti ti-x"></i></button>' +
-        '</div>' +
-        '<div class="modal-body">' +
-          '<div class="tabs-bar">' +
-            '<button class="tab-btn active" id="cfg-tab-modulos" onclick="App.switchCfgTab(\'modulos\')"><i class="ti ti-layout-grid"></i> Modulos</button>' +
-            '<button class="tab-btn" id="cfg-tab-usuarios" onclick="App.switchCfgTab(\'usuarios\')"><i class="ti ti-users"></i> Usuarios</button>' +
-          '</div>' +
-          '<div id="cfg-content"></div>' +
-        '</div>' +
-      '</div>'
-    );
-    switchCfgTab('modulos');
-  }
-
-  function switchCfgTab(tab) {
-    CONFIG_TAB = tab;
-    document.querySelectorAll('[id^="cfg-tab-"]').forEach(function(el) { el.classList.remove('active'); });
-    var tabEl = document.getElementById('cfg-tab-' + tab);
-    if (tabEl) tabEl.classList.add('active');
-    if (tab === 'modulos')  renderCfgModulos();
-    if (tab === 'usuarios') renderCfgUsuarios();
-  }
-
-  function isActivo(val) { return val === true || val === 'TRUE'; }
-
-  function renderCfgModulos() {
-    var modulos = hubData.modulos || [];
-    var filas = modulos.map(function(m) {
-      var a = isActivo(m['Activo']);
-      return '<tr>' +
-        '<td>' + esc(m['Emoji'] || '\u2014') + '</td>' +
-        '<td style="font-weight:500">' + esc(m['Nombre']) + '</td>' +
-        '<td style="font-size:12px;color:var(--tm);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(m['URL'] || '') + '">' + esc(m['URL'] || '\u2014') + '</td>' +
-        '<td><span class="badge ' + (a ? 'badge-green' : 'badge-warn') + '">' + (a ? 'Activo' : 'Inactivo') + '</span></td>' +
-        '<td><div class="td-actions">' +
-          '<button class="btn btn-glass btn-sm" onclick="App.editarModulo(\'' + (m['ID_Modulo'] || '').replace(/'/g, "\\'") + '\')"><i class="ti ti-pencil"></i></button>' +
-        '</div></td>' +
-      '</tr>';
-    }).join('');
-
-    document.getElementById('cfg-content').innerHTML =
-      '<div class="table-wrap">' +
-        '<table>' +
-          '<thead><tr><th>Emoji</th><th>Nombre</th><th>URL</th><th>Estado</th><th></th></tr></thead>' +
-          '<tbody>' + (filas || '<tr><td colspan="5" style="text-align:center;color:var(--tl);padding:20px">Sin modulos</td></tr>') + '</tbody>' +
-        '</table>' +
-      '</div>';
-  }
-
-  function editarModulo(id) {
-    var m = (hubData.modulos || []).find(function(x) { return x['ID_Modulo'] === id; });
-    if (!m) return;
-
-    var a = isActivo(m['Activo']);
-    var contenido =
-      '<div style="padding:16px 0">' +
-        '<div class="form-group">' +
-          '<label class="form-label">Nombre</label>' +
-          '<input type="text" class="form-input" id="mod-nombre" value="' + esc(m['Nombre'] || '') + '" readonly style="background:#f8fbfd;color:var(--tm)">' +
-        '</div>' +
-        '<div class="form-group">' +
-          '<label class="form-label">URL *</label>' +
-          '<input type="url" class="form-input" id="mod-url" placeholder="https://..." value="' + esc(m['URL'] || '') + '">' +
-        '</div>' +
-        '<div class="form-grid-2">' +
-          '<div class="form-group">' +
-            '<label class="form-label">Emoji</label>' +
-            '<input type="text" class="form-input" id="mod-emoji" value="' + esc(m['Emoji'] || '') + '" maxlength="4">' +
-          '</div>' +
-          '<div class="form-group">' +
-            '<label class="form-label">Activo</label>' +
-            '<select class="form-select" id="mod-activo">' +
-              '<option value="TRUE"' + (a ? ' selected' : '') + '>Si</option>' +
-              '<option value="FALSE"' + (!a ? ' selected' : '') + '>No</option>' +
-            '</select>' +
-          '</div>' +
-        '</div>' +
-        '<div class="form-group">' +
-          '<label class="form-label">Descripcion</label>' +
-          '<input type="text" class="form-input" id="mod-desc" value="' + esc(m['Descripcion'] || '') + '">' +
-        '</div>' +
-        '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:8px">' +
-          '<button class="btn btn-glass" onclick="App.switchCfgTab(\'modulos\')">Cancelar</button>' +
-          '<button class="btn btn-primary" onclick="App.guardarModulo(\'' + id.replace(/'/g, "\\'") + '\')"><i class="ti ti-check"></i> Guardar</button>' +
-        '</div>' +
-      '</div>';
-
-    document.getElementById('cfg-content').innerHTML = contenido;
-  }
-
-  async function guardarModulo(id) {
-    var urlEl    = document.getElementById('mod-url');
-    var emojiEl  = document.getElementById('mod-emoji');
-    var activoEl = document.getElementById('mod-activo');
-    var descEl   = document.getElementById('mod-desc');
-    if (!urlEl || !emojiEl || !activoEl || !descEl) { showToast('Error en el formulario'); return; }
-
-    var url    = urlEl.value.trim();
-    var emoji  = emojiEl.value.trim();
-    var activo = activoEl.value === 'TRUE';
-    var desc   = descEl.value.trim();
-
-    if (url && !isValidUrl(url)) { showToast('URL invalida'); return; }
-
-    try {
-      var m = (hubData.modulos || []).find(function(x) { return x['ID_Modulo'] === id; });
-      var res = await apiPost({ action: 'saveModulo', data: {
-        ID_Modulo: id, Nombre: m ? m['Nombre'] : '', URL: url,
-        Emoji: emoji, Activo: activo, Descripcion: desc,
-      }});
-      if (!res.ok) { showToast('Error al guardar'); return; }
-
-      var idx = hubData.modulos.findIndex(function(x) { return x['ID_Modulo'] === id; });
-      if (idx >= 0) {
-        hubData.modulos[idx] = Object.assign({}, hubData.modulos[idx], { URL: url, Emoji: emoji, Activo: activo, Descripcion: desc });
-      }
-
-      cacheData(hubData);
-      showToast('Modulo actualizado');
-      renderModulos(hubData.modulos);
-      switchCfgTab('modulos');
-    } catch(e) {
-      console.error('guardarModulo:', e);
-      showToast('Error de conexion');
-    }
-  }
-
-  function renderCfgUsuarios() {
-    var usuarios = hubData.usuarios || [];
-    var filas = usuarios.map(function(u) {
-      var rolClass = u['Rol'] === 'Admin' ? 'badge-blue' : u['Rol'] === 'Editor' ? 'badge-green' : 'badge-warn';
-      var a = isActivo(u['Activo']);
-      return '<tr>' +
-        '<td style="font-weight:500">' + esc(u['Nombre']) + '</td>' +
-        '<td style="font-size:12px;color:var(--tm)">' + esc(u['Email']) + '</td>' +
-        '<td><span class="badge ' + rolClass + '">' + esc(u['Rol']) + '</span></td>' +
-        '<td><span class="badge ' + (a ? 'badge-green' : 'badge-warn') + '">' + (a ? 'Activo' : 'Inactivo') + '</span></td>' +
-        '<td><div class="td-actions">' +
-          '<button class="btn btn-glass btn-sm" onclick="App.editarUsuario(\'' + (u['ID_Usuario'] || '').replace(/'/g, "\\'") + '\')"><i class="ti ti-pencil"></i></button>' +
-        '</div></td>' +
-      '</tr>';
-    }).join('');
-
-    document.getElementById('cfg-content').innerHTML =
-      '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">' +
-        '<button class="btn btn-primary btn-sm" onclick="App.nuevoUsuario()"><i class="ti ti-plus"></i> Nuevo usuario</button>' +
-      '</div>' +
-      '<div class="table-wrap">' +
-        '<table>' +
-          '<thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Activo</th><th></th></tr></thead>' +
-          '<tbody>' + (filas || '<tr><td colspan="5" style="text-align:center;color:var(--tl);padding:20px">Sin usuarios</td></tr>') + '</tbody>' +
-        '</table>' +
-      '</div>';
-  }
-
-  function nuevoUsuario() { editarUsuario(null); }
-
-  function editarUsuario(id) {
-    var u = id ? (hubData.usuarios || []).find(function(x) { return x['ID_Usuario'] === id; }) : null;
-
-    var form =
-      '<div style="padding:16px 0">' +
-        '<div class="form-group">' +
-          '<label class="form-label">Nombre *</label>' +
-          '<input type="text" class="form-input" id="usr-nombre" value="' + esc(u ? u['Nombre'] : '') + '">' +
-        '</div>' +
-        '<div class="form-group">' +
-          '<label class="form-label">Email *</label>' +
-          '<input type="email" class="form-input" id="usr-email" value="' + esc(u ? u['Email'] : '') + '" placeholder="nombre@redesconrostro.org"' + (u ? ' readonly style="background:#f8fbfd;color:var(--tm)"' : '') + '>' +
-        '</div>' +
-        '<div class="form-grid-2">' +
-          '<div class="form-group">' +
-            '<label class="form-label">Rol</label>' +
-            '<select class="form-select" id="usr-rol">' +
-              '<option value="Admin"' + (u && u['Rol'] === 'Admin' ? ' selected' : '') + '>Admin</option>' +
-              '<option value="Editor"' + (u && u['Rol'] === 'Editor' ? ' selected' : '') + '>Editor</option>' +
-              '<option value="Visualizador"' + (u && u['Rol'] === 'Visualizador' ? ' selected' : '') + '>Visualizador</option>' +
-            '</select>' +
-          '</div>' +
-          '<div class="form-group">' +
-            '<label class="form-label">Activo</label>' +
-            '<select class="form-select" id="usr-activo">' +
-              '<option value="true"' + (!u || u['Activo'] !== false ? ' selected' : '') + '>Si</option>' +
-              '<option value="false"' + (u && u['Activo'] === false ? ' selected' : '') + '>No</option>' +
-            '</select>' +
-          '</div>' +
-        '</div>' +
-        '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:8px">' +
-          '<button class="btn btn-glass" onclick="App.switchCfgTab(\'usuarios\')">Cancelar</button>' +
-          '<button class="btn btn-primary" onclick="App.guardarUsuario(\'' + (id || '') + '\')"><i class="ti ti-check"></i> ' + (u ? 'Actualizar' : 'Guardar') + '</button>' +
-        '</div>' +
-      '</div>';
-
-    document.getElementById('cfg-content').innerHTML = form;
-  }
-
-  async function guardarUsuario(id) {
-    var nombreEl = document.getElementById('usr-nombre');
-    var emailEl  = document.getElementById('usr-email');
-    var rolEl    = document.getElementById('usr-rol');
-    var activoEl = document.getElementById('usr-activo');
-    if (!nombreEl || !emailEl || !rolEl || !activoEl) { showToast('Error en el formulario'); return; }
-
-    var nombre = nombreEl.value.trim();
-    var email  = emailEl.value.trim();
-    var rol    = rolEl.value;
-    var activo = activoEl.value === 'true';
-
-    if (!nombre || !email) { showToast('Nombre y email son obligatorios'); return; }
-    if (!email.endsWith('@' + DOMAIN)) { showToast('Solo cuentas @' + DOMAIN); return; }
-
-    try {
-      var res = await apiPost({ action: 'saveUsuario', data: {
-        ID_Usuario: id || '', Nombre: nombre, Email: email, Rol: rol, Activo: activo,
-      }});
-      if (!res.ok) { showToast('Error al guardar'); return; }
-
-      if (id) {
-        var idx = hubData.usuarios.findIndex(function(x) { return x['ID_Usuario'] === id; });
-        if (idx >= 0) hubData.usuarios[idx] = Object.assign({}, hubData.usuarios[idx], { Nombre: nombre, Rol: rol, Activo: activo });
-      } else {
-        hubData.usuarios.push({ ID_Usuario: res.id, Nombre: nombre, Email: email, Rol: rol, Activo: activo });
-      }
-
-      cacheData(hubData);
-      showToast(id ? 'Usuario actualizado' : 'Usuario creado');
-      switchCfgTab('usuarios');
-    } catch(e) {
-      console.error('guardarUsuario:', e);
-      showToast('Error de conexion');
-    }
-  }
-
-  async function apiGet(params) {
-    var qs  = new URLSearchParams(params).toString();
-    var res = await fetch(SCRIPT_URL + '?' + qs);
-    if (!res.ok) throw new Error('apiGet failed: ' + res.status);
-    return res.json();
-  }
-
-  async function apiPost(body) {
-    var res = await fetch(SCRIPT_URL, { method: 'POST', body: JSON.stringify(body) });
-    if (!res.ok) throw new Error('apiPost failed: ' + res.status);
-    return res.json();
-  }
-
-  function mostrarLogin() {
-    document.getElementById('screen-login').classList.remove('hidden');
-    document.getElementById('screen-loading').classList.add('hidden');
-    document.getElementById('screen-hub').classList.add('hidden');
-  }
-  function mostrarLoading() {
-    document.getElementById('screen-login').classList.add('hidden');
-    document.getElementById('screen-loading').classList.remove('hidden');
-    document.getElementById('screen-hub').classList.add('hidden');
-  }
-  function mostrarHub() {
-    document.getElementById('screen-login').classList.add('hidden');
-    document.getElementById('screen-loading').classList.add('hidden');
-    document.getElementById('screen-hub').classList.remove('hidden');
-  }
-
-  function showToast(msg, dur) {
-    dur = dur || 3500;
-    var t = document.getElementById('toast');
-    t.textContent = msg;
-    t.classList.add('show');
-    setTimeout(function() { t.classList.remove('show'); }, dur);
-  }
-
-  function abrirModal(html) {
-    cerrarModal();
-    var overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.id = 'modal-overlay';
-    overlay.innerHTML = html;
-    overlay.addEventListener('click', function(e) { if (e.target === overlay) cerrarModal(); });
-    document.body.appendChild(overlay);
-  }
-
-  function cerrarModal() {
-    var m = document.getElementById('modal-overlay');
-    if (m) m.remove();
-  }
-
-  window.App = {
-    abrirModulo: abrirModulo,
-    editarModulo: editarModulo,
-    guardarModulo: guardarModulo,
-    switchCfgTab: switchCfgTab,
-    cerrarModal: cerrarModal,
-    nuevoUsuario: nuevoUsuario,
-    editarUsuario: editarUsuario,
-    guardarUsuario: guardarUsuario,
-  };
-
-  window.iniciarLogin = iniciarLogin;
-  window.cerrarSesion = cerrarSesion;
-  window.abrirConfiguracion = abrirConfiguracion;
-
-  window.addEventListener('load', async function() {
-    if (recuperarSesion()) {
-      mostrarLoading();
-      try {
-        var data = await apiGet({ action: 'getDatos', email: session.email });
-        if (data.ok) {
-          hubData = data.data;
-          cacheData(hubData);
-          iniciarHub();
-        } else {
-          mostrarLogin();
-        }
-      } catch(e) {
-        console.error('load:', e);
-        var cached = getCachedData();
-        if (cached) {
-          hubData = cached;
-          showToast('Modo sin conexion — datos en cache');
-          iniciarHub();
-        } else {
-          mostrarLogin();
-        }
-      }
-    } else {
-      mostrarLogin();
-    }
+const app  = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+// Firestore con caché offline (IndexedDB) — lecturas funcionan sin conexión
+let db;
+try {
+  db = initializeFirestore(app, {
+    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
   });
+} catch (e) {
+  console.warn('Persistencia offline no disponible:', e);
+  db = initializeFirestore(app, {});
+}
 
-})();
+const DOMAIN = 'redesconrostro.org';
+const TOKEN_MARGIN_MS = 5 * 60 * 1000;
+
+// Scopes que heredan las apps hijas (transitorio hasta migrarlas a Firebase)
+const GOOGLE_SCOPES = [
+  'https://www.googleapis.com/auth/drive',
+  'https://www.googleapis.com/auth/spreadsheets.readonly'
+];
+
+let session     = null;
+let googleToken = null;   // token OAuth de Google (para apps hijas)
+let tokenExpiry = 0;
+let hubData     = null;
+let isOnline    = navigator.onLine;
+let booted      = false;
+
+// ── Utilidades ─────────────────────────────────────────────
+function esc(str) {
+  if (str === null || str === undefined) return '';
+  const div = document.createElement('div');
+  div.textContent = String(str);
+  return div.innerHTML;
+}
+function escJs(str) {
+  return String(str === null || str === undefined ? '' : str).replace(/'/g, "\\'");
+}
+function isValidUrl(str) {
+  try {
+    const u = new URL(str);
+    return u.protocol === 'http:' || u.protocol === 'https:';
+  } catch { return false; }
+}
+function isActivo(val) { return val === true || val === 'TRUE' || val === 'true'; }
+
+function updateOnlineStatus() {
+  isOnline = navigator.onLine;
+  const banner = document.getElementById('offline-banner');
+  if (!isOnline) banner.classList.add('show');
+  else banner.classList.remove('show');
+}
+window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
+updateOnlineStatus();
+
+// ── Caché local (resume rápido + offline) ──────────────────
+function cacheData(data) {
+  try {
+    localStorage.setItem('rcr_hub_data', JSON.stringify(data));
+    localStorage.setItem('rcr_hub_cache_time', String(Date.now()));
+  } catch(e) { console.warn('Cache write failed', e); }
+}
+function getCachedData() {
+  try {
+    const raw = localStorage.getItem('rcr_hub_data');
+    if (raw) return JSON.parse(raw);
+  } catch(e) { console.warn('Cache read failed', e); }
+  return null;
+}
+
+// ── LOGIN con Firebase Auth ────────────────────────────────
+async function iniciarLogin() {
+  const btn = document.getElementById('btn-login');
+  btn.disabled = true;
+  try {
+    await setPersistence(auth, browserSessionPersistence);
+
+    const provider = new GoogleAuthProvider();
+    provider.setCustomParameters({ hd: DOMAIN }); // sugerencia de dominio
+    GOOGLE_SCOPES.forEach(s => provider.addScope(s));
+
+    const result = await signInWithPopup(auth, provider);
+
+    // Token OAuth de Google para las apps hijas (transitorio)
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (credential && credential.accessToken) {
+      googleToken = credential.accessToken;
+      tokenExpiry = Date.now() + 55 * 60 * 1000; // ~55 min
+      sessionStorage.setItem('rcr_hub_token', googleToken);
+      sessionStorage.setItem('rcr_hub_exp', String(tokenExpiry));
+    }
+    // El resto del flujo lo maneja onAuthStateChanged
+  } catch(e) {
+    console.error('iniciarLogin:', e);
+    if (e && e.code === 'auth/popup-closed-by-user') {
+      showToast('Inicio de sesion cancelado');
+    } else {
+      showToast('Error al iniciar sesion');
+    }
+    btn.disabled = false;
+  }
+}
+
+// ── Cargar datos desde Firestore y entrar ──────────────────
+async function cargarDatosYEntrar(user) {
+  try {
+    // 1) Mi documento de usuario (por email)
+    const qUsr = query(collection(db, 'Usuarios'), where('email', '==', user.email));
+    const usrSnap = await getDocs(qUsr);
+
+    if (usrSnap.empty) {
+      showToast('Usuario no autorizado. Contacta al administrador.');
+      await signOut(auth);
+      mostrarLogin();
+      return;
+    }
+
+    const meDoc = usrSnap.docs[0];
+    const me = { _docId: meDoc.id, ...meDoc.data() };
+
+    if (me.activo === false) {
+      showToast('Tu cuenta esta inactiva. Contacta al administrador.');
+      await signOut(auth);
+      mostrarLogin();
+      return;
+    }
+
+    // 2) Módulos (todos)
+    const modSnap = await getDocs(collection(db, 'Modulos'));
+    const modulos = modSnap.docs.map(d => ({ _docId: d.id, ...d.data() }));
+
+    // 3) Usuarios completos (solo Admin los necesita para el panel)
+    let usuarios = [me];
+    if (me.rol === 'Admin') {
+      const allSnap = await getDocs(collection(db, 'Usuarios'));
+      usuarios = allSnap.docs.map(d => ({ _docId: d.id, ...d.data() }));
+    }
+
+    session = {
+      _docId:  me._docId,
+      nombre:  me.nombre || user.displayName || 'Usuario',
+      email:   me.email,
+      rol:     me.rol || 'Visualizador',
+      modulos: Array.isArray(me.modulos) ? me.modulos : []
+    };
+    hubData = { usuario: me, usuarios, modulos };
+
+    cacheData(hubData);
+    sessionStorage.setItem('rcr_hub_session', JSON.stringify(session));
+
+    iniciarHub();
+  } catch(e) {
+    console.error('cargarDatosYEntrar:', e);
+    // Fallback offline: caché local + sesión guardada
+    const cached = getCachedData();
+    const savedSession = sessionStorage.getItem('rcr_hub_session');
+    if (cached && savedSession) {
+      session = JSON.parse(savedSession);
+      hubData = cached;
+      showToast('Modo sin conexion — datos en cache');
+      iniciarHub();
+      return;
+    }
+    showToast('Error al cargar datos');
+    mostrarLogin();
+  }
+}
+
+// ── Cerrar sesión ──────────────────────────────────────────
+async function cerrarSesion() {
+  try { await signOut(auth); } catch(e) {}
+  sessionStorage.clear();
+  try {
+    localStorage.removeItem('rcr_hub_data');
+    localStorage.removeItem('rcr_hub_cache_time');
+  } catch(e) {}
+  session = null; googleToken = null; hubData = null;
+  mostrarLogin();
+}
+
+// ── Render del Hub ─────────────────────────────────────────
+function iniciarHub() {
+  if (!session || !session.nombre) { mostrarLogin(); return; }
+
+  const nombre = session.nombre;
+  const partes = nombre.trim().split(/\s+/).filter(Boolean);
+  const iniciales = partes.length >= 2
+    ? (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
+    : nombre.substring(0, 2).toUpperCase();
+
+  document.getElementById('hub-avatar').textContent   = iniciales;
+  document.getElementById('hub-username').textContent = nombre;
+  document.getElementById('hub-role').textContent     = session.rol;
+  document.getElementById('hub-bienvenido').textContent = 'Bienvenido, ' + partes[0];
+
+  document.getElementById('btn-config').classList.toggle('hidden', session.rol !== 'Admin');
+
+  renderModulos();
+  mostrarHub();
+}
+
+// Módulos visibles: Admin ve todos; el resto solo los asignados
+function modulosVisibles() {
+  const todos = (hubData && hubData.modulos) || [];
+  if (session.rol === 'Admin') return todos;
+  const permitidos = session.modulos || [];
+  return todos.filter(m => permitidos.includes(m.id_modulo));
+}
+
+function renderModulos() {
+  const grid = document.getElementById('modulos-grid');
+  const modulos = modulosVisibles();
+
+  if (!modulos.length) {
+    grid.innerHTML = '<p style="color:var(--tl);font-size:13px">No tienes modulos asignados. Contacta al administrador.</p>';
+    return;
+  }
+
+  grid.innerHTML = modulos.map(function(m, i) {
+    var activo   = isActivo(m.activo);
+    var tieneURL = m.url && m.url.toString().trim() !== '';
+    var idMod    = m.id_modulo || '';
+    var url      = m.url || '';
+    var nombre   = m.nombre || '';
+    var inicial  = (nombre.trim()[0] || '?');
+
+    var clases  = activo && tieneURL ? '' : (session.rol === 'Admin' ? 'inactivo-admin' : 'inactivo');
+    var onclick = activo && tieneURL
+        ? "App.abrirModulo('" + escJs(url) + "')"
+        : (session.rol === 'Admin' ? "App.editarModulo('" + escJs(m._docId) + "')" : '');
+
+    return '<div class="modulo-card ' + clases + '" onclick="' + onclick + '">' +
+      '<div class="modulo-icon mi-' + (i % 4) + '">' + esc(inicial) + '</div>' +
+      '<div>' +
+        '<div class="modulo-nombre">' + esc(nombre) + '</div>' +
+        '<div class="modulo-desc" style="margin-top:4px">' + esc(m.descripcion || '') + '</div>' +
+      '</div>' +
+      '<span class="modulo-badge ' + (activo && tieneURL ? 'activo' : '') + '">' +
+        (activo && tieneURL ? 'Disponible' : 'Proximamente') +
+      '</span>' +
+      (session.rol === 'Admin'
+        ? '<button onclick="event.stopPropagation();App.editarModulo(\'' + escJs(m._docId) + '\')" style="position:absolute;top:12px;right:12px;border:none;background:none;cursor:pointer;color:var(--tl);font-size:16px"><i class="ti ti-pencil"></i></button>'
+        : '') +
+    '</div>';
+  }).join('');
+}
+
+function abrirModulo(url) {
+  if (!isValidUrl(url)) { showToast('URL invalida'); return; }
+  // Pasar sesión + token a la app hija (transitorio)
+  sessionStorage.setItem('rcr_session',   JSON.stringify(session));
+  if (googleToken) {
+    sessionStorage.setItem('rcr_token',     googleToken);
+    sessionStorage.setItem('rcr_token_exp', String(tokenExpiry));
+  }
+  window.location.href = url;
+}
+
+// ── Configuración (Admin) ──────────────────────────────────
+var CONFIG_TAB = 'modulos';
+
+function abrirConfiguracion() {
+  abrirModal(
+    '<div class="modal" style="max-width:660px">' +
+      '<div class="modal-head">' +
+        '<div class="modal-title"><i class="ti ti-settings"></i> Configuracion</div>' +
+        '<button class="modal-close" onclick="App.cerrarModal()"><i class="ti ti-x"></i></button>' +
+      '</div>' +
+      '<div class="modal-body">' +
+        '<div class="tabs-bar">' +
+          '<button class="tab-btn active" id="cfg-tab-modulos" onclick="App.switchCfgTab(\'modulos\')"><i class="ti ti-layout-grid"></i> Modulos</button>' +
+          '<button class="tab-btn" id="cfg-tab-usuarios" onclick="App.switchCfgTab(\'usuarios\')"><i class="ti ti-users"></i> Usuarios</button>' +
+        '</div>' +
+        '<div id="cfg-content"></div>' +
+      '</div>' +
+    '</div>'
+  );
+  switchCfgTab('modulos');
+}
+
+function switchCfgTab(tab) {
+  CONFIG_TAB = tab;
+  document.querySelectorAll('[id^="cfg-tab-"]').forEach(function(el) { el.classList.remove('active'); });
+  var tabEl = document.getElementById('cfg-tab-' + tab);
+  if (tabEl) tabEl.classList.add('active');
+  if (tab === 'modulos')  renderCfgModulos();
+  if (tab === 'usuarios') renderCfgUsuarios();
+}
+
+function renderCfgModulos() {
+  var modulos = (hubData.modulos || []);
+  var filas = modulos.map(function(m) {
+    var a = isActivo(m.activo);
+    return '<tr>' +
+      '<td style="font-weight:500">' + esc(m.nombre) + '</td>' +
+      '<td style="font-size:12px;color:var(--tm);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(m.url || '') + '">' + esc(m.url || '\u2014') + '</td>' +
+      '<td><span class="badge ' + (a ? 'badge-green' : 'badge-warn') + '">' + (a ? 'Activo' : 'Inactivo') + '</span></td>' +
+      '<td><div class="td-actions">' +
+        '<button class="btn btn-glass btn-sm" onclick="App.editarModulo(\'' + escJs(m._docId) + '\')"><i class="ti ti-pencil"></i></button>' +
+      '</div></td>' +
+    '</tr>';
+  }).join('');
+
+  document.getElementById('cfg-content').innerHTML =
+    '<div class="table-wrap">' +
+      '<table>' +
+        '<thead><tr><th>Nombre</th><th>URL</th><th>Estado</th><th></th></tr></thead>' +
+        '<tbody>' + (filas || '<tr><td colspan="4" style="text-align:center;color:var(--tl);padding:20px">Sin modulos</td></tr>') + '</tbody>' +
+      '</table>' +
+    '</div>';
+}
+
+function editarModulo(docId) {
+  var m = (hubData.modulos || []).find(function(x) { return x._docId === docId; });
+  if (!m) return;
+
+  var a = isActivo(m.activo);
+  var contenido =
+    '<div style="padding:16px 0">' +
+      '<div class="form-group">' +
+        '<label class="form-label">Nombre</label>' +
+        '<input type="text" class="form-input" id="mod-nombre" value="' + esc(m.nombre || '') + '" readonly style="background:#f8fbfd;color:var(--tm)">' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label class="form-label">URL</label>' +
+        '<input type="url" class="form-input" id="mod-url" placeholder="https://..." value="' + esc(m.url || '') + '">' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label class="form-label">Descripcion</label>' +
+        '<input type="text" class="form-input" id="mod-desc" value="' + esc(m.descripcion || '') + '">' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label class="form-label">Activo</label>' +
+        '<select class="form-select" id="mod-activo">' +
+          '<option value="TRUE"' + (a ? ' selected' : '') + '>Si</option>' +
+          '<option value="FALSE"' + (!a ? ' selected' : '') + '>No</option>' +
+        '</select>' +
+      '</div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:8px">' +
+        '<button class="btn btn-glass" onclick="App.switchCfgTab(\'modulos\')">Cancelar</button>' +
+        '<button class="btn btn-primary" onclick="App.guardarModulo(\'' + escJs(docId) + '\')"><i class="ti ti-check"></i> Guardar</button>' +
+      '</div>' +
+    '</div>';
+
+  document.getElementById('cfg-content').innerHTML = contenido;
+}
+
+async function guardarModulo(docId) {
+  var urlEl    = document.getElementById('mod-url');
+  var activoEl = document.getElementById('mod-activo');
+  var descEl   = document.getElementById('mod-desc');
+  if (!urlEl || !activoEl || !descEl) { showToast('Error en el formulario'); return; }
+
+  var url    = urlEl.value.trim();
+  var activo = activoEl.value === 'TRUE';
+  var desc   = descEl.value.trim();
+
+  if (url && !isValidUrl(url)) { showToast('URL invalida'); return; }
+
+  try {
+    await updateDoc(doc(db, 'Modulos', docId), { url: url, descripcion: desc, activo: activo });
+
+    var idx = hubData.modulos.findIndex(function(x) { return x._docId === docId; });
+    if (idx >= 0) {
+      hubData.modulos[idx] = Object.assign({}, hubData.modulos[idx], { url: url, descripcion: desc, activo: activo });
+    }
+    cacheData(hubData);
+    showToast('Modulo actualizado');
+    renderModulos();
+    switchCfgTab('modulos');
+  } catch(e) {
+    console.error('guardarModulo:', e);
+    showToast('Error al guardar');
+  }
+}
+
+function renderCfgUsuarios() {
+  var usuarios = hubData.usuarios || [];
+  var filas = usuarios.map(function(u) {
+    var rolClass = u.rol === 'Admin' ? 'badge-blue' : u.rol === 'Editor' ? 'badge-green' : 'badge-warn';
+    var a = isActivo(u.activo);
+    var nMods = Array.isArray(u.modulos) ? u.modulos.length : 0;
+    return '<tr>' +
+      '<td style="font-weight:500">' + esc(u.nombre) + '</td>' +
+      '<td style="font-size:12px;color:var(--tm)">' + esc(u.email) + '</td>' +
+      '<td><span class="badge ' + rolClass + '">' + esc(u.rol) + '</span></td>' +
+      '<td style="font-size:12px;color:var(--tm)">' + nMods + ' mod.</td>' +
+      '<td><span class="badge ' + (a ? 'badge-green' : 'badge-warn') + '">' + (a ? 'Activo' : 'Inactivo') + '</span></td>' +
+      '<td><div class="td-actions">' +
+        '<button class="btn btn-glass btn-sm" onclick="App.editarUsuario(\'' + escJs(u._docId) + '\')"><i class="ti ti-pencil"></i></button>' +
+      '</div></td>' +
+    '</tr>';
+  }).join('');
+
+  document.getElementById('cfg-content').innerHTML =
+    '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">' +
+      '<button class="btn btn-primary btn-sm" onclick="App.nuevoUsuario()"><i class="ti ti-plus"></i> Nuevo usuario</button>' +
+    '</div>' +
+    '<div class="table-wrap">' +
+      '<table>' +
+        '<thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Modulos</th><th>Activo</th><th></th></tr></thead>' +
+        '<tbody>' + (filas || '<tr><td colspan="6" style="text-align:center;color:var(--tl);padding:20px">Sin usuarios</td></tr>') + '</tbody>' +
+      '</table>' +
+    '</div>';
+}
+
+function nuevoUsuario() { editarUsuario(null); }
+
+function editarUsuario(docId) {
+  var u = docId ? (hubData.usuarios || []).find(function(x) { return x._docId === docId; }) : null;
+  var asignados = (u && Array.isArray(u.modulos)) ? u.modulos : [];
+
+  // Checkboxes de módulos
+  var checks = (hubData.modulos || []).map(function(m) {
+    var checked = asignados.indexOf(m.id_modulo) >= 0 ? ' checked' : '';
+    return '<label class="mod-check-item">' +
+      '<input type="checkbox" class="usr-mod-chk" value="' + esc(m.id_modulo) + '"' + checked + '>' +
+      '<span>' + esc(m.nombre) + '</span>' +
+      '<span class="mci-id">' + esc(m.id_modulo) + '</span>' +
+    '</label>';
+  }).join('');
+
+  var form =
+    '<div style="padding:16px 0">' +
+      '<div class="form-group">' +
+        '<label class="form-label">Nombre *</label>' +
+        '<input type="text" class="form-input" id="usr-nombre" value="' + esc(u ? u.nombre : '') + '">' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label class="form-label">Email *</label>' +
+        '<input type="email" class="form-input" id="usr-email" value="' + esc(u ? u.email : '') + '" placeholder="nombre@redesconrostro.org"' + (u ? ' readonly style="background:#f8fbfd;color:var(--tm)"' : '') + '>' +
+      '</div>' +
+      '<div class="form-grid-2">' +
+        '<div class="form-group">' +
+          '<label class="form-label">Rol</label>' +
+          '<select class="form-select" id="usr-rol">' +
+            '<option value="Admin"' + (u && u.rol === 'Admin' ? ' selected' : '') + '>Admin</option>' +
+            '<option value="Editor"' + (u && u.rol === 'Editor' ? ' selected' : '') + '>Editor</option>' +
+            '<option value="Visualizador"' + (u && u.rol === 'Visualizador' ? ' selected' : '') + '>Visualizador</option>' +
+          '</select>' +
+        '</div>' +
+        '<div class="form-group">' +
+          '<label class="form-label">Activo</label>' +
+          '<select class="form-select" id="usr-activo">' +
+            '<option value="true"' + (!u || u.activo !== false ? ' selected' : '') + '>Si</option>' +
+            '<option value="false"' + (u && u.activo === false ? ' selected' : '') + '>No</option>' +
+          '</select>' +
+        '</div>' +
+      '</div>' +
+      '<div class="form-group">' +
+        '<label class="form-label">Modulos asignados</label>' +
+        '<div class="mod-check-list">' + (checks || '<span style="font-size:12px;color:var(--tl)">Sin modulos</span>') + '</div>' +
+      '</div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:8px">' +
+        '<button class="btn btn-glass" onclick="App.switchCfgTab(\'usuarios\')">Cancelar</button>' +
+        '<button class="btn btn-primary" onclick="App.guardarUsuario(\'' + escJs(docId || '') + '\')"><i class="ti ti-check"></i> ' + (u ? 'Actualizar' : 'Guardar') + '</button>' +
+      '</div>' +
+    '</div>';
+
+  document.getElementById('cfg-content').innerHTML = form;
+}
+
+async function guardarUsuario(docId) {
+  var nombreEl = document.getElementById('usr-nombre');
+  var emailEl  = document.getElementById('usr-email');
+  var rolEl    = document.getElementById('usr-rol');
+  var activoEl = document.getElementById('usr-activo');
+  if (!nombreEl || !emailEl || !rolEl || !activoEl) { showToast('Error en el formulario'); return; }
+
+  var nombre = nombreEl.value.trim();
+  var email  = emailEl.value.trim().toLowerCase();
+  var rol    = rolEl.value;
+  var activo = activoEl.value === 'true';
+
+  var modulos = Array.prototype.slice.call(document.querySelectorAll('.usr-mod-chk'))
+    .filter(function(c) { return c.checked; })
+    .map(function(c) { return c.value; });
+
+  if (!nombre || !email) { showToast('Nombre y email son obligatorios'); return; }
+  if (!email.endsWith('@' + DOMAIN)) { showToast('Solo cuentas @' + DOMAIN); return; }
+
+  try {
+    if (docId) {
+      // Editar
+      await updateDoc(doc(db, 'Usuarios', docId), {
+        nombre: nombre, rol: rol, activo: activo, modulos: modulos
+      });
+      var idx = hubData.usuarios.findIndex(function(x) { return x._docId === docId; });
+      if (idx >= 0) {
+        hubData.usuarios[idx] = Object.assign({}, hubData.usuarios[idx],
+          { nombre: nombre, rol: rol, activo: activo, modulos: modulos });
+      }
+      // Si me edité a mí mismo, refrescar sesión
+      if (session && session._docId === docId) {
+        session.nombre = nombre; session.rol = rol; session.modulos = modulos;
+        sessionStorage.setItem('rcr_hub_session', JSON.stringify(session));
+        iniciarHub();
+      }
+    } else {
+      // Crear (evitar duplicado por email)
+      var existe = (hubData.usuarios || []).some(function(x) {
+        return (x.email || '').toLowerCase() === email;
+      });
+      if (existe) { showToast('Ya existe un usuario con ese email'); return; }
+
+      var nuevo = {
+        id_usuario: 'USR_' + Date.now(),
+        nombre: nombre, email: email, rol: rol, activo: activo, modulos: modulos
+      };
+      var ref = await addDoc(collection(db, 'Usuarios'), nuevo);
+      hubData.usuarios.push(Object.assign({ _docId: ref.id }, nuevo));
+    }
+
+    cacheData(hubData);
+    showToast(docId ? 'Usuario actualizado' : 'Usuario creado');
+    switchCfgTab('usuarios');
+  } catch(e) {
+    console.error('guardarUsuario:', e);
+    showToast('Error al guardar');
+  }
+}
+
+// ── Pantallas / UI ─────────────────────────────────────────
+function mostrarLogin() {
+  document.getElementById('screen-login').classList.remove('hidden');
+  document.getElementById('screen-loading').classList.add('hidden');
+  document.getElementById('screen-hub').classList.add('hidden');
+  var btn = document.getElementById('btn-login');
+  if (btn) btn.disabled = false;
+}
+function mostrarLoading() {
+  document.getElementById('screen-login').classList.add('hidden');
+  document.getElementById('screen-loading').classList.remove('hidden');
+  document.getElementById('screen-hub').classList.add('hidden');
+}
+function mostrarHub() {
+  document.getElementById('screen-login').classList.add('hidden');
+  document.getElementById('screen-loading').classList.add('hidden');
+  document.getElementById('screen-hub').classList.remove('hidden');
+}
+
+function showToast(msg, dur) {
+  dur = dur || 3500;
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(function() { t.classList.remove('show'); }, dur);
+}
+
+function abrirModal(html) {
+  cerrarModal();
+  var overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'modal-overlay';
+  overlay.innerHTML = html;
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) cerrarModal(); });
+  document.body.appendChild(overlay);
+}
+function cerrarModal() {
+  var m = document.getElementById('modal-overlay');
+  if (m) m.remove();
+}
+
+// ── Exponer al ámbito global (para onclick inline) ─────────
+window.iniciarLogin = iniciarLogin;
+window.cerrarSesion = cerrarSesion;
+window.abrirConfiguracion = abrirConfiguracion;
+window.App = {
+  abrirModulo: abrirModulo,
+  editarModulo: editarModulo,
+  guardarModulo: guardarModulo,
+  switchCfgTab: switchCfgTab,
+  cerrarModal: cerrarModal,
+  nuevoUsuario: nuevoUsuario,
+  editarUsuario: editarUsuario,
+  guardarUsuario: guardarUsuario
+};
+
+// ── Punto de entrada: estado de autenticación ──────────────
+onAuthStateChanged(auth, async function(user) {
+  // Restaurar token de Google guardado en esta sesión de pestaña
+  var t = sessionStorage.getItem('rcr_hub_token');
+  var exp = sessionStorage.getItem('rcr_hub_exp');
+  if (t && exp && Date.now() < parseInt(exp, 10) - TOKEN_MARGIN_MS) {
+    googleToken = t;
+    tokenExpiry = parseInt(exp, 10);
+  }
+
+  if (!user) {
+    booted = true;
+    mostrarLogin();
+    return;
+  }
+
+  if (!user.email || !user.email.toLowerCase().endsWith('@' + DOMAIN)) {
+    showToast('Solo cuentas @' + DOMAIN);
+    await signOut(auth);
+    mostrarLogin();
+    return;
+  }
+
+  mostrarLoading();
+  await cargarDatosYEntrar(user);
+  booted = true;
+});
 </script>
 </body>
 </html>
