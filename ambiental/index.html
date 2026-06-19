@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Dashboard Ambiental — ReCircula 360</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script type="module" src="firebase-init.js"></script>
+</head>
+<body>
+
+<!-- LOADING -->
+<div id="screen-loading" class="hidden">
+  <div class="spinner"></div>
+  <div class="load-text">Cargando ReCircula 360...</div>
+</div>
+
+<!-- APP -->
+<div id="screen-app" class="hidden">
+
+  <div class="main-area">
+    <div class="main-content" id="main-content"></div>
+  </div>
+
+  <!-- BOTTOM NAV FLOTANTE -->
+  <nav class="bottom-nav" id="bottom-nav">
+    <button class="bn-item active" id="nav-dashboard"   onclick="navTo('dashboard')"   title="Inicio"></button>
+    <button class="bn-item"        id="nav-entregas"    onclick="navTo('entregas')"    title="Entregas"></button>
+    <button class="bn-item"        id="nav-compradores" onclick="navTo('compradores')" title="Compradores"></button>
+  </nav>
+
+  <!-- FILTER DRAWER (compartido) -->
+  <aside class="filter-drawer" id="filter-drawer">
+    <div class="filter-drawer-head">
+      <div class="filter-drawer-title">Filtros de búsqueda</div>
+      <button class="modal-close" onclick="closeFilterDrawer()" title="Cerrar"></button>
+    </div>
+    <div class="filter-drawer-body" id="filter-drawer-body"></div>
+    <div class="filter-drawer-foot">
+      <button class="btn btn-glass" onclick="clearFilters()">Limpiar</button>
+      <button class="btn btn-primary" onclick="applyFilters()">Aplicar</button>
+    </div>
+  </aside>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- Scripts -->
+<script src="icons.js"></script>
+<script src="app.js"></script>
+<script src="dashboard.js"></script>
+<script src="entregas.js"></script>
+<script src="compradores.js"></script>
+
+</body>
+</html>
