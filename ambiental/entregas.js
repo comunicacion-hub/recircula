@@ -46,6 +46,9 @@ function renderEntregas() {
           ${icoHTML('filter')}
           <span class="filter-badge" id="badge-entregas" style="display:none;">0</span>
         </button>
+        <button class="hdr-circle" onclick="exportarEntregasExcel()" title="Descargar Excel">
+          ${icoHTML('download')}
+        </button>
         <button class="hdr-circle hdr-circle-primary" onclick="abrirFormEntrega()" title="Nueva entrega">
           ${icoHTML('plus')}
         </button>
@@ -122,11 +125,6 @@ function renderTablaEntregas() {
         <td data-hide-mobile style="text-align:right"><strong>Suave</strong><br>${fmtNum(suaveKg)} kg</td>
         <td data-hide-mobile style="text-align:right"><strong>Duro</strong><br>${fmtNum(duroKg)} kg</td>
         <td data-hide-mobile style="text-align:right;font-weight:700;color:#0a9e83"><strong>Valor</strong><br>${fmtMoney(total)}</td>
-        <td data-hide-mobile><strong>Evidencia</strong><br>
-          ${carpeta
-            ? `<button class="icon-btn" onclick="window.open('https://drive.google.com/drive/folders/${idCarpeta}','_blank')" title="Ver carpeta">${icoHTML('folder')}</button>`
-            : '<span style="color:var(--text-dim);font-size:12px">—</span>'}
-        </td>
         <td data-actions-row>
           <div class="td-actions">
             ${carpeta
@@ -155,7 +153,6 @@ function renderTablaEntregas() {
             <th style="text-align:right">Suave kg</th>
             <th style="text-align:right">Duro kg</th>
             <th style="text-align:right">Valor total</th>
-            <th>Evidencia</th>
             <th></th>
           </tr>
         </thead>
@@ -502,5 +499,58 @@ async function guardarEntrega(id) {
     showToast('Error al guardar');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = id ? 'Actualizar' : 'Guardar entrega'; }
+  }
+}
+
+// ============================================================
+// EXPORTAR A EXCEL (respeta los filtros aplicados)
+// ============================================================
+
+async function exportarEntregasExcel() {
+  if (!ENTREGAS_DATA || !ENTREGAS_DATA.length) {
+    showToast('No hay datos para exportar. Aplicá un filtro primero.');
+    return;
+  }
+  try {
+    await cargarSheetJS();
+
+    const mats = (CAT.materiales || []);
+
+    const header = ['Fecha','Año','Mes','Asociación','Provincia','Comprador','Nivel','Actividad fuente'];
+    mats.forEach(m => { header.push(m['Nombre'] + ' Kilos', m['Nombre'] + ' Precio', m['Nombre'] + ' Valor'); });
+    header.push('Valor Total','Observaciones');
+
+    const filas = ENTREGAS_DATA.map(e => {
+      const r = [
+        e['Fecha'] || '',
+        e['Año'] || '',
+        e['Mes'] || '',
+        e['_nombreAsociacion'] || '',
+        e['Provincia'] || e['_provinciaAsociacion'] || '',
+        e['_nombreComprador'] || '',
+        e['_nivelComprador'] || e['Nivel Intermediacion'] || '',
+        e['Actividad Fuente'] || '',
+      ];
+      mats.forEach(m => {
+        const n = m['Nombre'];
+        r.push(
+          parseFloat(e[n + ' Kilos'])       || 0,
+          parseFloat(e[n + ' Precio'])      || 0,
+          parseFloat(e[n + ' Valor Venta']) || 0
+        );
+      });
+      r.push(parseFloat(e['Valor Total']) || 0, e['Observaciones'] || '');
+      return r;
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet([header, ...filas]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Entregas');
+    const fecha = new Date().toISOString().substring(0, 10);
+    XLSX.writeFile(wb, `Entregas_${fecha}.xlsx`);
+    showToast(`${ENTREGAS_DATA.length} entrega${ENTREGAS_DATA.length !== 1 ? 's' : ''} exportada${ENTREGAS_DATA.length !== 1 ? 's' : ''} ✓`);
+  } catch (e) {
+    console.error(e);
+    showToast('Error al exportar el Excel');
   }
 }
