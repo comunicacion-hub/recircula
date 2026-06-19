@@ -197,11 +197,8 @@ async function establecerSesion(user) {
   }
 }
 
-async function cerrarSesion() {
-  try { await window.fb.signOut(window.fb.auth); } catch (e) {}
-  sessionStorage.clear();
-  SESSION = null;
-  CAT = { asociaciones: [], compradores: [], materiales: [], entregas: [] };
+// "Salir" del módulo: vuelve al Hub SIN cerrar la sesión (se conserva el login)
+function cerrarSesion() {
   window.location.href = HUB_URL;
 }
 
@@ -374,6 +371,18 @@ async function eliminarCompradorFS(docId) {
 
 // No-op: la caché ahora la maneja Firestore (persistencia offline)
 function invalidarCache() {}
+
+// Carga SheetJS (XLSX) bajo demanda para exportar a Excel
+async function cargarSheetJS() {
+  if (window.XLSX) return;
+  await new Promise(function(resolve, reject) {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
 
 // ============================================================
 // NAVEGACIÓN
