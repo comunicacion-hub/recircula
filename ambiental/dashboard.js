@@ -75,7 +75,7 @@ async function renderDashboard() {
           icoHTML('filter') +
           '<span class="filter-badge" id="badge-dashboard" style="display:none;">0</span>' +
         '</button>' +
-        '<button class="hdr-circle hdr-circle-danger" onclick="cerrarSesion()" title="Cerrar sesión">' +
+        '<button class="hdr-circle hdr-circle-danger" onclick="cerrarSesion()" title="Volver al Hub">' +
           icoHTML('logout') +
         '</button>' +
       '</div>' +
