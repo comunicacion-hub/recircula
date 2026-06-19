@@ -39,6 +39,9 @@ function renderCompradores() {
           ${icoHTML('filter')}
           <span class="filter-badge" id="badge-compradores" style="display:none;">0</span>
         </button>
+        <button class="hdr-circle" onclick="exportarCompradoresExcel()" title="Descargar Excel">
+          ${icoHTML('download')}
+        </button>
         <button class="hdr-circle hdr-circle-primary" onclick="abrirFormComprador()" title="Nuevo comprador">
           ${icoHTML('plus')}
         </button>
@@ -295,5 +298,48 @@ async function eliminarComprador(id) {
   } catch (e) {
     console.error(e);
     showToast('Error al eliminar');
+  }
+}
+
+// ============================================================
+// EXPORTAR A EXCEL (respeta los filtros aplicados)
+// ============================================================
+
+async function exportarCompradoresExcel() {
+  // Mismo filtrado que la tabla
+  let datos = (CAT.compradores || []).slice();
+  const fProv  = COMPRADORES_FILTROS.provincia || [];
+  const fNivel = COMPRADORES_FILTROS.nivel     || [];
+  const filtrarPorProv  = fProv.length  > 0 && !fProv.includes('__ALL__');
+  const filtrarPorNivel = fNivel.length > 0 && !fNivel.includes('__ALL__');
+  if (filtrarPorProv)  datos = datos.filter(c => fProv.includes(c['Provincia']));
+  if (filtrarPorNivel) datos = datos.filter(c => fNivel.includes(c['Nivel Intermediacion'] || c['Nivel']));
+
+  if (!datos.length) {
+    showToast('No hay compradores para exportar');
+    return;
+  }
+
+  try {
+    await cargarSheetJS();
+
+    const header = ['Nombre','Nivel intermediación','Provincia','Destino final','Activo'];
+    const filas = datos.map(c => [
+      c['Nombre'] || '',
+      c['Nivel Intermediacion'] || c['Nivel'] || '',
+      c['Provincia'] || '',
+      c['Destino Final'] || '',
+      c['Activo'] === true ? 'Sí' : 'No',
+    ]);
+
+    const ws = XLSX.utils.aoa_to_sheet([header, ...filas]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Compradores');
+    const fecha = new Date().toISOString().substring(0, 10);
+    XLSX.writeFile(wb, `Compradores_${fecha}.xlsx`);
+    showToast(`${datos.length} comprador${datos.length !== 1 ? 'es' : ''} exportado${datos.length !== 1 ? 's' : ''} ✓`);
+  } catch (e) {
+    console.error(e);
+    showToast('Error al exportar el Excel');
   }
 }
