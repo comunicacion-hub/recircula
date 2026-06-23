@@ -67,6 +67,22 @@ function renderEntregas() {
 // CARGAR ENTREGAS (filtrado local sobre CAT.entregas)
 // ============================================================
 
+// Clave de orden por período operativo (Año + Mes): más reciente arriba.
+function _periodoOrden(e) {
+  const ORDEN_MES = {
+    enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6,
+    julio: 7, agosto: 8, septiembre: 9, setiembre: 9, octubre: 10, noviembre: 11, diciembre: 12,
+  };
+  const anio = parseInt(e['Año'], 10) || 0;
+  const k = normKey(e['Mes']);            // "abril", "mayo"… o "04" si fuera numérico
+  let mes = ORDEN_MES[k] || 0;
+  if (!mes && /^\d{1,2}$/.test(k)) {
+    const n = parseInt(k, 10);
+    if (n >= 1 && n <= 12) mes = n;
+  }
+  return anio * 100 + mes;
+}
+
 async function cargarEntregas() {
   const wrap = document.getElementById('entregas-table-wrap');
   if (!wrap) return;
@@ -77,7 +93,13 @@ async function cargarEntregas() {
     pasaFiltro(ENTREGAS_FILTROS.mes,        e['Mes']) &&
     pasaFiltro(ENTREGAS_FILTROS.provincia,  e['Provincia']) &&
     pasaFiltro(ENTREGAS_FILTROS.asociacion, e['ID_Asociacion'])
-  ).sort((a, b) => String(b['Fecha'] || '').localeCompare(String(a['Fecha'] || '')));
+  ).sort((a, b) => {
+    const dif = _periodoOrden(b) - _periodoOrden(a);   // período: último mes arriba, primero al fondo
+    if (dif !== 0) return dif;
+    const fb = String(b['Fecha'] || ''), fa = String(a['Fecha'] || '');
+    if (fb !== fa) return fb.localeCompare(fa);          // desempate: fecha de carga más reciente
+    return String(a['_nombreAsociacion'] || '').localeCompare(String(b['_nombreAsociacion'] || ''));
+  });
 
   ENTREGAS_LOADED = true;
   renderTablaEntregas();
