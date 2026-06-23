@@ -1,75 +1,97 @@
 // ============================================================
 // RECIRCULA 360 — precios.js
 // Sección: Variación de Precios por Provincia
-// Min/máx/promedio de precio por material, provincia y mes.
-// Consume CAT.entregas y CAT.materiales (ya cargados por app.js).
-// Provincia = provincia de la asociación. Defaults = materiales priorizables.
+// Consume CAT.entregas / CAT.materiales. Filtros en el drawer global.
+// Lenguaje visual heredado de styles.css (gradientes A–E, .card, .table-wrap).
 // ============================================================
 
 const PRECIOS = (() => {
 
-  // Meses en español para display
   const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
-  // Paleta para las provincias (cicla si hay más de 10)
-  const COLORES = [
-    '#0778bf','#5bbd70','#F5AD21','#F82D72','#506CFF',
-    '#18AE97','#FF751F','#9FDA60','#86d2da','#FF376F'
+  // Gradientes idénticos a styles.css (A–E). Stroke por url(#id); leyenda por var(--grad-*).
+  const GRADS = [
+    { id:'prGradB', from:'#33A8DE', to:'#506CFF', varName:'--grad-b' },
+    { id:'prGradC', from:'#18AE97', to:'#0BC3FF', varName:'--grad-c' },
+    { id:'prGradD', from:'#F5AD21', to:'#9FDA60', varName:'--grad-d' },
+    { id:'prGradE', from:'#F82D72', to:'#FF85FF', varName:'--grad-e' },
+    { id:'prGradA', from:'#FF751F', to:'#FF376F', varName:'--grad-a' },
   ];
 
+  // Nombres prioritarios por defecto, comparados con normKey() (tolera acentos/mayúsculas)
+  const PRIORIDAD_KEYS = ['pet', 'plastico_suave', 'plastico_duro'];
+
+  // Íconos (trazo Outfit/Lucide, mismo estilo que el resto del shell)
+  const ICO_FUNNEL   = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>';
+  const ICO_DOWNLOAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+
   // Estado
-  let _datos = [];           // [{ provincia, anio, mes, material, precio }]
-  let _materiales = [];      // [{ nombre, priorizable }] desde catálogo
+  let _datos = [];          // [{ provincia, anio, mes, material, precio }]
+  let _materiales = [];     // [{ nombre, priorizable }]
   let _anios = [];
   let _provincias = [];
-  let _matSel = [];          // nombres de material seleccionados
-  let _anioSel = null;
-  let _provSel = 'TODAS';
-  let _matGrafico = null;    // nombre del material activo en el gráfico
+  let _matsActivos = [];    // materiales mostrados (derivado de _fMats)
+  let _matGrafico = null;   // material activo en el gráfico
 
-  // ── Inicializar sección ────────────────────────────────────
+  // Filtros (seleccionados en el drawer)
+  let _fAnios = [];
+  let _fProvs = [];
+  let _fMats  = [];
+
+  // ── Init ───────────────────────────────────────────────────
   function init() {
     try {
       _procesar();
       if (!_datos.length) {
-        _render('<div class="precios-wrap"><div class="card-section"><p class="p-empty">No hay entregas con precios cargados todavía.</p></div></div>');
+        _render(_header() + '<div class="card"><p class="pr-empty">No hay entregas con precios cargados todavía.</p></div>');
         return;
       }
+      _registrarFiltros();
+      _matsActivos = _resolverMats();
+      if (!_matsActivos.includes(_matGrafico)) _matGrafico = _matsActivos[0] ?? null;
       _renderUI();
+      if (typeof updateFilterBadge === 'function') updateFilterBadge('precios');
     } catch (e) {
       console.error('precios.js init:', e);
-      _render('<div class="precios-wrap"><div class="card-section"><p class="p-empty" style="color:#F82D72">Ocurrió un error al preparar los datos.</p></div></div>');
+      _render(_header() + '<div class="card"><p class="pr-empty" style="color:var(--err)">Ocurrió un error al preparar los datos.</p></div>');
     }
   }
 
-  // Nombres prioritarios por defecto (PET / Plástico Suave / Plástico Duro),
-  // comparados con normKey() para tolerar acentos y mayúsculas del catálogo.
-  const PRIORIDAD_KEYS = ['pet', 'plastico_suave', 'plastico_duro'];
-
   // ── Procesar datos desde CAT (sin releer Firestore) ────────
   function _procesar() {
-    // Todos los materiales del catálogo (mismo criterio que entregaFromFS, que
-    // los recorre sin filtrar). El precio de cada material vive en la entrega
-    // bajo la clave  "<Nombre> Precio"  que arma entregaFromFS.
     _materiales = (CAT.materiales || [])
       .map(m => ({ nombre: m['Nombre'], priorizable: m['Priorizable'] === true }))
       .filter(m => m.nombre);
 
     const rows = [];
     (CAT.entregas || []).forEach(e => {
-      const fecha = e['Fecha'] || '';
-      if (!/^\d{4}-\d{2}/.test(fecha)) return;        // necesitamos año-mes
-      const anio = parseInt(fecha.slice(0, 4), 10);
-      const mes  = parseInt(fecha.slice(5, 7), 10) - 1; // 0-index
+      // Mes = mes operativo del registro (campo Mes). NO se deriva de Fecha,
+      // porque Fecha es la fecha de carga (puede caer en otro mes).
+      const mes = _mesAIndice(e['Mes']);
+      if (mes === null) return; // sin mes válido → se omite
 
-      // Provincia de la asociación (con respaldos)
+      // Año operativo: parte de la Fecha de carga, pero si el mes operativo y
+      // el mes de carga difieren por medio año o más, la carga cruzó el límite
+      // de año (ej. diciembre cargado en enero) y se ajusta.
+      let anio = null;
+      const f = e['Fecha'] || '';
+      if (/^\d{4}-\d{2}/.test(f)) {
+        const uy = parseInt(f.slice(0, 4), 10);          // año de carga
+        const um = parseInt(f.slice(5, 7), 10) - 1;      // mes de carga (0–11)
+        anio = uy;
+        const diff = mes - um;
+        if (diff >= 6) anio = uy - 1;        // operativo muy adelante → carga rodó al año siguiente
+        else if (diff <= -6) anio = uy + 1;  // operativo muy atrás → registro anticipado
+      } else {
+        const a = parseInt(e['Año'], 10);    // sin Fecha válida → campo Año tal cual
+        if (!isNaN(a) && a >= 2000) anio = a;
+      }
+      if (anio === null || isNaN(anio)) return;
+
       const provincia = e['_provinciaAsociacion'] || e['Provincia'] || '—';
-
       _materiales.forEach(({ nombre }) => {
         const precio = parseFloat(e[nombre + ' Precio']);
-        if (!isNaN(precio) && precio > 0) {
-          rows.push({ provincia, anio, mes, material: nombre, precio });
-        }
+        if (!isNaN(precio) && precio > 0) rows.push({ provincia, anio, mes, material: nombre, precio });
       });
     });
 
@@ -77,62 +99,115 @@ const PRECIOS = (() => {
     _anios = [...new Set(rows.map(r => r.anio))].sort((a, b) => b - a);
     _provincias = [...new Set(rows.map(r => r.provincia))].filter(p => p !== '—').sort();
 
-    if (!_anioSel || !_anios.includes(_anioSel)) _anioSel = _anios[0] ?? null;
-
-    // Selección inicial: priorizables con datos → si no, PET/Suave/Duro por
-    // nombre → si no, los primeros 3 que tengan datos.
-    if (!_matSel.length) {
-      const conDatos = new Set(rows.map(r => r.material));
-      const disponibles = _materiales.filter(m => conDatos.has(m.nombre));
-      let def = disponibles.filter(m => m.priorizable).map(m => m.nombre);
-      if (!def.length) def = disponibles.filter(m => PRIORIDAD_KEYS.includes(normKey(m.nombre))).map(m => m.nombre);
-      if (!def.length) def = disponibles.slice(0, 3).map(m => m.nombre);
-      _matSel = def;
-    }
-    if (!_matGrafico || !_matSel.includes(_matGrafico)) _matGrafico = _matSel[0] ?? null;
+    // Defaults (solo la primera vez)
+    if (!_fAnios.length) _fAnios = _anios.length ? [String(_anios[0])] : [];
+    if (!_fProvs.length) _fProvs = ['__ALL__'];
+    if (!_fMats.length)  _fMats  = _matsPorDefecto();
+    if (!_matGrafico) _matGrafico = _fMats.filter(m => m !== '__ALL__')[0] ?? null;
   }
 
-  // ── Estadísticas para un material ──────────────────────────
-  // { [provincia]: { [mes]: { min, max, avg, n } } }
+  function _matsPorDefecto() {
+    const conDatos = new Set(_datos.map(r => r.material));
+    const disp = _materiales.filter(m => conDatos.has(m.nombre));
+    let def = disp.filter(m => m.priorizable).map(m => m.nombre);
+    if (!def.length) def = disp.filter(m => PRIORIDAD_KEYS.includes(normKey(m.nombre))).map(m => m.nombre);
+    if (!def.length) def = disp.slice(0, 3).map(m => m.nombre);
+    return def;
+  }
+
+  function _resolverMats() {
+    const conDatos = new Set(_datos.map(r => r.material));
+    let sel = _fMats.filter(m => m !== '__ALL__');
+    if (!sel.length) sel = _materiales.map(m => m.nombre);
+    return sel.filter(m => conDatos.has(m));
+  }
+
+  // Convierte el campo Mes a índice 0–11. Acepta número (4 / "04") o
+  // nombre en español, completo o abreviado, tolerante a acentos y mayúsculas.
+  function _mesAIndice(raw) {
+    if (raw === null || raw === undefined || raw === '') return null;
+    const txt = String(raw).trim();
+    // Numérico: "4", "04", "4.0"
+    if (/^\d{1,2}(\.0+)?$/.test(txt)) {
+      const n = parseInt(txt, 10);
+      return (n >= 1 && n <= 12) ? n - 1 : null;
+    }
+    // Nombre de mes (usa normKey global → minúsculas sin acentos)
+    const NOMBRES = {
+      enero: 0, ene: 0,
+      febrero: 1, feb: 1,
+      marzo: 2, mar: 2,
+      abril: 3, abr: 3,
+      mayo: 4, may: 4,
+      junio: 5, jun: 5,
+      julio: 6, jul: 6,
+      agosto: 7, ago: 7,
+      septiembre: 8, setiembre: 8, sep: 8, sept: 8, set: 8,
+      octubre: 9, oct: 9,
+      noviembre: 10, nov: 10,
+      diciembre: 11, dic: 11,
+    };
+    const k = normKey(txt);
+    return (k in NOMBRES) ? NOMBRES[k] : null;
+  }
+
+  // ── Filtros en el drawer global ────────────────────────────
+  function _registrarFiltros() {
+    if (typeof registerFilterConfig !== 'function') return;
+    const conDatos = new Set(_datos.map(r => r.material));
+    registerFilterConfig('precios', {
+      badgeId: 'pr-filter-badge',
+      sections: [
+        { key: 'anio', title: 'Año',       type: 'options', options: _anios.map(a => ({ val: String(a), lbl: String(a) })) },
+        { key: 'prov', title: 'Provincia', type: 'options', options: _provincias.map(p => ({ val: p, lbl: p })) },
+        { key: 'mat',  title: 'Material',  type: 'options', options: _materiales.filter(m => conDatos.has(m.nombre)).map(m => ({ val: m.nombre, lbl: m.nombre })) },
+      ],
+      getValue: (k) => k === 'anio' ? _fAnios : k === 'prov' ? _fProvs : _fMats,
+      setValue: (k, v) => { if (k === 'anio') _fAnios = v; else if (k === 'prov') _fProvs = v; else _fMats = v; },
+      apply: _aplicarFiltros,
+    });
+  }
+
+  function _aplicarFiltros() {
+    _matsActivos = _resolverMats();
+    if (!_matsActivos.includes(_matGrafico)) _matGrafico = _matsActivos[0] ?? null;
+    const t = document.getElementById('pr-mat-tabs');     if (t) t.innerHTML = _buildTabs();
+    const c = document.getElementById('pr-chart-container'); if (c) c.innerHTML = _buildChart();
+    const k = document.getElementById('pr-comparativa');  if (k) k.innerHTML = _buildComparativa();
+  }
+
+  // ── Estadísticas (respeta filtros vía pasaFiltro) ──────────
   function _calcStats(material) {
     const filtrado = _datos.filter(r =>
       r.material === material &&
-      r.anio === _anioSel &&
-      (_provSel === 'TODAS' || r.provincia === _provSel)
+      pasaFiltro(_fAnios, String(r.anio)) &&
+      pasaFiltro(_fProvs, r.provincia)
     );
-
     const mapa = {};
     filtrado.forEach(({ provincia, mes, precio }) => {
       (mapa[provincia] = mapa[provincia] || {});
       (mapa[provincia][mes] = mapa[provincia][mes] || []).push(precio);
     });
-
     const stats = {};
     Object.entries(mapa).forEach(([prov, meses]) => {
       stats[prov] = {};
-      Object.entries(meses).forEach(([m, precios]) => {
-        const min = Math.min(...precios);
-        const max = Math.max(...precios);
-        const avg = precios.reduce((a, b) => a + b, 0) / precios.length;
-        stats[prov][+m] = { min, max, avg: +avg.toFixed(3), n: precios.length };
+      Object.entries(meses).forEach(([m, ps]) => {
+        const min = Math.min(...ps), max = Math.max(...ps);
+        const avg = ps.reduce((a, b) => a + b, 0) / ps.length;
+        stats[prov][+m] = { min, max, avg: +avg.toFixed(3), n: ps.length };
       });
     });
     return stats;
   }
 
-  // ── Filas para la tabla comparativa ────────────────────────
   function _calcResumen() {
-    const mats = _matSel.length ? _matSel : _materiales.map(m => m.nombre);
     const rows = [];
-    mats.forEach(mat => {
+    _matsActivos.forEach(mat => {
       const stats = _calcStats(mat);
-      const provs = _provSel === 'TODAS' ? Object.keys(stats).sort() : [_provSel].filter(p => stats[p]);
+      const provs = Object.keys(stats).sort((a, b) => _provincias.indexOf(a) - _provincias.indexOf(b));
       provs.forEach(prov => {
         const meses = Array.from({ length: 12 }, (_, i) => ({
-          mes: i,
-          avg: stats[prov][i]?.avg ?? null,
-          min: stats[prov][i]?.min ?? null,
-          max: stats[prov][i]?.max ?? null,
+          mes: i, avg: stats[prov][i]?.avg ?? null, min: stats[prov][i]?.min ?? null, max: stats[prov][i]?.max ?? null,
         }));
         const conDato = meses.filter(m => m.avg !== null);
         let tendencia = 0;
@@ -143,250 +218,216 @@ const PRECIOS = (() => {
     return rows;
   }
 
-  // ── Render principal ───────────────────────────────────────
-  function _renderUI() {
-    const html = `
-      <div class="precios-wrap">
-
-        <div class="precios-filtros card-section">
-          <div class="filtro-grupo">
-            <label>Año</label>
-            <select id="pr-anio" onchange="PRECIOS._onFiltro()">
-              ${_anios.map(a => `<option value="${a}" ${a===_anioSel?'selected':''}>${a}</option>`).join('')}
-            </select>
-          </div>
-          <div class="filtro-grupo">
-            <label>Provincia</label>
-            <select id="pr-prov" onchange="PRECIOS._onFiltro()">
-              <option value="TODAS">Todas</option>
-              ${_provincias.map(p => `<option value="${esc(p)}" ${p===_provSel?'selected':''}>${esc(p)}</option>`).join('')}
-            </select>
-          </div>
-          <div class="filtro-grupo filtro-materiales">
-            <label>Materiales</label>
-            <div class="mat-checkboxes">
-              ${_materiales.map(m => `
-                <label class="mat-chip ${_matSel.includes(m.nombre)?'active':''}">
-                  <input type="checkbox" value="${esc(m.nombre)}" ${_matSel.includes(m.nombre)?'checked':''} onchange="PRECIOS._onMatCheck(this)">
-                  ${esc(m.nombre)}
-                </label>
-              `).join('')}
-            </div>
-          </div>
+  // ── Header (page-header + acciones) ────────────────────────
+  function _header() {
+    return `
+      <div class="page-header">
+        <div>
+          <div class="page-title">Precios</div>
+          <div class="page-sub">Variación por provincia</div>
         </div>
-
-        <div class="card-section precios-chart-wrap">
-          <div class="section-header-row">
-            <h3>Evolución mensual — precio promedio ($/kg)</h3>
-            <div class="chart-mat-tabs">
-              ${_matSel.map(nombre => `
-                <button class="mat-tab ${nombre===_matGrafico?'active':''}" data-mat="${esc(nombre)}" onclick="PRECIOS._onTabMat('${jsEsc(nombre)}')">${esc(nombre)}</button>
-              `).join('')}
-            </div>
-          </div>
-          <div id="pr-chart-container">${_buildChart()}</div>
+        <div class="hdr-actions">
+          <button class="hdr-circle" onclick="openFilterDrawer('precios')" title="Filtros" aria-label="Filtros">
+            ${ICO_FUNNEL}<span class="filter-badge" id="pr-filter-badge" style="display:none"></span>
+          </button>
+          <button class="hdr-circle" onclick="PRECIOS._exportar()" title="Descargar Excel" aria-label="Descargar Excel">
+            ${ICO_DOWNLOAD}
+          </button>
         </div>
-
-        <div class="card-section">
-          <h3>Comparativa por provincia</h3>
-          <div class="precios-table-scroll">${_buildTabla()}</div>
-        </div>
-
-      </div>
-    `;
-    _render(html);
+      </div>`;
   }
 
-  // ── Gráfico SVG de líneas + leyenda HTML ───────────────────
+  function _renderUI() {
+    _render(`
+      ${_header()}
+      <div class="card">
+        <div class="card-title">
+          <span>Evolución mensual · $/kg</span>
+          <div class="cat-chips pr-tabs" id="pr-mat-tabs">${_buildTabs()}</div>
+        </div>
+        <div id="pr-chart-container">${_buildChart()}</div>
+      </div>
+      <div id="pr-comparativa">${_buildComparativa()}</div>
+    `);
+  }
+
+  // ── Tabs de material (estilo .cat-chip del dashboard) ──────
+  function _buildTabs() {
+    if (!_matsActivos.length) return '';
+    return _matsActivos.map(nombre =>
+      `<button class="cat-chip ${nombre === _matGrafico ? 'active' : ''}" data-mat="${esc(nombre)}" onclick="PRECIOS._onTabMat('${jsEsc(nombre)}')">${esc(nombre)}</button>`
+    ).join('');
+  }
+
+  // ── Gráfico SVG (gradientes A–E + leyenda) ─────────────────
   function _buildChart() {
-    if (!_matGrafico) return '<p class="p-empty">Seleccioná al menos un material.</p>';
+    if (!_matGrafico) return '<p class="pr-empty">Seleccioná al menos un material.</p>';
     const stats = _calcStats(_matGrafico);
-    const provs = _provSel === 'TODAS' ? Object.keys(stats).sort() : [_provSel].filter(p => stats[p]);
-    if (!provs.length) return '<p class="p-empty">Sin datos para este filtro.</p>';
+    const provs = Object.keys(stats).sort((a, b) => _provincias.indexOf(a) - _provincias.indexOf(b));
+    if (!provs.length) return '<p class="pr-empty">Sin datos para este filtro.</p>';
 
     let allAvgs = [];
     provs.forEach(p => Object.values(stats[p]).forEach(s => allAvgs.push(s.avg)));
-    if (!allAvgs.length) return '<p class="p-empty">Sin datos para este filtro.</p>';
+    if (!allAvgs.length) return '<p class="pr-empty">Sin datos para este filtro.</p>';
 
-    const W = 680, H = 240, PAD = { t: 20, r: 20, b: 36, l: 56 };
-    const innerW = W - PAD.l - PAD.r;
-    const innerH = H - PAD.t - PAD.b;
-
+    const W = 720, H = 260, PAD = { t: 18, r: 18, b: 34, l: 58 };
+    const innerW = W - PAD.l - PAD.r, innerH = H - PAD.t - PAD.b;
     const lo = Math.min(...allAvgs), hi = Math.max(...allAvgs);
     const yMin = Math.max(0, lo === hi ? lo * 0.9 : lo - (hi - lo) * 0.15);
     const yMax = lo === hi ? (hi * 1.1 || 1) : hi + (hi - lo) * 0.15;
+    const xS = m => PAD.l + (m / 11) * innerW;
+    const yS = v => PAD.t + innerH - ((v - yMin) / ((yMax - yMin) || 1)) * innerH;
 
-    const xScale = m => PAD.l + (m / 11) * innerW;
-    const yScale = v => PAD.t + innerH - ((v - yMin) / (yMax - yMin || 1)) * innerH;
+    const defs = `<defs>${GRADS.map(g =>
+      `<linearGradient id="${g.id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${g.from}"/><stop offset="100%" stop-color="${g.to}"/></linearGradient>`
+    ).join('')}</defs>`;
 
-    const yTicks = 4;
-    const grid = Array.from({ length: yTicks + 1 }, (_, i) => {
-      const v = yMin + (i / yTicks) * (yMax - yMin);
-      const y = yScale(v);
-      return `<line x1="${PAD.l}" y1="${y}" x2="${PAD.l+innerW}" y2="${y}" stroke="rgba(0,35,67,0.08)" stroke-width="1"/>
-        <text x="${PAD.l-8}" y="${y+4}" text-anchor="end" font-size="10" fill="#888">$${v.toFixed(2)}</text>`;
+    const grid = Array.from({ length: 5 }, (_, i) => {
+      const v = yMin + (i / 4) * (yMax - yMin), y = yS(v);
+      return `<line x1="${PAD.l}" y1="${y}" x2="${PAD.l + innerW}" y2="${y}" stroke="rgba(0,0,0,0.06)"/>
+        <text x="${PAD.l - 10}" y="${y + 4}" text-anchor="end" font-size="11" fill="#a0a0b0">$${v.toFixed(2)}</text>`;
     }).join('');
 
-    const xLabels = MESES.map((m, i) =>
-      `<text x="${xScale(i)}" y="${PAD.t+innerH+16}" text-anchor="middle" font-size="10" fill="#888">${m}</text>`
+    const xLab = MESES.map((m, i) =>
+      `<text x="${xS(i)}" y="${PAD.t + innerH + 18}" text-anchor="middle" font-size="11" fill="#a0a0b0">${m}</text>`
     ).join('');
 
-    const lineas = provs.map((prov, idx) => {
-      const color = COLORES[idx % COLORES.length];
+    const lines = provs.map(prov => {
+      const gi = _provincias.indexOf(prov);
+      const g = GRADS[(gi < 0 ? 0 : gi) % GRADS.length];
       const pts = Array.from({ length: 12 }, (_, m) => {
         const s = stats[prov][m];
-        return s ? { x: xScale(m), y: yScale(s.avg), min: s.min, max: s.max, avg: s.avg, m } : null;
+        return s ? { x: xS(m), y: yS(s.avg), s, m } : null;
       }).filter(Boolean);
       if (!pts.length) return '';
-
-      const linePath = pts.map((p, i) => `${i===0?'M':'L'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
-      const bandTop  = pts.map((p, i) => `${i===0?'M':'L'} ${p.x.toFixed(1)} ${yScale(p.min).toFixed(1)}`).join(' ');
-      const bandBot  = [...pts].reverse().map(p => `L ${p.x.toFixed(1)} ${yScale(p.max).toFixed(1)}`).join(' ');
+      const line = pts.map((p, i) => `${i ? 'L' : 'M'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+      const top  = pts.map((p, i) => `${i ? 'L' : 'M'} ${p.x.toFixed(1)} ${yS(p.s.min).toFixed(1)}`).join(' ');
+      const bot  = [...pts].reverse().map(p => `L ${p.x.toFixed(1)} ${yS(p.s.max).toFixed(1)}`).join(' ');
       const dots = pts.map(p =>
-        `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.5" fill="${color}" stroke="white" stroke-width="1.5">
-          <title>${esc(prov)} — ${MESES[p.m]}: Prom $${p.avg} · Mín $${p.min} · Máx $${p.max} (n=${stats[prov][p.m].n})</title>
+        `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4" fill="url(#${g.id})" stroke="#fff" stroke-width="1.5">
+          <title>${esc(prov)} — ${MESES[p.m]}: Prom $${p.s.avg} · Mín $${p.s.min} · Máx $${p.s.max} (n=${p.s.n})</title>
         </circle>`
       ).join('');
-
-      return `<path d="${bandTop} ${bandBot} Z" fill="${color}" fill-opacity="0.07"/>
-        <path d="${linePath}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>
+      return `<path d="${top} ${bot} Z" fill="url(#${g.id})" fill-opacity="0.08"/>
+        <path d="${line}" fill="none" stroke="url(#${g.id})" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
         ${dots}`;
     }).join('');
 
-    const svg = `<svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;max-width:${W}px">
-      ${grid}${xLabels}${lineas}
-    </svg>`;
-
-    const leyenda = `<div class="pr-legend">${
-      provs.map((prov, idx) => `<span class="pr-legend-item"><i style="background:${COLORES[idx % COLORES.length]}"></i>${esc(prov)}</span>`).join('')
-    }</div>`;
-
-    return svg + leyenda;
+    const svg = `<svg class="pr-chart-svg" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${defs}${grid}${xLab}${lines}</svg>`;
+    const leg = `<div class="pr-legend">${provs.map(prov => {
+      const gi = _provincias.indexOf(prov);
+      const g = GRADS[(gi < 0 ? 0 : gi) % GRADS.length];
+      return `<span class="pr-legend-item"><i style="background:var(${g.varName})"></i>${esc(prov)}</span>`;
+    }).join('')}</div>`;
+    return svg + leg;
   }
 
-  // ── Tabla comparativa ──────────────────────────────────────
-  function _buildTabla() {
+  // ── Tabla comparativa (estilo .table-wrap del dashboard) ───
+  function _buildComparativa() {
+    const head = `<div class="pr-heading">Comparativa por provincia</div>`;
     const resumen = _calcResumen();
-    if (!resumen.length) return '<p class="p-empty">Sin datos para este filtro.</p>';
-    const colMeses = MESES.map(m => `<th>${m}</th>`).join('');
+    if (!resumen.length) return head + '<div class="card"><p class="pr-empty">Sin datos para este filtro.</p></div>';
 
-    const filas = resumen.map(({ provincia, material, meses, tendencia }) => {
-      const celdas = meses.map(({ avg, min, max }) => {
-        if (avg === null) return '<td class="sin-dato">—</td>';
-        return `<td class="celda-precio" title="Mín $${min} · Máx $${max}">
-            <span class="avg">$${fmtNum(avg, 2)}</span>
-            <span class="rango">${fmtNum(min, 2)}–${fmtNum(max, 2)}</span>
-          </td>`;
-      }).join('');
-
+    const ths = MESES.map(m => `<th>${m}</th>`).join('');
+    const rows = resumen.map(({ provincia, material, meses, tendencia }) => {
+      const cels = meses.map(({ avg, min, max }, i) =>
+        avg === null
+          ? `<td><strong>${MESES[i]}</strong><span class="pr-dash">—</span></td>`
+          : `<td title="Mín $${min} · Máx $${max}"><strong>${MESES[i]}</strong><span class="pr-avg">$${fmtNum(avg, 2)}</span><span class="pr-range">${fmtNum(min, 2)}–${fmtNum(max, 2)}</span></td>`
+      ).join('');
       const tend = tendencia > 0
-        ? `<span class="tend tend-up">▲ $${fmtNum(tendencia, 2)}</span>`
+        ? `<span class="pr-tend pr-tend-up">▲ $${fmtNum(tendencia, 2)}</span>`
         : tendencia < 0
-        ? `<span class="tend tend-down">▼ $${fmtNum(Math.abs(tendencia), 2)}</span>`
-        : `<span class="tend tend-flat">= estable</span>`;
-
+        ? `<span class="pr-tend pr-tend-down">▼ $${fmtNum(Math.abs(tendencia), 2)}</span>`
+        : `<span class="pr-tend pr-tend-flat">estable</span>`;
       return `<tr>
-          <td class="td-prov">${esc(provincia)}</td>
-          <td class="td-mat">${esc(material)}</td>
-          ${celdas}
-          <td class="td-tend">${tend}</td>
-        </tr>`;
+        <td class="pr-prov"><strong>Provincia</strong>${esc(provincia)}</td>
+        <td class="pr-mat"><strong>Material</strong>${esc(material)}</td>
+        ${cels}
+        <td><strong>Tendencia</strong>${tend}</td>
+      </tr>`;
     }).join('');
 
-    return `<table class="precios-tabla">
-        <thead><tr><th>Provincia</th><th>Material</th>${colMeses}<th>Tendencia</th></tr></thead>
-        <tbody>${filas}</tbody>
-      </table>`;
+    return head + `<div class="table-wrap"><table>
+      <thead><tr><th>Provincia</th><th>Material</th>${ths}<th>Tendencia</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
   }
 
   // ── Eventos ────────────────────────────────────────────────
-  function _onFiltro() {
-    const a = document.getElementById('pr-anio');
-    const p = document.getElementById('pr-prov');
-    if (a) _anioSel = +a.value;
-    if (p) _provSel = p.value;
-    if (!_matSel.includes(_matGrafico) && _matSel.length) _matGrafico = _matSel[0];
-    _renderUI();
-  }
-
-  function _onMatCheck(el) {
-    const nombre = el.value;
-    if (el.checked) { if (!_matSel.includes(nombre)) _matSel.push(nombre); }
-    else { _matSel = _matSel.filter(n => n !== nombre); }
-    if (!_matSel.includes(_matGrafico)) _matGrafico = _matSel[0] ?? null;
-    _renderUI();
-  }
-
   function _onTabMat(nombre) {
     _matGrafico = nombre;
-    const cont = document.getElementById('pr-chart-container');
-    if (cont) cont.innerHTML = _buildChart();
-    document.querySelectorAll('.mat-tab').forEach(b => {
-      b.classList.toggle('active', b.getAttribute('data-mat') === nombre);
-    });
+    const c = document.getElementById('pr-chart-container');
+    if (c) c.innerHTML = _buildChart();
+    document.querySelectorAll('#pr-mat-tabs .cat-chip').forEach(b =>
+      b.classList.toggle('active', b.getAttribute('data-mat') === nombre)
+    );
   }
 
-  // ── Helper render → #main-content (igual que las demás secciones) ──
+  // ── Exportar Excel (tabla comparativa, respeta filtros) ────
+  async function _exportar() {
+    const resumen = _calcResumen();
+    if (!resumen.length) { if (typeof showToast === 'function') showToast('No hay datos para exportar'); return; }
+    try {
+      if (typeof cargarSheetJS === 'function') await cargarSheetJS();
+      if (!window.XLSX) { if (typeof showToast === 'function') showToast('No se pudo cargar el exportador'); return; }
+      const aoa = [['Provincia', 'Material', ...MESES, 'Tendencia ($)']];
+      resumen.forEach(r => {
+        aoa.push([
+          r.provincia, r.material,
+          ...r.meses.map(m => m.avg === null ? '' : +m.avg.toFixed(2)),
+          r.tendencia > 0 ? `+${r.tendencia.toFixed(2)}` : r.tendencia < 0 ? `${r.tendencia.toFixed(2)}` : '0',
+        ]);
+      });
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = [{ wch: 16 }, { wch: 16 }, ...MESES.map(() => ({ wch: 9 })), { wch: 12 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Precios');
+      const yrs = _fAnios.filter(a => a !== '__ALL__');
+      XLSX.writeFile(wb, `precios_${yrs.length ? yrs.join('-') : 'todos'}.xlsx`);
+      if (typeof showToast === 'function') showToast('Excel descargado ✓');
+    } catch (e) {
+      console.error('export precios:', e);
+      if (typeof showToast === 'function') showToast('Error al exportar');
+    }
+  }
+
   function _render(html) {
     const el = document.getElementById('main-content');
     if (el) el.innerHTML = html;
   }
 
-  return { init, _onFiltro, _onMatCheck, _onTabMat };
+  return { init, _onTabMat, _exportar };
 })();
 
-// ── Estilos propios de la sección ─────────────────────────────
+// ── Estilos mínimos propios (lo que no cubre styles.css) ──────
 (function _inyectarEstilos() {
   if (document.getElementById('precios-styles')) return;
   const s = document.createElement('style');
   s.id = 'precios-styles';
   s.textContent = `
-    .precios-wrap { display:flex; flex-direction:column; gap:20px; }
-    .card-section { background:#fff; border-radius:14px; padding:20px 24px; box-shadow:0 2px 12px rgba(0,35,67,.08); }
-    .card-section h3 { font-size:15px; font-weight:600; color:#002343; margin:0 0 16px; }
+    .pr-tabs { margin-bottom: 0; }
+    .pr-heading { font-size: 16px; font-weight: 700; color: var(--text); margin-bottom: 14px; }
 
-    .precios-filtros { display:flex; flex-wrap:wrap; gap:16px; align-items:flex-start; }
-    .filtro-grupo { display:flex; flex-direction:column; gap:6px; }
-    .filtro-grupo label { font-size:12px; font-weight:600; color:#555; text-transform:uppercase; letter-spacing:.4px; }
-    .filtro-grupo select { border:1.5px solid #86d2da; border-radius:10px; padding:7px 12px; font-size:14px; color:#002343; background:#fff; cursor:pointer; outline:none; font-family:inherit; }
-    .filtro-materiales { flex:1; min-width:240px; }
-    .mat-checkboxes { display:flex; flex-wrap:wrap; gap:8px; margin-top:4px; }
-    .mat-chip { display:flex; align-items:center; gap:5px; padding:5px 12px; border-radius:20px; font-size:13px; border:1.5px solid #86d2da; color:#002343; cursor:pointer; transition:all .18s; background:#fff; }
-    .mat-chip input { display:none; }
-    .mat-chip.active { background:#002343; color:#fff; border-color:#002343; }
-    .mat-chip:hover { border-color:#0778bf; }
+    .pr-chart-svg { width: 100%; height: auto; display: block; }
+    .pr-legend { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-top: 14px; }
+    .pr-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
+    .pr-legend-item i { width: 16px; height: 4px; border-radius: 2px; display: inline-block; }
 
-    .section-header-row { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; margin-bottom:12px; }
-    .section-header-row h3 { margin:0; }
-    .chart-mat-tabs { display:flex; gap:6px; flex-wrap:wrap; }
-    .mat-tab { padding:5px 14px; border-radius:20px; font-size:13px; font-family:inherit; border:1.5px solid #86d2da; background:#fff; color:#002343; cursor:pointer; transition:all .18s; }
-    .mat-tab.active { background:#0778bf; color:#fff; border-color:#0778bf; }
-    .mat-tab:hover { border-color:#0778bf; }
+    /* Centrar columnas de meses + tendencia, respetando .table-wrap */
+    #pr-comparativa .table-wrap th:nth-child(n+3),
+    #pr-comparativa .table-wrap td:nth-child(n+3) { text-align: center; }
+    .pr-prov { font-weight: 600; color: var(--text); white-space: nowrap; }
+    .pr-mat  { color: #1c7aa8; font-weight: 500; white-space: nowrap; }
+    .pr-avg   { display: block; font-weight: 700; color: var(--text); }
+    .pr-range { display: block; font-size: 11px; color: var(--text-dim); margin-top: 1px; }
+    .pr-dash  { color: var(--text-dim); }
+    .pr-tend  { display: inline-flex; align-items: center; gap: 4px; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+    .pr-tend-up   { background: rgba(24,174,151,0.12); color: #0a9e83; }
+    .pr-tend-down { background: rgba(201,26,68,0.10);  color: var(--err); }
+    .pr-tend-flat { background: rgba(0,0,0,0.05);      color: var(--text-muted); }
 
-    .pr-legend { display:flex; flex-wrap:wrap; gap:14px; justify-content:center; margin-top:10px; }
-    .pr-legend-item { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:#333; }
-    .pr-legend-item i { width:12px; height:4px; border-radius:2px; display:inline-block; }
-
-    .precios-table-scroll { overflow-x:auto; }
-    .precios-tabla { border-collapse:collapse; width:100%; font-size:13px; min-width:760px; }
-    .precios-tabla th { background:#002343; color:#fff; padding:8px 10px; text-align:center; font-weight:500; white-space:nowrap; }
-    .precios-tabla th:first-child, .precios-tabla th:nth-child(2) { text-align:left; }
-    .precios-tabla tr:nth-child(even) td { background:#f7fbff; }
-    .precios-tabla tr:hover td { background:#edf5fb; }
-    .precios-tabla td { padding:7px 10px; border-bottom:1px solid #e5eef5; vertical-align:middle; }
-    .td-prov { font-weight:600; color:#002343; white-space:nowrap; }
-    .td-mat { color:#0778bf; white-space:nowrap; }
-    .celda-precio { text-align:center; }
-    .celda-precio .avg { display:block; font-weight:600; color:#002343; font-size:13px; }
-    .celda-precio .rango { display:block; font-size:10px; color:#888; margin-top:1px; }
-    .sin-dato { text-align:center; color:#bbb; font-size:12px; }
-    .td-tend { text-align:center; white-space:nowrap; }
-    .tend { font-size:12px; font-weight:600; padding:3px 8px; border-radius:20px; }
-    .tend-up { background:#edfbf0; color:#27a04a; }
-    .tend-down { background:#fff0f3; color:#e0364c; }
-    .tend-flat { background:#f5f5f5; color:#888; }
-
-    .p-empty, .p-loading { text-align:center; padding:40px 0; color:#888; font-size:14px; }
+    .pr-empty { text-align: center; padding: 40px 0; color: var(--text-dim); font-size: 14px; }
   `;
   document.head.appendChild(s);
 })();
