@@ -55,11 +55,12 @@ function renderEntregas() {
       </div>
     </div>
 
-    <!-- Tabla (vacía al inicio con mensaje sutil) -->
-    <div id="entregas-table-wrap">
-      <div class="entregas-placeholder">Selecciona los filtros para ver información</div>
-    </div>
+    <!-- Tabla -->
+    <div id="entregas-table-wrap"></div>
   `;
+
+  // Firestore ya tiene los datos en CAT: mostrar todo al entrar, sin esperar filtros.
+  cargarEntregas();
 }
 
 // ============================================================
@@ -70,13 +71,7 @@ async function cargarEntregas() {
   const wrap = document.getElementById('entregas-table-wrap');
   if (!wrap) return;
 
-  // Regla: Entregas NO carga hasta que el usuario aplique al menos un filtro
-  if (!tieneAlgunFiltroAplicado(ENTREGAS_FILTROS)) {
-    wrap.innerHTML = `<div class="entregas-placeholder">Selecciona los filtros para ver información</div>`;
-    ENTREGAS_LOADED = false;
-    return;
-  }
-
+  // Sin filtros aplicados → pasaFiltro deja pasar todo, así se muestran todas las entregas.
   ENTREGAS_DATA = (CAT.entregas || []).filter(e =>
     pasaFiltro(ENTREGAS_FILTROS.anio,       String(e['Año'])) &&
     pasaFiltro(ENTREGAS_FILTROS.mes,        e['Mes']) &&
@@ -508,7 +503,7 @@ async function guardarEntrega(id) {
 
 async function exportarEntregasExcel() {
   if (!ENTREGAS_DATA || !ENTREGAS_DATA.length) {
-    showToast('No hay datos para exportar. Aplicá un filtro primero.');
+    showToast('No hay datos para exportar.');
     return;
   }
   try {
