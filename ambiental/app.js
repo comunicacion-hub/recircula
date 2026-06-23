@@ -403,6 +403,7 @@ function navTo(seccion) {
     case 'dashboard':   if (typeof renderDashboard === 'function')   renderDashboard();   break;
     case 'entregas':    if (typeof renderEntregas === 'function')    renderEntregas();    break;
     case 'compradores': if (typeof renderCompradores === 'function') renderCompradores(); break;
+    case 'precios':     if (typeof PRECIOS !== 'undefined')          PRECIOS.init();      break;
   }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
