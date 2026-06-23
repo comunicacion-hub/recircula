@@ -8,6 +8,7 @@
 const PRECIOS = (() => {
 
   const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const MESES_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
   // Gradientes idénticos a styles.css (A–E). Stroke por url(#id); leyenda por var(--grad-*).
   const GRADS = [
@@ -323,35 +324,92 @@ const PRECIOS = (() => {
   }
 
   // ── Tabla comparativa (estilo .table-wrap del dashboard) ───
+  function _tendBadge(t) {
+    return t > 0 ? `<span class="pr-tend pr-tend-up">▲ $${fmtNum(t, 2)}</span>`
+         : t < 0 ? `<span class="pr-tend pr-tend-down">▼ $${fmtNum(Math.abs(t), 2)}</span>`
+         : `<span class="pr-tend pr-tend-flat">estable</span>`;
+  }
+
   function _buildComparativa() {
     const head = `<div class="pr-heading">Comparativa por provincia</div>`;
     const resumen = _calcResumen();
     if (!resumen.length) return head + '<div class="card"><p class="pr-empty">Sin datos para este filtro.</p></div>';
 
+    // DESKTOP: tabla ancha (12 meses inline)
     const ths = MESES.map(m => `<th>${m}</th>`).join('');
-    const rows = resumen.map(({ provincia, material, meses, tendencia }) => {
-      const cels = meses.map(({ avg, min, max }, i) =>
+    const filas = resumen.map(({ provincia, material, meses, tendencia }) => {
+      const cels = meses.map(({ avg, min, max }) =>
         avg === null
-          ? `<td><strong>${MESES[i]}</strong><span class="pr-dash">—</span></td>`
-          : `<td title="Mín $${min} · Máx $${max}"><strong>${MESES[i]}</strong><span class="pr-avg">$${fmtNum(avg, 2)}</span><span class="pr-range">${fmtNum(min, 2)}–${fmtNum(max, 2)}</span></td>`
+          ? `<td class="pr-dash">—</td>`
+          : `<td title="Mín $${min} · Máx $${max}"><span class="pr-avg">$${fmtNum(avg, 2)}</span><span class="pr-range">${fmtNum(min, 2)}–${fmtNum(max, 2)}</span></td>`
       ).join('');
-      const tend = tendencia > 0
-        ? `<span class="pr-tend pr-tend-up">▲ $${fmtNum(tendencia, 2)}</span>`
-        : tendencia < 0
-        ? `<span class="pr-tend pr-tend-down">▼ $${fmtNum(Math.abs(tendencia), 2)}</span>`
-        : `<span class="pr-tend pr-tend-flat">estable</span>`;
       return `<tr>
-        <td class="pr-prov"><strong>Provincia</strong>${esc(provincia)}</td>
-        <td class="pr-mat"><strong>Material</strong>${esc(material)}</td>
+        <td class="pr-prov">${esc(provincia)}</td>
+        <td class="pr-mat">${esc(material)}</td>
         ${cels}
-        <td><strong>Tendencia</strong>${tend}</td>
+        <td>${_tendBadge(tendencia)}</td>
       </tr>`;
     }).join('');
-
-    return head + `<div class="table-wrap"><table>
+    const tabla = `<div class="table-wrap pr-tabla-desktop"><table>
       <thead><tr><th>Provincia</th><th>Material</th>${ths}<th>Tendencia</th></tr></thead>
-      <tbody>${rows}</tbody>
+      <tbody>${filas}</tbody>
     </table></div>`;
+
+    // MÓVIL: tarjetas resumen (tocar → detalle mensual completo)
+    const cards = resumen.map(({ provincia, material, meses, tendencia }) => {
+      const conDato = meses.filter(m => m.avg !== null);
+      const ultimo = conDato.length ? conDato[conDato.length - 1] : null;
+      const resumenTxt = ultimo
+        ? `Último: $${fmtNum(ultimo.avg, 2)} · ${conDato.length} ${conDato.length === 1 ? 'mes' : 'meses'} con dato`
+        : 'Sin datos en el período';
+      return `<div class="pr-card" onclick="PRECIOS._verDetalle('${jsEsc(provincia)}','${jsEsc(material)}')">
+        <div class="pr-card-top">
+          <div>
+            <div class="pr-card-label">Provincia</div>
+            <div class="pr-card-prov">${esc(provincia)}</div>
+          </div>
+          ${_tendBadge(tendencia)}
+        </div>
+        <div class="pr-card-mat">${esc(material)}</div>
+        <div class="pr-card-foot">
+          <span class="pr-card-hint">${resumenTxt}</span>
+          <span class="pr-card-chev">Ver detalle ›</span>
+        </div>
+      </div>`;
+    }).join('');
+    const cardsWrap = `<div class="pr-cards-mobile">${cards}</div>`;
+
+    return head + tabla + cardsWrap;
+  }
+
+  // Detalle mensual completo de una provincia+material (modal en móvil)
+  function _verDetalle(prov, mat) {
+    if (typeof abrirModal !== 'function') return;
+    const s = _calcStats(mat)[prov] || {};
+    const anioTxt = _fAnios.filter(a => a !== '__ALL__').join(', ') || 'Todos los años';
+    const filas = MESES.map((_, i) => {
+      const d = s[i];
+      return d
+        ? `<div class="pr-det-row"><span class="pr-det-mes">${MESES_FULL[i]}</span><span class="pr-det-val"><b>$${fmtNum(d.avg, 2)}</b><small>${fmtNum(d.min, 2)}–${fmtNum(d.max, 2)} · n=${d.n}</small></span></div>`
+        : `<div class="pr-det-row pr-det-empty"><span class="pr-det-mes">${MESES_FULL[i]}</span><span class="pr-dash">—</span></div>`;
+    }).join('');
+    const conDato = MESES.map((_, i) => s[i]?.avg).filter(v => v != null);
+    let tend = 0;
+    if (conDato.length >= 2) tend = +(conDato[conDato.length - 1] - conDato[0]).toFixed(3);
+    abrirModal(`
+      <div class="modal">
+        <div class="modal-head">
+          <div>
+            <div class="modal-title">${esc(mat)}</div>
+            <div class="modal-sub">${esc(prov)} · ${esc(anioTxt)}</div>
+          </div>
+          <button class="modal-close" onclick="cerrarModal()"></button>
+        </div>
+        <div class="modal-body">
+          <div class="pr-det-tend">Tendencia ${_tendBadge(tend)}</div>
+          <div class="pr-detalle">${filas}</div>
+        </div>
+      </div>`);
   }
 
   // ── Eventos ────────────────────────────────────────────────
@@ -397,7 +455,7 @@ const PRECIOS = (() => {
     if (el) el.innerHTML = html;
   }
 
-  return { init, _onTabMat, _exportar };
+  return { init, _onTabMat, _exportar, _verDetalle };
 })();
 
 // ── Estilos mínimos propios (lo que no cubre styles.css) ──────
@@ -428,6 +486,38 @@ const PRECIOS = (() => {
     .pr-tend-flat { background: rgba(0,0,0,0.05);      color: var(--text-muted); }
 
     .pr-empty { text-align: center; padding: 40px 0; color: var(--text-dim); font-size: 14px; }
+
+    /* ── Móvil: tarjetas resumen (tap → detalle) ── */
+    .pr-cards-mobile { display: none; }
+    .pr-card {
+      background: var(--surface); border-radius: 20px; padding: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 12px rgba(0,0,0,0.04);
+      cursor: pointer; transition: transform .15s, box-shadow .15s;
+    }
+    .pr-card:active { transform: scale(0.99); box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.06); }
+    .pr-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .pr-card-label { font-size: 10px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: .7px; }
+    .pr-card-prov { font-size: 17px; font-weight: 700; color: var(--text); margin-top: 2px; }
+    .pr-card-mat { font-size: 14px; color: #1c7aa8; font-weight: 600; margin-top: 10px; }
+    .pr-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+    .pr-card-hint { font-size: 12px; color: var(--text-muted); }
+    .pr-card-chev { font-size: 13px; font-weight: 600; color: #506CFF; white-space: nowrap; }
+
+    /* ── Modal detalle mensual ── */
+    .pr-det-tend { font-size: 13px; color: var(--text-muted); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+    .pr-detalle { display: flex; flex-direction: column; }
+    .pr-det-row { display: flex; align-items: center; justify-content: space-between; padding: 11px 0; border-bottom: 1px solid var(--border); }
+    .pr-det-row:last-child { border-bottom: none; }
+    .pr-det-mes { font-size: 14px; color: var(--text); font-weight: 500; }
+    .pr-det-val { display: flex; flex-direction: column; align-items: flex-end; }
+    .pr-det-val b { font-size: 15px; font-weight: 700; color: var(--text); }
+    .pr-det-val small { font-size: 11px; color: var(--text-dim); margin-top: 1px; }
+    .pr-det-empty .pr-det-mes { color: var(--text-dim); }
+
+    @media (max-width: 768px) {
+      #pr-comparativa .pr-tabla-desktop { display: none; }
+      .pr-cards-mobile { display: flex; flex-direction: column; gap: 12px; }
+    }
   `;
   document.head.appendChild(s);
 })();
