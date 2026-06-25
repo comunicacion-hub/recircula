@@ -437,14 +437,14 @@ async function driveErr(r,label){
 }
 async function driveBuscarCarpeta(nombre,padre,token){
   const q=`name='${nombre.replace(/'/g,"\\'")}' and '${padre}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
-  const url="https://www.googleapis.com/drive/v3/files?q="+encodeURIComponent(q)+"&fields=files(id,name)&spaces=drive";
+  const url="https://www.googleapis.com/drive/v3/files?q="+encodeURIComponent(q)+"&fields=files(id,name)&spaces=drive&supportsAllDrives=true&includeItemsFromAllDrives=true";
   const r=await fetch(url,{headers:{Authorization:"Bearer "+token}});
   if(r.status===401)throw new AuthErr();
   if(!r.ok)throw await driveErr(r,"list");
   const d=await r.json();return d.files&&d.files[0]?d.files[0].id:null;
 }
 async function driveCrearCarpeta(nombre,padre,token){
-  const r=await fetch("https://www.googleapis.com/drive/v3/files?fields=id",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({name:nombre,mimeType:"application/vnd.google-apps.folder",parents:[padre]})});
+  const r=await fetch("https://www.googleapis.com/drive/v3/files?fields=id&supportsAllDrives=true",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({name:nombre,mimeType:"application/vnd.google-apps.folder",parents:[padre]})});
   if(r.status===401)throw new AuthErr();
   if(!r.ok)throw await driveErr(r,"mkdir");
   return (await r.json()).id;
@@ -455,13 +455,13 @@ async function driveSubir(blob,filename,padre,token){
   const form=new FormData();
   form.append("metadata",new Blob([JSON.stringify(meta)],{type:"application/json"}));
   form.append("file",blob,filename);
-  const r=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink",{method:"POST",headers:{Authorization:"Bearer "+token},body:form});
+  const r=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink&supportsAllDrives=true",{method:"POST",headers:{Authorization:"Bearer "+token},body:form});
   if(r.status===401)throw new AuthErr();
   if(!r.ok)throw await driveErr(r,"upload");
   return await r.json();
 }
 async function driveTrash(fileId,token){
-  const r=await fetch("https://www.googleapis.com/drive/v3/files/"+fileId+"?fields=id",{method:"PATCH",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({trashed:true})});
+  const r=await fetch("https://www.googleapis.com/drive/v3/files/"+fileId+"?fields=id&supportsAllDrives=true",{method:"PATCH",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({trashed:true})});
   if(r.status===401)throw new AuthErr();
   if(r.status===404)return true; // ya no existe
   if(!r.ok)throw await driveErr(r,"trash");
