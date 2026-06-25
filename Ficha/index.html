@@ -721,6 +721,10 @@ function abrirForm(fila){
           <select class="form-select" id="fAsoc">${optionsAsoc(editing?f.id_asociacion:"")}</select>
         </div>
         <div class="form-group">
+          <label class="form-label">Fecha de afiliación a la asociación</label>
+          <input class="form-input" id="fAfil" inputmode="numeric" maxlength="10" placeholder="dd/mm/aaaa" value="${esc(fechaDisplay(f.fecha_afiliacion||""))}">
+        </div>
+        <div class="form-group">
           <label class="form-label">Nombres y apellidos <span class="req">*</span></label>
           <input class="form-input" id="fNombre" value="${esc(f.nombres_apellidos||"")}" placeholder="Ej. María Pérez Loja" autocomplete="off">
         </div>
@@ -786,7 +790,7 @@ function abrirForm(fila){
   // Cédula live hint
   $("#fCedula").addEventListener("input",e=>{e.target.value=e.target.value.replace(/\D/g,"").slice(0,10);});
   $("#fCelular").addEventListener("input",e=>{e.target.value=e.target.value.replace(/\D/g,"").slice(0,10);});
-  maskFecha($("#fNac"));
+  maskFecha($("#fNac"));maskFecha($("#fAfil"));
   // close handlers
   const close=()=>cerrarForm();
   $("#formClose").addEventListener("click",close);
@@ -843,10 +847,12 @@ async function guardarForm(fila){
   const celular=$("#fCelular").value.trim();
   const cargas=$("#fCargas").value;
   const fnac=$("#fNac").value.trim();
+  const fafil=$("#fAfil").value.trim();
   const ruc=$("#fRuc").querySelector(".seg-opt.active").getAttribute("data-val")==="si";
   const cuenta_bancaria=$("#fBanco").querySelector(".seg-opt.active").getAttribute("data-val")==="si";
   const data={
     id_asociacion,asociacion_nombre,
+    fecha_afiliacion:fafil,
     nombres_apellidos:nombres,
     cedula,
     fecha_nacimiento:fnac,
@@ -859,11 +865,12 @@ async function guardarForm(fila){
   // Validaciones — solo "nombres y apellidos" es obligatorio
   let err=null;
   const setInvalid=(sel,bad)=>{const el=$(sel);if(el)el.classList.toggle("invalid",bad);};
-  setInvalid("#fNombre",false);setInvalid("#fCedula",false);setInvalid("#fCelular",false);setInvalid("#fNac",false);
+  setInvalid("#fNombre",false);setInvalid("#fCedula",false);setInvalid("#fCelular",false);setInvalid("#fNac",false);setInvalid("#fAfil",false);
   $("#fCedulaHint").classList.remove("err");
   if(!nombres){err="Ingresa nombres y apellidos.";setInvalid("#fNombre",true);}
   else if(cedula&&!validarCedulaEC(cedula)){err="La cédula no es válida (10 dígitos, ecuatoriana).";setInvalid("#fCedula",true);$("#fCedulaHint").classList.add("err");$("#fCedulaHint").textContent="Cédula inválida. Verifica los 10 dígitos.";}
-  else if(fnac&&!validarFechaFlex(fnac)){err="Fecha inválida. Usa dd/mm/aaaa (día 00 si no lo sabes).";setInvalid("#fNac",true);}
+  else if(fnac&&!validarFechaFlex(fnac)){err="Fecha de nacimiento inválida. Usa dd/mm/aaaa (día 00 si no lo sabes).";setInvalid("#fNac",true);}
+  else if(fafil&&!validarFechaFlex(fafil)){err="Fecha de afiliación inválida. Usa dd/mm/aaaa.";setInvalid("#fAfil",true);}
   else if(celular&&!/^\d{10}$/.test(celular)){err="El celular debe tener 10 dígitos.";setInvalid("#fCelular",true);}
   if(err){showToast(err);return;}
 
