@@ -379,6 +379,7 @@ $("#btnLogin").addEventListener("click",login);
 async function login(){
   $("#loginErr").textContent="";
   try{
+    provider.setCustomParameters({hd:DOMINIO,prompt:"select_account"});
     const r=await signInWithPopup(auth,provider);
     const cred=GoogleAuthProvider.credentialFromResult(r);
     if(cred&&cred.accessToken){driveToken=cred.accessToken;sessionStorage.setItem("rcr_drive_token",driveToken);}
@@ -409,9 +410,10 @@ onAuthStateChanged(auth,async user=>{
 });
 
 /* Devuelve token Drive válido. interactive=true permite popup (sólo bajo gesto del usuario). */
-async function ensureDriveToken(interactive){
-  if(driveToken)return driveToken;
+async function ensureDriveToken(interactive,forceConsent){
+  if(driveToken&&!forceConsent)return driveToken;
   if(!interactive)throw new Error("NO_TOKEN");
+  provider.setCustomParameters(forceConsent?{hd:DOMINIO,prompt:"consent"}:{hd:DOMINIO,prompt:"select_account"});
   const r=await signInWithPopup(auth,provider);
   const cred=GoogleAuthProvider.credentialFromResult(r);
   if(!cred||!cred.accessToken)throw new Error("NO_TOKEN");
@@ -424,18 +426,27 @@ function tokenInvalido(){driveToken=null;sessionStorage.removeItem("rcr_drive_to
    Drive REST
    ============================================================ */
 class AuthErr extends Error{}
+async function driveErr(r,label){
+  let body=null;try{body=await r.json();}catch(_){}
+  const e=body&&body.error;
+  const reason=(e&&e.errors&&e.errors[0]&&e.errors[0].reason)||(e&&e.status)||"";
+  const msg=(e&&e.message)||r.statusText||"";
+  const err=new Error("Drive "+label+" "+r.status+(reason?(" "+reason):"")+": "+msg);
+  err.reason=reason;err.httpStatus=r.status;
+  return err;
+}
 async function driveBuscarCarpeta(nombre,padre,token){
   const q=`name='${nombre.replace(/'/g,"\\'")}' and '${padre}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
   const url="https://www.googleapis.com/drive/v3/files?q="+encodeURIComponent(q)+"&fields=files(id,name)&spaces=drive";
   const r=await fetch(url,{headers:{Authorization:"Bearer "+token}});
   if(r.status===401)throw new AuthErr();
-  if(!r.ok)throw new Error("Drive list "+r.status);
+  if(!r.ok)throw await driveErr(r,"list");
   const d=await r.json();return d.files&&d.files[0]?d.files[0].id:null;
 }
 async function driveCrearCarpeta(nombre,padre,token){
   const r=await fetch("https://www.googleapis.com/drive/v3/files?fields=id",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({name:nombre,mimeType:"application/vnd.google-apps.folder",parents:[padre]})});
   if(r.status===401)throw new AuthErr();
-  if(!r.ok)throw new Error("Drive mkdir "+r.status);
+  if(!r.ok)throw await driveErr(r,"mkdir");
   return (await r.json()).id;
 }
 async function driveCarpeta(nombre,padre,token){return (await driveBuscarCarpeta(nombre,padre,token))||(await driveCrearCarpeta(nombre,padre,token));}
@@ -446,7 +457,7 @@ async function driveSubir(blob,filename,padre,token){
   form.append("file",blob,filename);
   const r=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink",{method:"POST",headers:{Authorization:"Bearer "+token},body:form});
   if(r.status===401)throw new AuthErr();
-  if(!r.ok)throw new Error("Drive upload "+r.status);
+  if(!r.ok)throw await driveErr(r,"upload");
   return await r.json();
 }
 
@@ -510,14 +521,19 @@ async function procesarCola(interactive){
   let token;
   try{token=await ensureDriveToken(interactive);}
   catch(e){syncing=false;setSyncUI("pending",cola.length);if(interactive)showToast("Inicia sesión otra vez para sincronizar");return;}
-  let huboError=false;
+  let huboError=false,errMsg="";
   for(const item of cola){
     let intentos=0;
     while(true){
       try{await sincronizarUno(item,token);await idbDel("queue",item.localId);break;}
       catch(e){
-        if(e instanceof AuthErr&&intentos===0){intentos++;tokenInvalido();try{token=await ensureDriveToken(interactive);continue;}catch(_){huboError=true;break;}}
-        console.error("Sync error",e);huboError=true;break;
+        const scopeIssue=e.httpStatus===403&&/insufficient|scope|PERMISSION_DENIED/i.test((e.reason||"")+" "+(e.message||""));
+        if((e instanceof AuthErr||scopeIssue)&&intentos<1){
+          intentos++;tokenInvalido();
+          try{token=await ensureDriveToken(interactive,scopeIssue);continue;}
+          catch(_){huboError=true;errMsg=e.message||String(e);break;}
+        }
+        console.error("Sync error",e);huboError=true;errMsg=e.message||String(e);break;
       }
     }
     if(huboError)break;
@@ -526,7 +542,14 @@ async function procesarCola(interactive){
   cola=await idbAll("queue");
   fichasFS=await cargarFichas();
   renderLista();
-  if(huboError){setSyncUI(navigator.onLine?"error":"pending",cola.length);if(interactive)showToast("No se pudo completar la sincronización");}
+  if(huboError){
+    setSyncUI(navigator.onLine?"error":"pending",cola.length);
+    if(interactive){
+      if(/accessNotConfigured|has not been used|SERVICE_DISABLED/i.test(errMsg))showToast("Falta habilitar la API de Google Drive en el proyecto recircula360",6000);
+      else if(/insufficient|scope|PERMISSION_DENIED|403/i.test(errMsg))showToast("Drive sin permiso. Cierra sesión, vuelve a entrar y acepta el acceso a Drive",6000);
+      else showToast("No se sincronizó: "+errMsg,6000);
+    }
+  }
   else{setSyncUI("idle",0);if(interactive)showToast("Todo sincronizado");}
 }
 function setSyncUI(state,count){
