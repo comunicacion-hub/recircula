@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#506CFF">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Fichas de recicladores · ReCircula 360</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   FICHA RECICLADOR — hereda lenguaje visual ReCircula 360
+   ============================================================ */
+:root{
+  --grad-a: linear-gradient(135deg, #FF751F, #FF376F);
+  --grad-b: linear-gradient(135deg, #33A8DE, #506CFF);
+  --grad-c: linear-gradient(135deg, #18AE97, #0BC3FF);
+  --grad-d: linear-gradient(135deg, #F5AD21, #9FDA60);
+  --grad-e: linear-gradient(135deg, #F82D72, #FF85FF);
+  --text:#1b1b1b; --text-muted:#6b6b80; --text-dim:#a0a0b0;
+  --surface:#fff; --surface-hover:#f3f3f7; --border:rgba(0,0,0,0.09);
+  --bg: linear-gradient(135deg, #e8f4fd, #eef0ff, #e8faf7);
+  --radius-sm:10px; --radius-md:14px; --radius-lg:20px; --radius-xl:28px;
+  --ok:#18AE97; --warn:#F5AD21; --err:#c91a44; --info:#33A8DE;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Outfit',sans-serif;color:var(--text);background:var(--bg);min-height:100vh;font-size:14px;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+@keyframes fadeIn{from{opacity:0}to{opacity:1}}
+@keyframes fadeSlideUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes modalIn{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:scale(1) translateY(0)}}
+@keyframes sheetInMobile{from{opacity:0;transform:translateY(100%)}to{opacity:1;transform:translateY(0)}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hidden{display:none!important}
+.anim-fade-up{animation:fadeSlideUp .3s ease-out both}
+
+/* ── App shell ── */
+#screen-app{position:relative;z-index:1;min-height:100vh;width:100%}
+.main-content{padding:28px 24px calc(40px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:22px;max-width:1100px;margin:0 auto}
+.page-header{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.page-title{font-size:30px;font-weight:700;letter-spacing:-1px;color:var(--text);line-height:1.1}
+.page-sub{font-size:14px;color:var(--text-muted);margin-top:6px}
+.hdr-actions{display:flex;gap:10px;align-items:center;flex-shrink:0}
+
+/* ── Circular header buttons ── */
+.hdr-circle{position:relative;width:46px;height:46px;border-radius:50%;background:#fff;border:none;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted);box-shadow:0 2px 8px rgba(0,0,0,.06),0 1px 3px rgba(0,0,0,.04);transition:all .18s;flex-shrink:0;padding:0}
+.hdr-circle svg{width:20px;height:20px}
+.hdr-circle:hover{transform:translateY(-1px);box-shadow:0 6px 18px rgba(0,0,0,.1),0 2px 6px rgba(0,0,0,.05);color:var(--text)}
+.hdr-circle:active{transform:translateY(0) scale(.95)}
+.hdr-circle-primary{background:var(--grad-b);color:#fff;box-shadow:0 4px 14px rgba(80,108,255,.32)}
+.hdr-circle-primary:hover{color:#fff;box-shadow:0 6px 20px rgba(80,108,255,.42)}
+.hdr-circle-danger:hover{color:var(--err)}
+
+/* Sync states */
+#btnSync.syncing svg{animation:spin .8s linear infinite;color:#506CFF}
+#btnSync.pending{color:var(--err);background:rgba(201,26,68,.08)}
+#btnSync.error{color:var(--err);background:rgba(201,26,68,.12)}
+.hdr-badge{position:absolute;top:-3px;right:-3px;background:var(--grad-a);color:#fff;font-size:10px;font-weight:700;border-radius:10px;min-width:18px;height:18px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;box-shadow:0 2px 6px rgba(255,55,111,.4);border:2px solid #fff}
+.hdr-badge.danger{background:var(--err);box-shadow:0 2px 6px rgba(201,26,68,.4)}
+
+/* ── Buttons ── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:11px 22px;border-radius:14px;font-family:'Outfit',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all .18s;white-space:nowrap;background:#fff;border:1.5px solid var(--border);min-height:44px;color:var(--text)}
+.btn:hover{transform:translateY(-1px)}
+.btn:active{transform:scale(.97)}
+.btn svg{width:16px;height:16px}
+.btn-primary{background:var(--grad-b);color:#fff;border:none;box-shadow:0 4px 14px rgba(80,108,255,.32);padding:13px 28px;font-weight:700;font-size:15px}
+.btn-primary:hover{box-shadow:0 6px 20px rgba(80,108,255,.42)}
+.btn-glass{background:#fff;color:var(--text-muted);border:1.5px solid var(--border)}
+.btn-glass:hover{background:var(--surface-hover);color:var(--text)}
+.btn-danger{background:#fff;color:var(--err);border:1.5px solid rgba(220,38,90,.35)}
+.btn-danger:hover{background:rgba(220,38,90,.05)}
+.btn[disabled]{opacity:.55;cursor:not-allowed;transform:none}
+
+/* Icon buttons (row actions) */
+.icon-btn{background:var(--surface-hover);border:none;border-radius:50%;width:34px;height:34px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted);transition:all .15s;padding:0;flex-shrink:0}
+.icon-btn svg{width:16px;height:16px}
+.icon-btn:hover{background:#e8e8f0;color:var(--text);transform:translateY(-1px)}
+.icon-btn:active{transform:translateY(0) scale(.94)}
+.icon-btn.del{color:var(--err)}
+.icon-btn.del:hover{background:rgba(220,38,90,.12)}
+.icon-btn.primary{color:#506CFF}
+.icon-btn.primary:hover{background:rgba(80,108,255,.1)}
+
+/* ── Cards / badges / avatars ── */
+.card{background:var(--surface);border-radius:24px;padding:24px;box-shadow:0 1px 3px rgba(0,0,0,.04),0 4px 16px rgba(0,0,0,.04)}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600}
+.badge::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.75}
+.badge-synced{background:rgba(24,174,151,.1);color:#0a9e83;border:1px solid rgba(24,174,151,.22)}
+.badge-pending{background:rgba(201,26,68,.1);color:var(--err);border:1px solid rgba(201,26,68,.22)}
+.avatar{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;color:#fff}
+
+/* ── Toast ── */
+#toast{position:fixed;bottom:calc(24px + env(safe-area-inset-bottom));left:50%;transform:translate(-50%,10px);background:rgba(28,30,36,.96);color:#fff;padding:12px 20px;border-radius:14px;font-size:13px;font-weight:500;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:400;max-width:calc(100vw - 48px);text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.15)}
+#toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+
+/* ── Spinner / loading ── */
+.spinner{width:22px;height:22px;border:2px solid rgba(0,0,0,.1);border-top-color:#506CFF;border-radius:50%;animation:spin .8s linear infinite;display:inline-block}
+#screen-loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:16px;background:var(--bg);z-index:500}
+.load-text{font-size:14px;color:var(--text-muted)}
+
+/* ── Login ── */
+#screen-login{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;z-index:300}
+.login-card{background:#fff;border-radius:28px;padding:40px 32px;max-width:380px;width:100%;text-align:center;box-shadow:0 20px 60px rgba(31,38,135,.14)}
+.login-logo{width:64px;height:64px;border-radius:20px;background:var(--grad-c);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;color:#fff}
+.login-logo svg{width:34px;height:34px}
+.login-title{font-size:24px;font-weight:700;letter-spacing:-.5px;margin-bottom:6px}
+.login-sub{font-size:14px;color:var(--text-muted);margin-bottom:28px;line-height:1.5}
+.btn-google{width:100%;justify-content:center;background:#fff;border:1.5px solid var(--border);color:var(--text);font-weight:600;min-height:50px;border-radius:14px;gap:10px}
+.btn-google:hover{background:var(--surface-hover)}
+.btn-google svg{width:20px;height:20px}
+.login-foot{margin-top:22px;font-size:12px;color:var(--text-dim);line-height:1.5}
+.login-err{margin-top:16px;font-size:13px;color:var(--err);font-weight:500;min-height:18px}
+
+/* ── Table → cards responsive ── */
+.table-wrap{background:var(--surface);border-radius:24px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.04),0 4px 16px rgba(0,0,0,.04)}
+.table-wrap table{width:100%;border-collapse:collapse}
+.table-wrap thead th{text-align:left;font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.8px;padding:14px 16px;white-space:nowrap;border-bottom:1px solid var(--border)}
+.table-wrap td{padding:14px 16px;border-bottom:1px solid rgba(0,0,0,.04);font-size:13px;color:var(--text);vertical-align:middle}
+.table-wrap tbody tr:last-child td{border-bottom:none}
+.table-wrap tbody tr:hover{background:#fafbfd}
+.cell-name{display:flex;align-items:center;gap:10px}
+.cell-name b{font-weight:600;font-size:14px}
+.td-actions{display:flex;gap:6px;justify-content:flex-end;align-items:center}
+.table-wrap td strong{display:none}
+
+/* ── Empty state ── */
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:64px 20px;text-align:center;color:var(--text-muted)}
+.empty-state .e-ico{width:48px;height:48px;color:var(--text-dim);opacity:.6}
+.empty-state .e-ico svg{width:48px;height:48px}
+
+/* ── Modal ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);z-index:200;display:flex;align-items:center;justify-content:center;padding:24px;opacity:0;animation:fadeIn .2s ease-out forwards}
+.modal{background:#fff;border-radius:24px;width:100%;max-width:600px;max-height:calc(100dvh - 48px);display:flex;flex-direction:column;overflow:hidden;animation:modalIn .32s cubic-bezier(.4,0,.2,1);box-shadow:0 20px 60px rgba(0,0,0,.2)}
+.modal-head{padding:22px 28px 14px;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-shrink:0;border-bottom:1px solid var(--border)}
+.modal-title{font-size:18px;font-weight:700;color:var(--text);letter-spacing:-.3px}
+.modal-sub{font-size:13px;color:var(--text-muted);margin-top:2px}
+.modal-close{background:var(--surface-hover);border:none;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--text-muted);flex-shrink:0;transition:all .15s}
+.modal-close svg{width:16px;height:16px}
+.modal-close:hover{background:#e8e8f0;color:var(--text)}
+.modal-body{padding:20px 28px;overflow-y:auto;flex:1}
+.modal-foot{padding:16px 28px 20px;display:flex;gap:10px;justify-content:flex-end;border-top:1px solid var(--border);flex-shrink:0}
+
+/* ── Form ── */
+.form-group{margin-bottom:16px}
+.form-grid-2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.form-label{display:block;font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.7px;margin-bottom:6px}
+.form-label .req{color:var(--err)}
+.form-input,.form-select,.form-textarea{width:100%;background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:12px 16px;color:var(--text);font-family:'Outfit',sans-serif;font-size:14px;outline:none;transition:border-color .15s,box-shadow .15s;min-height:48px}
+.form-input:focus,.form-select:focus,.form-textarea:focus{border-color:#506CFF;box-shadow:0 0 0 3px rgba(80,108,255,.15)}
+.form-input[readonly]{background:#fafbfd;color:var(--text-muted)}
+.form-input.invalid,.form-select.invalid{border-color:var(--err);box-shadow:0 0 0 3px rgba(201,26,68,.12)}
+.form-textarea{resize:vertical;min-height:72px}
+.form-hint{font-size:11px;color:var(--text-dim);margin-top:5px}
+.form-hint.err{color:var(--err)}
+
+/* Segmented (RUC) */
+.segmented{display:flex;gap:8px}
+.seg-opt{flex:1;padding:12px;border-radius:14px;border:1.5px solid var(--border);background:#fff;color:var(--text-muted);font-family:'Outfit',sans-serif;font-weight:600;font-size:14px;cursor:pointer;transition:all .15s;min-height:48px}
+.seg-opt:hover{background:var(--surface-hover)}
+.seg-opt.active{border-color:transparent;color:#fff;background:var(--grad-b);box-shadow:0 4px 12px rgba(80,108,255,.28)}
+
+/* Photo tiles */
+.photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.photo-tile{position:relative;aspect-ratio:3/4;border-radius:16px;border:1.5px dashed var(--border);background:var(--surface-hover);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;cursor:pointer;overflow:hidden;transition:all .15s;color:var(--text-muted);text-align:center;padding:8px}
+.photo-tile:hover{border-color:#506CFF;background:rgba(80,108,255,.05);color:#506CFF}
+.photo-tile.invalid{border-color:var(--err);background:rgba(201,26,68,.05)}
+.photo-tile svg{width:28px;height:28px}
+.photo-tile .pt-label{font-size:11px;font-weight:600;line-height:1.25}
+.photo-tile.filled{border-style:solid;border-color:transparent;padding:0}
+.photo-tile img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.photo-tile .pt-overlay{position:absolute;left:0;right:0;bottom:0;padding:6px 8px;background:linear-gradient(to top,rgba(0,0,0,.62),transparent);display:flex;align-items:center;justify-content:space-between;gap:6px;z-index:2}
+.photo-tile .pt-overlay .pt-name{color:#fff;font-size:10px;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,.4)}
+.pt-mini{background:rgba(255,255,255,.92);border:none;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--err);flex-shrink:0}
+.pt-mini svg{width:13px;height:13px}
+.pt-badge{position:absolute;top:6px;left:6px;background:rgba(24,174,151,.95);color:#fff;font-size:9px;font-weight:700;padding:3px 8px;border-radius:8px;z-index:2;text-transform:uppercase;letter-spacing:.4px}
+.photo-tile a.pt-link{position:absolute;top:6px;right:6px;background:rgba(255,255,255,.92);border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;color:#506CFF;z-index:2}
+.photo-tile a.pt-link svg{width:13px;height:13px}
+
+/* Offline banner */
+#offlineBanner{position:fixed;top:0;left:0;right:0;background:rgba(201,26,68,.95);color:#fff;text-align:center;font-size:12px;font-weight:600;padding:7px 12px;z-index:260;display:flex;align-items:center;justify-content:center;gap:8px;transform:translateY(-100%);transition:transform .25s}
+#offlineBanner svg{width:14px;height:14px}
+#offlineBanner.show{transform:translateY(0)}
+
+/* ── Responsive ── */
+@media (max-width:768px){
+  .main-content{padding:18px 14px calc(28px + env(safe-area-inset-bottom));gap:18px}
+  .page-title{font-size:24px}
+  .hdr-circle{width:42px;height:42px}
+  .hdr-circle svg{width:18px;height:18px}
+  .form-grid-2{grid-template-columns:1fr}
+  .modal-overlay{padding:0;align-items:flex-end}
+  .modal{width:100%;max-width:100%;max-height:100dvh;height:100dvh;border-radius:24px 24px 0 0;animation:sheetInMobile .32s cubic-bezier(.4,0,.2,1)}
+  .modal-foot{padding:14px 18px calc(14px + env(safe-area-inset-bottom))}
+  .modal-foot .btn{flex:1}
+  /* table → cards */
+  .table-wrap{background:transparent;box-shadow:none;border-radius:0;overflow:visible}
+  .table-wrap thead{display:none}
+  .table-wrap table,.table-wrap tbody{display:block}
+  .table-wrap tbody tr{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;padding:16px;background:var(--surface);border-radius:20px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.04)}
+  .table-wrap tbody tr:hover{background:var(--surface)}
+  .table-wrap td{border-bottom:none;padding:0;display:block}
+  .table-wrap td strong{display:block;font-size:10px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.7px;margin-bottom:2px}
+  .table-wrap td[data-col=name]{grid-column:1 / -1}
+  .table-wrap td[data-actions-row]{grid-column:1 / -1;margin-top:6px;padding-top:10px;border-top:1px solid var(--border)}
+  .td-actions{justify-content:flex-end}
+  .photo-grid{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- Offline banner -->
+<div id="offlineBanner"><span data-ico="wifiOff"></span> Sin conexión — los registros se guardarán y se sincronizarán al volver la señal</div>
+
+<!-- Loading -->
+<div id="screen-loading"><div class="spinner"></div><div class="load-text">Cargando…</div></div>
+
+<!-- Login -->
+<div id="screen-login" class="hidden">
+  <div class="login-card anim-fade-up">
+    <div class="login-logo" data-ico="recycle"></div>
+    <div class="login-title">Fichas de recicladores</div>
+    <div class="login-sub">Registro en territorio · ReCircula 360</div>
+    <button class="btn btn-google" id="btnLogin">
+      <svg viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.5 29.5 4.5 24 4.5 13.2 4.5 4.5 13.2 4.5 24S13.2 43.5 24 43.5 43.5 34.8 43.5 24c0-1.2-.1-2.3-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 16 19 13 24 13c3.1 0 5.9 1.2 8 3.1l5.7-5.7C34.5 6.5 29.5 4.5 24 4.5 16.3 4.5 9.7 8.9 6.3 14.7z"/><path fill="#4CAF50" d="M24 43.5c5.4 0 10.3-2 13.9-5.3l-6.4-5.4c-2 1.5-4.6 2.4-7.5 2.4-5.2 0-9.6-3.3-11.2-7.9l-6.5 5C9.6 39 16.2 43.5 24 43.5z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.1-4.1 5.4l6.4 5.4c-.5.4 6.9-5 6.9-14.8 0-1.2-.1-2.3-.4-3.5z"/></svg>
+      Ingresar con Google
+    </button>
+    <div class="login-err" id="loginErr"></div>
+    <div class="login-foot">Usa tu cuenta institucional <b>@redesconrostro.org</b></div>
+  </div>
+</div>
+
+<!-- App -->
+<div id="screen-app" class="hidden">
+  <div class="main-content">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Recicladores</div>
+        <div class="page-sub" id="listSub">—</div>
+      </div>
+      <div class="hdr-actions">
+        <button class="hdr-circle" id="btnSync" title="Sincronizar">
+          <span data-ico="cloudUp"></span>
+          <span class="hdr-badge danger hidden" id="syncBadge">0</span>
+        </button>
+        <button class="hdr-circle hdr-circle-danger" id="btnLogout" title="Cerrar sesión"><span data-ico="logout"></span></button>
+        <button class="hdr-circle hdr-circle-primary" id="btnAdd" title="Nueva ficha"><span data-ico="plus"></span></button>
+      </div>
+    </div>
+    <div id="listContainer"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ============================================================
+   ICONS (subset de icons.js de ReCircula 360)
+   ============================================================ */
+const ICONS={
+  recycle:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M7 19H4.815a1.83 1.83 0 0 1-1.57-.881 1.785 1.785 0 0 1-.004-1.784L7.196 9.5"/><path d="M11 19h8.203a1.83 1.83 0 0 0 1.556-.89 1.785 1.785 0 0 0 0-1.775l-1.226-2.12"/><path d="m14 16-3 3 3 3"/><path d="M8.293 13.596 7.196 9.5 3.1 10.598"/><path d="m9.344 5.811 1.093-1.892A1.83 1.83 0 0 1 11.985 3a1.784 1.784 0 0 1 1.546.888l3.943 6.843"/><path d="m13.378 9.633 4.096 1.098 1.097-4.096"/></svg>',
+  plus:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  logout:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
+  close:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+  edit:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>',
+  trash:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1.5 14a2 2 0 0 1-2 2H8.5a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>',
+  folder:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
+  camera:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>',
+  view:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>',
+  wifiOff:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.58 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>',
+  cloudUp:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>',
+  users:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>'
+};
+document.querySelectorAll('[data-ico]').forEach(el=>{el.innerHTML=ICONS[el.getAttribute('data-ico')]||'';});
+function ico(n){return ICONS[n]||'';}
+</script>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, setPersistence, browserLocalPersistence }
+  from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
+import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, getFirestore,
+  collection, getDocs, addDoc, doc, setDoc, deleteDoc, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+/* ── Config ── */
+const firebaseConfig={
+  apiKey:"AIzaSyApr5rH2FzuINhO26VgeYJWJAr1jznP6WI",
+  authDomain:"recircula360.firebaseapp.com",
+  projectId:"recircula360",
+  storageBucket:"recircula360.firebasestorage.app",
+  messagingSenderId:"871869415100",
+  appId:"1:871869415100:web:6fe89ec7d5f632eb7a5ab9"
+};
+const DOMINIO="redesconrostro.org";
+const DRIVE_ROOT="1eNVLmzcYuvfVY7fFZVTfvhFZbEuZHNqS"; // carpeta "Recicladores"
+const COL_FICHAS="recicladores";
+const COL_ASOC="Asoc_Ambiente";
+const DRIVE_SCOPE="https://www.googleapis.com/auth/drive";
+
+/* ── Init Firebase ── */
+const app=initializeApp(firebaseConfig);
+const auth=getAuth(app);
+let db;
+try{ db=initializeFirestore(app,{localCache:persistentLocalCache({tabManager:persistentMultipleTabManager()})}); }
+catch(e){ db=getFirestore(app); }
+setPersistence(auth,browserLocalPersistence).catch(()=>{});
+
+const provider=new GoogleAuthProvider();
+provider.addScope(DRIVE_SCOPE);
+provider.setCustomParameters({hd:DOMINIO, prompt:"select_account"});
+
+/* ── Estado ── */
+let currentUser=null;
+let driveToken=sessionStorage.getItem("rcr_drive_token")||null;
+let asociaciones=[];
+let fichasFS=[];
+let cola=[];
+let syncing=false;
+
+/* ── Helpers UI ── */
+const $=s=>document.querySelector(s);
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+let toastT;
+function showToast(msg,ms=2800){const t=$("#toast");t.textContent=msg;t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),ms);}
+function showScreen(id){["screen-loading","screen-login","screen-app"].forEach(s=>$("#"+s).classList.toggle("hidden",s!==id));}
+
+/* ============================================================
+   IndexedDB (cola offline con blobs de fotos)
+   ============================================================ */
+const DB_NAME="ficha_reciclador_db", DB_VER=1;
+let _db=null;
+function idb(){return new Promise((res,rej)=>{if(_db)return res(_db);const r=indexedDB.open(DB_NAME,DB_VER);r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains("queue"))d.createObjectStore("queue",{keyPath:"localId"});if(!d.objectStoreNames.contains("meta"))d.createObjectStore("meta",{keyPath:"k"});};r.onsuccess=()=>{_db=r.result;res(_db);};r.onerror=()=>rej(r.error);});}
+async function idbAll(store){const d=await idb();return new Promise((res,rej)=>{const tx=d.transaction(store,"readonly").objectStore(store).getAll();tx.onsuccess=()=>res(tx.result||[]);tx.onerror=()=>rej(tx.error);});}
+async function idbPut(store,val){const d=await idb();return new Promise((res,rej)=>{const tx=d.transaction(store,"readwrite").objectStore(store).put(val);tx.onsuccess=()=>res(true);tx.onerror=()=>rej(tx.error);});}
+async function idbDel(store,key){const d=await idb();return new Promise((res,rej)=>{const tx=d.transaction(store,"readwrite").objectStore(store).delete(key);tx.onsuccess=()=>res(true);tx.onerror=()=>rej(tx.error);});}
+async function idbGet(store,key){const d=await idb();return new Promise((res,rej)=>{const tx=d.transaction(store,"readonly").objectStore(store).get(key);tx.onsuccess=()=>res(tx.result||null);tx.onerror=()=>rej(tx.error);});}
+
+/* ============================================================
+   Imagen: comprimir a JPEG <=1600px antes de guardar/subir
+   ============================================================ */
+function comprimirImagen(file,maxEdge=1600,quality=0.85){
+  return new Promise((res,rej)=>{
+    const img=new Image();const url=URL.createObjectURL(file);
+    img.onload=()=>{
+      URL.revokeObjectURL(url);
+      let{width:w,height:h}=img;
+      if(w>h&&w>maxEdge){h=Math.round(h*maxEdge/w);w=maxEdge;}
+      else if(h>=w&&h>maxEdge){w=Math.round(w*maxEdge/h);h=maxEdge;}
+      const c=document.createElement("canvas");c.width=w;c.height=h;
+      c.getContext("2d").drawImage(img,0,0,w,h);
+      c.toBlob(b=>b?res(b):rej(new Error("toBlob falló")),"image/jpeg",quality);
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error("No se pudo leer la imagen"));};
+    img.src=url;
+  });
+}
+
+/* ============================================================
+   Validación
+   ============================================================ */
+function validarCedulaEC(ci){
+  if(!/^\d{10}$/.test(ci))return false;
+  const prov=parseInt(ci.slice(0,2),10);
+  if(prov<1||(prov>24&&prov!==30))return false;
+  const d=ci.split("").map(Number);let s=0;
+  for(let i=0;i<9;i++){let v=d[i];if(i%2===0){v*=2;if(v>9)v-=9;}s+=v;}
+  return ((10-(s%10))%10)===d[9];
+}
+
+/* ============================================================
+   Auth
+   ============================================================ */
+$("#btnLogin").addEventListener("click",login);
+async function login(){
+  $("#loginErr").textContent="";
+  try{
+    const r=await signInWithPopup(auth,provider);
+    const cred=GoogleAuthProvider.credentialFromResult(r);
+    if(cred&&cred.accessToken){driveToken=cred.accessToken;sessionStorage.setItem("rcr_drive_token",driveToken);}
+    if(!r.user.email||!r.user.email.toLowerCase().endsWith("@"+DOMINIO)){
+      await signOut(auth);
+      $("#loginErr").textContent="Usa una cuenta @"+DOMINIO;
+    }
+  }catch(e){
+    if(e&&e.code==="auth/popup-closed-by-user")return;
+    $("#loginErr").textContent="No se pudo iniciar sesión. Revisa tu conexión.";
+    console.error(e);
+  }
+}
+$("#btnLogout").addEventListener("click",async()=>{
+  driveToken=null;sessionStorage.removeItem("rcr_drive_token");
+  try{await signOut(auth);}catch(e){}
+});
+
+onAuthStateChanged(auth,async user=>{
+  if(user&&user.email&&user.email.toLowerCase().endsWith("@"+DOMINIO)){
+    currentUser=user;
+    showScreen("screen-app");
+    await arrancarApp();
+  }else{
+    currentUser=null;
+    showScreen("screen-login");
+  }
+});
+
+/* Devuelve token Drive válido. interactive=true permite popup (sólo bajo gesto del usuario). */
+async function ensureDriveToken(interactive){
+  if(driveToken)return driveToken;
+  if(!interactive)throw new Error("NO_TOKEN");
+  const r=await signInWithPopup(auth,provider);
+  const cred=GoogleAuthProvider.credentialFromResult(r);
+  if(!cred||!cred.accessToken)throw new Error("NO_TOKEN");
+  driveToken=cred.accessToken;sessionStorage.setItem("rcr_drive_token",driveToken);
+  return driveToken;
+}
+function tokenInvalido(){driveToken=null;sessionStorage.removeItem("rcr_drive_token");}
+
+/* ============================================================
+   Drive REST
+   ============================================================ */
+class AuthErr extends Error{}
+async function driveBuscarCarpeta(nombre,padre,token){
+  const q=`name='${nombre.replace(/'/g,"\\'")}' and '${padre}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  const url="https://www.googleapis.com/drive/v3/files?q="+encodeURIComponent(q)+"&fields=files(id,name)&spaces=drive";
+  const r=await fetch(url,{headers:{Authorization:"Bearer "+token}});
+  if(r.status===401)throw new AuthErr();
+  if(!r.ok)throw new Error("Drive list "+r.status);
+  const d=await r.json();return d.files&&d.files[0]?d.files[0].id:null;
+}
+async function driveCrearCarpeta(nombre,padre,token){
+  const r=await fetch("https://www.googleapis.com/drive/v3/files?fields=id",{method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({name:nombre,mimeType:"application/vnd.google-apps.folder",parents:[padre]})});
+  if(r.status===401)throw new AuthErr();
+  if(!r.ok)throw new Error("Drive mkdir "+r.status);
+  return (await r.json()).id;
+}
+async function driveCarpeta(nombre,padre,token){return (await driveBuscarCarpeta(nombre,padre,token))||(await driveCrearCarpeta(nombre,padre,token));}
+async function driveSubir(blob,filename,padre,token){
+  const meta={name:filename,parents:[padre]};
+  const form=new FormData();
+  form.append("metadata",new Blob([JSON.stringify(meta)],{type:"application/json"}));
+  form.append("file",blob,filename);
+  const r=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink",{method:"POST",headers:{Authorization:"Bearer "+token},body:form});
+  if(r.status===401)throw new AuthErr();
+  if(!r.ok)throw new Error("Drive upload "+r.status);
+  return await r.json();
+}
+
+/* ============================================================
+   Firestore
+   ============================================================ */
+async function cargarAsociaciones(){
+  try{
+    const qs=await getDocs(collection(db,COL_ASOC));
+    const arr=[];
+    qs.forEach(d=>{const x=d.data()||{};arr.push({id:d.id,nombre:x.nombre||x.Nombre||x.nombre_asociacion||x.NombreAsociacion||x.razon_social||x.RazonSocial||x.asociacion||d.id});});
+    arr.sort((a,b)=>a.nombre.localeCompare(b.nombre,"es"));
+    localStorage.setItem("rcr_asociaciones",JSON.stringify(arr));
+    return arr;
+  }catch(e){
+    const c=localStorage.getItem("rcr_asociaciones");return c?JSON.parse(c):[];
+  }
+}
+async function cargarFichas(){
+  try{
+    const qs=await getDocs(collection(db,COL_FICHAS));
+    const arr=[];qs.forEach(d=>arr.push({id:d.id,...d.data()}));
+    arr.sort((a,b)=>{const ta=a.creado_en&&a.creado_en.seconds?a.creado_en.seconds:0;const tb=b.creado_en&&b.creado_en.seconds?b.creado_en.seconds:0;return tb-ta;});
+    return arr;
+  }catch(e){return [];}
+}
+
+/* ============================================================
+   Sincronización
+   ============================================================ */
+async function sincronizarUno(item,token){
+  const asocNombre=item.data.asociacion_nombre||"Sin asociación";
+  const carpAsoc=await driveCarpeta(asocNombre,DRIVE_ROOT,token);
+  const nombreCarp=(item.data.nombres_apellidos||"Reciclador").trim();
+  const carpRec=await driveCarpeta(nombreCarp,carpAsoc,token);
+  const urls=Object.assign({},item.existingPhotos||{});
+  const ts=Date.now();
+  async function subir(blob,base,campoUrl,campoId){
+    if(!blob)return;
+    const up=await driveSubir(blob,`${base}_${ts}.jpg`,carpRec,token);
+    urls[campoUrl]=up.webViewLink;urls[campoId]=up.id;
+  }
+  await subir(item.photos&&item.photos.perfil,"perfil","foto_perfil_url","foto_perfil_id");
+  await subir(item.photos&&item.photos.anverso,"cedula_anverso","foto_cedula_anverso_url","foto_cedula_anverso_id");
+  await subir(item.photos&&item.photos.reverso,"cedula_reverso","foto_cedula_reverso_url","foto_cedula_reverso_id");
+  const docData=Object.assign({},item.data,urls,{carpeta_id:carpRec,actualizado_en:serverTimestamp()});
+  if(item.mode==="create"){
+    docData.creado_en=serverTimestamp();
+    docData.creado_por=currentUser?currentUser.email:"";
+    await addDoc(collection(db,COL_FICHAS),docData);
+  }else{
+    await setDoc(doc(db,COL_FICHAS,item.firestoreId),docData,{merge:true});
+  }
+}
+async function procesarCola(interactive){
+  if(syncing)return;
+  cola=await idbAll("queue");
+  if(cola.length===0){actualizarIndicadorSync();return;}
+  if(!navigator.onLine){actualizarIndicadorSync();return;}
+  syncing=true;setSyncUI("syncing");
+  let token;
+  try{token=await ensureDriveToken(interactive);}
+  catch(e){syncing=false;setSyncUI("pending",cola.length);if(interactive)showToast("Inicia sesión otra vez para sincronizar");return;}
+  let huboError=false;
+  for(const item of cola){
+    let intentos=0;
+    while(true){
+      try{await sincronizarUno(item,token);await idbDel("queue",item.localId);break;}
+      catch(e){
+        if(e instanceof AuthErr&&intentos===0){intentos++;tokenInvalido();try{token=await ensureDriveToken(interactive);continue;}catch(_){huboError=true;break;}}
+        console.error("Sync error",e);huboError=true;break;
+      }
+    }
+    if(huboError)break;
+  }
+  syncing=false;
+  cola=await idbAll("queue");
+  fichasFS=await cargarFichas();
+  renderLista();
+  if(huboError){setSyncUI(navigator.onLine?"error":"pending",cola.length);if(interactive)showToast("No se pudo completar la sincronización");}
+  else{setSyncUI("idle",0);if(interactive)showToast("Todo sincronizado");}
+}
+function setSyncUI(state,count){
+  const b=$("#btnSync");if(!b)return;
+  b.classList.remove("syncing","pending","error");
+  const badge=$("#syncBadge");
+  if(state==="syncing")b.classList.add("syncing");
+  else if(state==="pending")b.classList.add("pending");
+  else if(state==="error")b.classList.add("error");
+  if(count&&count>0){badge.textContent=count;badge.classList.remove("hidden");}else badge.classList.add("hidden");
+}
+async function actualizarIndicadorSync(){
+  if(syncing)return;
+  cola=await idbAll("queue");
+  if(cola.length===0)setSyncUI("idle",0);
+  else setSyncUI("pending",cola.length);
+}
+$("#btnSync").addEventListener("click",()=>procesarCola(true));
+
+/* online / offline */
+function reflejarConexion(){$("#offlineBanner").classList.toggle("show",!navigator.onLine);}
+window.addEventListener("online",()=>{reflejarConexion();showToast("Conexión restablecida");procesarCola(false);});
+window.addEventListener("offline",()=>{reflejarConexion();});
+
+/* ============================================================
+   Lista
+   ============================================================ */
+function inicial(nombre){const p=(nombre||"?").trim().split(/\s+/);return ((p[0]||"")[0]||"")+((p[1]||"")[0]||"");}
+const GRADS=["var(--grad-b)","var(--grad-c)","var(--grad-d)","var(--grad-a)","var(--grad-e)"];
+function gradFor(s){let h=0;for(let i=0;i<(s||"").length;i++)h=(h*31+s.charCodeAt(i))>>>0;return GRADS[h%GRADS.length];}
+
+function construirFilas(){
+  const pendUpd=new Set(cola.filter(q=>q.mode==="update").map(q=>q.firestoreId));
+  const filas=[];
+  cola.forEach(q=>filas.push({pending:true,key:"q:"+q.localId,localId:q.localId,mode:q.mode,firestoreId:q.firestoreId,f:q.data,fromQueue:true}));
+  fichasFS.forEach(d=>{if(!pendUpd.has(d.id))filas.push({pending:false,key:"f:"+d.id,id:d.id,f:d,fromQueue:false});});
+  return filas;
+}
+function renderLista(){
+  const filas=construirFilas();
+  const sub=$("#listSub");
+  const pend=cola.length;
+  sub.textContent=`${filas.length} ficha${filas.length===1?"":"s"}`+(pend?` · ${pend} sin sincronizar`:"");
+  const cont=$("#listContainer");
+  if(filas.length===0){
+    cont.innerHTML=`<div class="card"><div class="empty-state"><div class="e-ico">${ico("users")}</div><div style="font-weight:600;color:var(--text)">Aún no hay fichas</div><div>Toca el botón + para registrar al primer reciclador.</div></div></div>`;
+    return;
+  }
+  let rows="";
+  filas.forEach(r=>{
+    const f=r.f;
+    const nombre=esc(f.nombres_apellidos||"(sin nombre)");
+    const ced=esc(f.cedula||"—");
+    const asoc=esc(f.asociacion_nombre||"—");
+    const cel=esc(f.celular||"—");
+    const estado=r.pending
+      ? `<span class="badge badge-pending">Sin sincronizar</span>`
+      : `<span class="badge badge-synced">Sincronizada</span>`;
+    const verCarpeta=(!r.pending&&f.carpeta_id)
+      ? `<button class="icon-btn" data-act="folder" data-folder="${esc(f.carpeta_id)}" title="Abrir carpeta en Drive">${ico("folder")}</button>`:"";
+    rows+=`<tr data-key="${r.key}">
+      <td data-col="name"><div class="cell-name"><span class="avatar" style="background:${gradFor(nombre)}">${esc(inicial(f.nombres_apellidos))}</span><b>${nombre}</b></div></td>
+      <td><strong>Cédula</strong>${ced}</td>
+      <td><strong>Asociación</strong>${asoc}</td>
+      <td><strong>Celular</strong>${cel}</td>
+      <td><strong>Estado</strong>${estado}</td>
+      <td data-actions-row><div class="td-actions">${verCarpeta}<button class="icon-btn primary" data-act="edit" title="Editar">${ico("edit")}</button><button class="icon-btn del" data-act="del" title="Eliminar">${ico("trash")}</button></div></td>
+    </tr>`;
+  });
+  cont.innerHTML=`<div class="table-wrap"><table><thead><tr><th>Reciclador</th><th>Cédula</th><th>Asociación</th><th>Celular</th><th>Estado</th><th style="text-align:right">Acciones</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  cont.querySelectorAll("[data-act]").forEach(btn=>{
+    btn.addEventListener("click",e=>{
+      const tr=e.target.closest("tr");const key=tr.getAttribute("data-key");
+      const fila=filas.find(x=>x.key===key);if(!fila)return;
+      const act=btn.getAttribute("data-act");
+      if(act==="folder")window.open("https://drive.google.com/drive/folders/"+btn.getAttribute("data-folder"),"_blank");
+      else if(act==="edit")abrirForm(fila);
+      else if(act==="del")confirmarEliminar(fila);
+    });
+  });
+}
+
+/* ============================================================
+   Formulario (crear / editar)
+   ============================================================ */
+let formPhotos={perfil:null,anverso:null,reverso:null};
+let formExisting={};
+const PHOTO_DEFS=[
+  {key:"perfil",label:"Foto del reciclador",urlField:"foto_perfil_url"},
+  {key:"anverso",label:"Cédula (anverso)",urlField:"foto_cedula_anverso_url"},
+  {key:"reverso",label:"Cédula (reverso)",urlField:"foto_cedula_reverso_url"}
+];
+
+function optionsAsoc(sel){
+  let o=`<option value="">Selecciona…</option>`;
+  asociaciones.forEach(a=>{o+=`<option value="${esc(a.id)}" data-nombre="${esc(a.nombre)}"${sel===a.id?" selected":""}>${esc(a.nombre)}</option>`;});
+  return o;
+}
+
+function abrirForm(fila){
+  formPhotos={perfil:null,anverso:null,reverso:null};
+  formExisting={};
+  const editing=!!fila;
+  const f=editing?fila.f:{};
+  if(editing){
+    PHOTO_DEFS.forEach(p=>{if(f[p.urlField]){formExisting[p.urlField]=f[p.urlField];formExisting[p.urlField.replace("_url","_id")]=f[p.urlField.replace("_url","_id")];}});
+  }
+  const idRec=editing?(fila.fromQueue?(fila.mode==="update"?fila.firestoreId:"(se generará al sincronizar)"):fila.id):"(se generará automáticamente)";
+  const ruc=editing?(f.ruc===true||f.ruc==="Sí"||f.ruc==="Si"):false;
+
+  const html=`
+  <div class="modal-overlay" id="formOverlay">
+    <div class="modal">
+      <div class="modal-head">
+        <div><div class="modal-title">${editing?"Editar ficha":"Nueva ficha"}</div><div class="modal-sub">Reciclador</div></div>
+        <button class="modal-close" id="formClose">${ico("close")}</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Asociación <span class="req">*</span></label>
+          <select class="form-select" id="fAsoc">${optionsAsoc(editing?f.id_asociacion:"")}</select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">ID reciclador</label>
+          <input class="form-input" id="fId" value="${esc(idRec)}" readonly>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nombres y apellidos <span class="req">*</span></label>
+          <input class="form-input" id="fNombre" value="${esc(f.nombres_apellidos||"")}" placeholder="Ej. María Pérez Loja" autocomplete="off">
+        </div>
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label class="form-label">Cédula <span class="req">*</span></label>
+            <input class="form-input" id="fCedula" value="${esc(f.cedula||"")}" inputmode="numeric" maxlength="10" placeholder="10 dígitos">
+            <div class="form-hint" id="fCedulaHint">Cédula ecuatoriana de 10 dígitos.</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Fecha de nacimiento</label>
+            <input class="form-input" id="fNac" type="date" value="${esc(f.fecha_nacimiento||"")}" max="${new Date().toISOString().slice(0,10)}">
+          </div>
+        </div>
+        <div class="form-grid-2">
+          <div class="form-group">
+            <label class="form-label">Celular</label>
+            <input class="form-input" id="fCelular" value="${esc(f.celular||"")}" inputmode="numeric" maxlength="10" placeholder="09…">
+          </div>
+          <div class="form-group">
+            <label class="form-label">N° de cargas familiares</label>
+            <input class="form-input" id="fCargas" type="number" min="0" step="1" value="${f.cargas_familiares!=null?esc(f.cargas_familiares):""}" placeholder="0">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Domicilio</label>
+          <textarea class="form-textarea" id="fDomicilio" placeholder="Dirección / referencia">${esc(f.domicilio||"")}</textarea>
+        </div>
+        <div class="form-group">
+          <label class="form-label">¿Tiene RUC?</label>
+          <div class="segmented" id="fRuc">
+            <button type="button" class="seg-opt${ruc?" active":""}" data-val="si">Sí</button>
+            <button type="button" class="seg-opt${ruc?"":" active"}" data-val="no">No</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Fotografías <span class="req">*</span></label>
+          <div class="photo-grid" id="photoGrid"></div>
+          <div class="form-hint" id="photoHint">Toca cada recuadro para tomar la foto con la cámara.</div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-glass" id="formCancel">Cancelar</button>
+        <button class="btn btn-primary" id="formSave">${editing?"Guardar cambios":"Guardar ficha"}</button>
+      </div>
+    </div>
+  </div>`;
+  const wrap=document.createElement("div");wrap.innerHTML=html;document.body.appendChild(wrap.firstElementChild);
+
+  // RUC toggle
+  $("#fRuc").querySelectorAll(".seg-opt").forEach(b=>b.addEventListener("click",()=>{$("#fRuc").querySelectorAll(".seg-opt").forEach(x=>x.classList.remove("active"));b.classList.add("active");}));
+  // Photo tiles
+  renderPhotoTiles();
+  // Cédula live hint
+  $("#fCedula").addEventListener("input",e=>{e.target.value=e.target.value.replace(/\D/g,"").slice(0,10);});
+  $("#fCelular").addEventListener("input",e=>{e.target.value=e.target.value.replace(/\D/g,"").slice(0,10);});
+  // close handlers
+  const close=()=>cerrarForm();
+  $("#formClose").addEventListener("click",close);
+  $("#formCancel").addEventListener("click",close);
+  $("#formOverlay").addEventListener("click",e=>{if(e.target.id==="formOverlay")close();});
+  $("#formSave").addEventListener("click",()=>guardarForm(fila));
+}
+function cerrarForm(){const o=$("#formOverlay");if(o)o.remove();formPhotos={perfil:null,anverso:null,reverso:null};formExisting={};}
+
+function renderPhotoTiles(){
+  const grid=$("#photoGrid");if(!grid)return;
+  grid.innerHTML="";
+  PHOTO_DEFS.forEach(p=>{
+    const tile=document.createElement("div");
+    tile.className="photo-tile";
+    const blob=formPhotos[p.key];
+    const existingUrl=formExisting[p.urlField];
+    if(blob){
+      const url=URL.createObjectURL(blob);
+      tile.classList.add("filled");
+      tile.innerHTML=`<img src="${url}" alt=""><div class="pt-overlay"><span class="pt-name">${esc(p.label)}</span><button type="button" class="pt-mini" data-rm="${p.key}" title="Quitar">${ico("close")}</button></div>`;
+    }else if(existingUrl){
+      tile.classList.add("filled");
+      tile.style.background="#0a2540";
+      tile.innerHTML=`<span class="pt-badge">Cargada</span><a class="pt-link" href="${esc(existingUrl)}" target="_blank" rel="noopener" title="Ver">${ico("view")}</a><div class="pt-overlay"><span class="pt-name">${esc(p.label)} · tocar para cambiar</span></div>`;
+    }else{
+      tile.innerHTML=`${ico("camera")}<span class="pt-label">${esc(p.label)}</span>`;
+    }
+    // hidden input
+    const input=document.createElement("input");
+    input.type="file";input.accept="image/*";input.capture="environment";input.style.display="none";
+    input.addEventListener("change",async e=>{
+      const file=e.target.files&&e.target.files[0];if(!file)return;
+      try{tile.classList.remove("invalid");formPhotos[p.key]=await comprimirImagen(file);renderPhotoTiles();}
+      catch(err){showToast("No se pudo procesar la foto");console.error(err);}
+    });
+    tile.appendChild(input);
+    tile.addEventListener("click",e=>{
+      if(e.target.closest("[data-rm]")){formPhotos[p.key]=null;renderPhotoTiles();return;}
+      if(e.target.closest(".pt-link"))return;
+      input.click();
+    });
+    grid.appendChild(tile);
+  });
+}
+
+async function guardarForm(fila){
+  const editing=!!fila;
+  const asocSel=$("#fAsoc");
+  const id_asociacion=asocSel.value;
+  const asociacion_nombre=asocSel.selectedOptions[0]?asocSel.selectedOptions[0].getAttribute("data-nombre"):"";
+  const nombres=$("#fNombre").value.trim();
+  const cedula=$("#fCedula").value.trim();
+  const celular=$("#fCelular").value.trim();
+  const cargas=$("#fCargas").value;
+  const ruc=$("#fRuc").querySelector(".seg-opt.active").getAttribute("data-val")==="si";
+  const data={
+    id_asociacion,asociacion_nombre,
+    nombres_apellidos:nombres,
+    cedula,
+    fecha_nacimiento:$("#fNac").value||"",
+    domicilio:$("#fDomicilio").value.trim(),
+    celular,
+    cargas_familiares:cargas===""?null:parseInt(cargas,10),
+    ruc
+  };
+  // Validaciones
+  let err=null;
+  const setInvalid=(sel,bad)=>{const el=$(sel);if(el)el.classList.toggle("invalid",bad);};
+  setInvalid("#fAsoc",false);setInvalid("#fNombre",false);setInvalid("#fCedula",false);
+  if(!id_asociacion){err="Selecciona la asociación.";setInvalid("#fAsoc",true);}
+  else if(!nombres){err="Ingresa nombres y apellidos.";setInvalid("#fNombre",true);}
+  else if(!validarCedulaEC(cedula)){err="La cédula no es válida (10 dígitos, ecuatoriana).";setInvalid("#fCedula",true);$("#fCedulaHint").classList.add("err");$("#fCedulaHint").textContent="Cédula inválida. Verifica los 10 dígitos.";}
+  else if(celular&&!/^\d{10}$/.test(celular)){err="El celular debe tener 10 dígitos.";setInvalid("#fCelular",true);}
+  // fotos: requerir las 3 salvo que ya existan (en edición)
+  const faltan=PHOTO_DEFS.filter(p=>!formPhotos[p.key]&&!formExisting[p.urlField]);
+  if(!err&&faltan.length){
+    err="Faltan fotos: "+faltan.map(p=>p.label.toLowerCase()).join(", ")+".";
+    $("#photoHint").classList.add("err");$("#photoHint").textContent=err;
+    document.querySelectorAll("#photoGrid .photo-tile").forEach((t,i)=>{if(!formPhotos[PHOTO_DEFS[i].key]&&!formExisting[PHOTO_DEFS[i].urlField])t.classList.add("invalid");});
+  }
+  if(err){showToast(err);return;}
+
+  // Construir item de cola
+  const item={
+    localId:editing&&fila.fromQueue?fila.localId:("loc_"+Date.now()+"_"+Math.random().toString(36).slice(2,7)),
+    mode:editing?(fila.fromQueue?fila.mode:"update"):"create",
+    firestoreId:editing?(fila.fromQueue?fila.firestoreId:fila.id):null,
+    data,
+    photos:{perfil:formPhotos.perfil,anverso:formPhotos.anverso,reverso:formPhotos.reverso},
+    existingPhotos:Object.assign({},formExisting),
+    createdAt:Date.now()
+  };
+  try{
+    await idbPut("queue",item);
+  }catch(e){showToast("No se pudo guardar localmente");console.error(e);return;}
+  cerrarForm();
+  cola=await idbAll("queue");
+  renderLista();
+  showToast(navigator.onLine?"Ficha guardada · sincronizando…":"Ficha guardada offline");
+  setSyncUI("pending",cola.length);
+  procesarCola(true); // hay gesto de usuario → puede re-autenticar si hiciera falta
+}
+
+$("#btnAdd").addEventListener("click",()=>{
+  if(asociaciones.length===0){showToast("No hay asociaciones cargadas. Revisa tu conexión.");return;}
+  abrirForm(null);
+});
+
+/* ============================================================
+   Eliminar (confirm)
+   ============================================================ */
+function confirmarEliminar(fila){
+  const nombre=esc((fila.f&&fila.f.nombres_apellidos)||"esta ficha");
+  const html=`
+  <div class="modal-overlay" id="confOverlay">
+    <div class="modal" style="max-width:420px">
+      <div class="modal-head"><div><div class="modal-title">Eliminar ficha</div></div><button class="modal-close" id="confClose">${ico("close")}</button></div>
+      <div class="modal-body"><p style="font-size:14px;color:var(--text);line-height:1.5">¿Seguro que quieres eliminar la ficha de <b>${nombre}</b>?<br><span style="color:var(--text-muted);font-size:13px">Las fotos en Drive no se borran.</span></p></div>
+      <div class="modal-foot"><button class="btn btn-glass" id="confCancel">Cancelar</button><button class="btn btn-danger" id="confOk">Eliminar</button></div>
+    </div>
+  </div>`;
+  const wrap=document.createElement("div");wrap.innerHTML=html;document.body.appendChild(wrap.firstElementChild);
+  const close=()=>{const o=$("#confOverlay");if(o)o.remove();};
+  $("#confClose").addEventListener("click",close);
+  $("#confCancel").addEventListener("click",close);
+  $("#confOverlay").addEventListener("click",e=>{if(e.target.id==="confOverlay")close();});
+  $("#confOk").addEventListener("click",async()=>{
+    try{
+      if(fila.fromQueue){await idbDel("queue",fila.localId);}
+      else{await deleteDoc(doc(db,COL_FICHAS,fila.id));}
+      close();
+      cola=await idbAll("queue");fichasFS=await cargarFichas();renderLista();actualizarIndicadorSync();
+      showToast("Ficha eliminada");
+    }catch(e){showToast("No se pudo eliminar (¿sin conexión?)");console.error(e);}
+  });
+}
+
+/* ============================================================
+   Arranque
+   ============================================================ */
+async function arrancarApp(){
+  reflejarConexion();
+  cola=await idbAll("queue");
+  setSyncUI(cola.length?"pending":"idle",cola.length);
+  asociaciones=await cargarAsociaciones();
+  fichasFS=await cargarFichas();
+  renderLista();
+  procesarCola(false); // intenta sincronizar pendientes si hay token y conexión
+}
+
+/* Service worker */
+if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.register("./sw.js").catch(()=>{});});}
+</script>
+</body>
+</html>
