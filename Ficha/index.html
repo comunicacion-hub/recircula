@@ -495,11 +495,23 @@ async function cargarFichas(){
 /* ============================================================
    Sincronización
    ============================================================ */
+let _asocCache=new Map();
+async function carpetaAsocCached(nombre,token){
+  if(_asocCache.has(nombre))return _asocCache.get(nombre);
+  const id=await driveCarpeta(nombre,DRIVE_ROOT,token);
+  _asocCache.set(nombre,id);
+  return id;
+}
 async function sincronizarUno(item,token){
   const asocNombre=item.data.asociacion_nombre||"Sin asociación";
-  const carpAsoc=await driveCarpeta(asocNombre,DRIVE_ROOT,token);
+  const carpAsoc=await carpetaAsocCached(asocNombre,token);
   const nombreCarp=(item.data.nombres_apellidos||"Reciclador").trim();
-  const carpRec=await driveCarpeta(nombreCarp,carpAsoc,token);
+  let carpRec=item.carpetaRec||null;
+  if(!carpRec){
+    carpRec=item.mode==="update"?await driveCarpeta(nombreCarp,carpAsoc,token):await driveCrearCarpeta(nombreCarp,carpAsoc,token);
+    item.carpetaRec=carpRec;
+    try{await idbPut("queue",item);}catch(_){}
+  }
   const urls=Object.assign({},item.existingPhotos||{});
   const ts=Date.now();
   async function subir(blob,base,campoUrl,campoId){
@@ -507,9 +519,11 @@ async function sincronizarUno(item,token){
     const up=await driveSubir(blob,`${base}_${ts}.jpg`,carpRec,token);
     urls[campoUrl]=up.webViewLink;urls[campoId]=up.id;
   }
-  await subir(item.photos&&item.photos.perfil,"perfil","foto_perfil_url","foto_perfil_id");
-  await subir(item.photos&&item.photos.anverso,"cedula_anverso","foto_cedula_anverso_url","foto_cedula_anverso_id");
-  await subir(item.photos&&item.photos.reverso,"cedula_reverso","foto_cedula_reverso_url","foto_cedula_reverso_id");
+  await Promise.all([
+    subir(item.photos&&item.photos.perfil,"perfil","foto_perfil_url","foto_perfil_id"),
+    subir(item.photos&&item.photos.anverso,"cedula_anverso","foto_cedula_anverso_url","foto_cedula_anverso_id"),
+    subir(item.photos&&item.photos.reverso,"cedula_reverso","foto_cedula_reverso_url","foto_cedula_reverso_id")
+  ]);
   const docData=Object.assign({},item.data,urls,{carpeta_id:carpRec,actualizado_en:serverTimestamp()});
   if(item.mode==="create"){
     docData.creado_en=serverTimestamp();
@@ -525,6 +539,9 @@ async function procesarCola(interactive){
   if(cola.length===0){actualizarIndicadorSync();return;}
   if(!navigator.onLine){actualizarIndicadorSync();return;}
   syncing=true;setSyncUI("syncing");
+  _asocCache=new Map();
+  const badgeEl=$("#syncBadge");let restantes=cola.length;
+  if(badgeEl){badgeEl.classList.remove("hidden");badgeEl.textContent=restantes;}
   let token;
   try{token=await ensureDriveToken(interactive);}
   catch(e){syncing=false;setSyncUI("pending",cola.length);if(interactive)showToast("Inicia sesión otra vez para sincronizar");return;}
@@ -532,7 +549,7 @@ async function procesarCola(interactive){
   for(const item of cola){
     let intentos=0;
     while(true){
-      try{await sincronizarUno(item,token);await idbDel("queue",item.localId);break;}
+      try{await sincronizarUno(item,token);await idbDel("queue",item.localId);restantes--;if(badgeEl){badgeEl.textContent=restantes;if(restantes<=0)badgeEl.classList.add("hidden");}break;}
       catch(e){
         const scopeIssue=e.httpStatus===403&&/insufficient|scope|PERMISSION_DENIED/i.test((e.reason||"")+" "+(e.message||""));
         if((e instanceof AuthErr||scopeIssue)&&intentos<1){
@@ -664,8 +681,8 @@ function abrirForm(fila){
   if(editing){
     PHOTO_DEFS.forEach(p=>{if(f[p.urlField]){formExisting[p.urlField]=f[p.urlField];formExisting[p.urlField.replace("_url","_id")]=f[p.urlField.replace("_url","_id")];}});
   }
-  const idRec=editing?(fila.fromQueue?(fila.mode==="update"?fila.firestoreId:"(se generará al sincronizar)"):fila.id):"(se generará automáticamente)";
   const ruc=editing?(f.ruc===true||f.ruc==="Sí"||f.ruc==="Si"):false;
+  const banco=editing?(f.cuenta_bancaria===true||f.cuenta_bancaria==="Sí"||f.cuenta_bancaria==="Si"):false;
 
   const html=`
   <div class="modal-overlay" id="formOverlay">
@@ -678,10 +695,6 @@ function abrirForm(fila){
         <div class="form-group">
           <label class="form-label">Asociación</label>
           <select class="form-select" id="fAsoc">${optionsAsoc(editing?f.id_asociacion:"")}</select>
-        </div>
-        <div class="form-group">
-          <label class="form-label">ID reciclador</label>
-          <input class="form-input" id="fId" value="${esc(idRec)}" readonly>
         </div>
         <div class="form-group">
           <label class="form-label">Nombres y apellidos <span class="req">*</span></label>
@@ -720,6 +733,13 @@ function abrirForm(fila){
           </div>
         </div>
         <div class="form-group">
+          <label class="form-label">¿Tiene cuenta bancaria?</label>
+          <div class="segmented" id="fBanco">
+            <button type="button" class="seg-opt${banco?" active":""}" data-val="si">Sí</button>
+            <button type="button" class="seg-opt${banco?"":" active"}" data-val="no">No</button>
+          </div>
+        </div>
+        <div class="form-group">
           <label class="form-label">Fotografías</label>
           <div class="photo-grid" id="photoGrid"></div>
           <div class="form-hint" id="photoHint">Opcional · toca cada recuadro para tomar la foto con la cámara.</div>
@@ -733,8 +753,9 @@ function abrirForm(fila){
   </div>`;
   const wrap=document.createElement("div");wrap.innerHTML=html;document.body.appendChild(wrap.firstElementChild);
 
-  // RUC toggle
-  $("#fRuc").querySelectorAll(".seg-opt").forEach(b=>b.addEventListener("click",()=>{$("#fRuc").querySelectorAll(".seg-opt").forEach(x=>x.classList.remove("active"));b.classList.add("active");}));
+  // Toggles Sí/No
+  const wireSeg=id=>{const g=$(id);if(!g)return;g.querySelectorAll(".seg-opt").forEach(b=>b.addEventListener("click",()=>{g.querySelectorAll(".seg-opt").forEach(x=>x.classList.remove("active"));b.classList.add("active");}));};
+  wireSeg("#fRuc");wireSeg("#fBanco");
   // Photo tiles
   renderPhotoTiles();
   // Cédula live hint
@@ -796,6 +817,7 @@ async function guardarForm(fila){
   const celular=$("#fCelular").value.trim();
   const cargas=$("#fCargas").value;
   const ruc=$("#fRuc").querySelector(".seg-opt.active").getAttribute("data-val")==="si";
+  const cuenta_bancaria=$("#fBanco").querySelector(".seg-opt.active").getAttribute("data-val")==="si";
   const data={
     id_asociacion,asociacion_nombre,
     nombres_apellidos:nombres,
@@ -804,7 +826,8 @@ async function guardarForm(fila){
     domicilio:$("#fDomicilio").value.trim(),
     celular,
     cargas_familiares:cargas===""?null:parseInt(cargas,10),
-    ruc
+    ruc,
+    cuenta_bancaria
   };
   // Validaciones — solo "nombres y apellidos" es obligatorio
   let err=null;
