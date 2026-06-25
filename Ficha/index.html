@@ -327,6 +327,8 @@ const $=s=>document.querySelector(s);
 function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
 let toastT;
 function showToast(msg,ms=2800){const t=$("#toast");t.textContent=msg;t.classList.add("show");clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove("show"),ms);}
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+function esErrorRed(e){const m=((e&&e.message)||"")+"";return (e instanceof TypeError)||/load failed|failed to fetch|networkerror|network error|the network connection was lost/i.test(m);}
 function showScreen(id){["screen-loading","screen-login","screen-app"].forEach(s=>$("#"+s).classList.toggle("hidden",s!==id));}
 
 /* ============================================================
@@ -496,24 +498,32 @@ async function driveTrash(fileId,token){
    Firestore
    ============================================================ */
 async function cargarAsociaciones(){
-  try{
-    const qs=await getDocs(collection(db,COL_ASOC));
-    const arr=[];
-    qs.forEach(d=>{const x=d.data()||{};arr.push({id:d.id,nombre:x.nombre||x.Nombre||x.nombre_asociacion||x.NombreAsociacion||x.razon_social||x.RazonSocial||x.asociacion||d.id});});
-    arr.sort((a,b)=>a.nombre.localeCompare(b.nombre,"es"));
-    localStorage.setItem("rcr_asociaciones",JSON.stringify(arr));
-    return arr;
-  }catch(e){
-    const c=localStorage.getItem("rcr_asociaciones");return c?JSON.parse(c):[];
+  for(let i=0;i<2;i++){
+    try{
+      const qs=await getDocs(collection(db,COL_ASOC));
+      const arr=[];
+      qs.forEach(d=>{const x=d.data()||{};arr.push({id:d.id,nombre:x.nombre||x.Nombre||x.nombre_asociacion||x.NombreAsociacion||x.razon_social||x.RazonSocial||x.asociacion||d.id});});
+      arr.sort((a,b)=>a.nombre.localeCompare(b.nombre,"es"));
+      localStorage.setItem("rcr_asociaciones",JSON.stringify(arr));
+      return arr;
+    }catch(e){
+      if(i===0&&navigator.onLine){await sleep(900);continue;}
+      const c=localStorage.getItem("rcr_asociaciones");return c?JSON.parse(c):[];
+    }
   }
 }
 async function cargarFichas(){
-  try{
-    const qs=await getDocs(collection(db,COL_FICHAS));
-    const arr=[];qs.forEach(d=>arr.push({id:d.id,...d.data()}));
-    arr.sort((a,b)=>{const ta=a.creado_en&&a.creado_en.seconds?a.creado_en.seconds:0;const tb=b.creado_en&&b.creado_en.seconds?b.creado_en.seconds:0;return tb-ta;});
-    return arr;
-  }catch(e){return [];}
+  for(let i=0;i<2;i++){
+    try{
+      const qs=await getDocs(collection(db,COL_FICHAS));
+      const arr=[];qs.forEach(d=>arr.push({id:d.id,...d.data()}));
+      arr.sort((a,b)=>{const ta=a.creado_en&&a.creado_en.seconds?a.creado_en.seconds:0;const tb=b.creado_en&&b.creado_en.seconds?b.creado_en.seconds:0;return tb-ta;});
+      return arr;
+    }catch(e){
+      if(i===0&&navigator.onLine){await sleep(900);continue;}
+      return fichasFS||[];
+    }
+  }
 }
 
 /* ============================================================
@@ -571,16 +581,17 @@ async function procesarCola(interactive){
   catch(e){syncing=false;setSyncUI("pending",cola.length);if(interactive)showToast("Inicia sesión otra vez para sincronizar");return;}
   let huboError=false,errMsg="";
   for(const item of cola){
-    let intentos=0;
+    let authTries=0,netTries=0;
     while(true){
       try{await sincronizarUno(item,token);await idbDel("queue",item.localId);restantes--;if(badgeEl){badgeEl.textContent=restantes;if(restantes<=0)badgeEl.classList.add("hidden");}break;}
       catch(e){
         const scopeIssue=e.httpStatus===403&&/insufficient|scope|PERMISSION_DENIED/i.test((e.reason||"")+" "+(e.message||""));
-        if((e instanceof AuthErr||scopeIssue)&&intentos<1){
-          intentos++;tokenInvalido();
+        if((e instanceof AuthErr||scopeIssue)&&authTries<1){
+          authTries++;tokenInvalido();
           try{token=await ensureDriveToken(interactive,scopeIssue);continue;}
           catch(_){huboError=true;errMsg=e.message||String(e);break;}
         }
+        if(esErrorRed(e)&&netTries<3){netTries++;await sleep(900*netTries);continue;}
         console.error("Sync error",e);huboError=true;errMsg=e.message||String(e);break;
       }
     }
@@ -595,6 +606,7 @@ async function procesarCola(interactive){
     if(interactive){
       if(/accessNotConfigured|has not been used|SERVICE_DISABLED/i.test(errMsg))showToast("Falta habilitar la API de Google Drive en el proyecto recircula360",6000);
       else if(/insufficient|scope|PERMISSION_DENIED|403/i.test(errMsg))showToast("Drive sin permiso. Cierra sesión, vuelve a entrar y acepta el acceso a Drive",6000);
+      else if(/load failed|failed to fetch|network/i.test(errMsg))showToast("Conexión inestable. Toca sincronizar para reintentar.",5000);
       else showToast("No se sincronizó: "+errMsg,6000);
     }
   }
@@ -617,10 +629,21 @@ async function actualizarIndicadorSync(){
 }
 $("#btnSync").addEventListener("click",()=>procesarCola(true));
 
-/* online / offline */
+/* online / offline / volver a la app */
 function reflejarConexion(){$("#offlineBanner").classList.toggle("show",!navigator.onLine);}
-window.addEventListener("online",()=>{reflejarConexion();showToast("Conexión restablecida");procesarCola(false);});
+async function refrescarYsync(){
+  if(!navigator.onLine)return;
+  try{const a=await cargarAsociaciones();if(a&&a.length)asociaciones=a;}catch(_){}
+  try{fichasFS=await cargarFichas();renderLista();}catch(_){}
+  procesarCola(false);
+}
+window.addEventListener("online",async()=>{
+  reflejarConexion();showToast("Conexión restablecida");
+  await sleep(1200); // dar un momento a que la red se estabilice (evita "Load failed")
+  refrescarYsync();
+});
 window.addEventListener("offline",()=>{reflejarConexion();});
+document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible"&&navigator.onLine)refrescarYsync();});
 
 /* ============================================================
    Lista
