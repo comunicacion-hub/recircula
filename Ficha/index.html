@@ -94,7 +94,7 @@ body{font-family:'Outfit',sans-serif;color:var(--text);background:var(--bg);min-
 .avatar{width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;color:#fff}
 
 /* ── Toast ── */
-#toast{position:fixed;bottom:calc(24px + env(safe-area-inset-bottom));left:50%;transform:translate(-50%,10px);background:rgba(28,30,36,.96);color:#fff;padding:12px 20px;border-radius:14px;font-size:13px;font-weight:500;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:400;max-width:calc(100vw - 48px);text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.15)}
+#toast{position:fixed;bottom:calc(64px + env(safe-area-inset-bottom));left:50%;transform:translate(-50%,10px);background:rgba(28,30,36,.96);color:#fff;padding:12px 20px;border-radius:14px;font-size:13px;font-weight:500;opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:400;max-width:calc(100vw - 48px);text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.15)}
 #toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
 
 /* ── Spinner / loading ── */
@@ -181,8 +181,8 @@ body{font-family:'Outfit',sans-serif;color:var(--text);background:var(--bg);min-
 .photo-tile a.pt-link svg{width:13px;height:13px}
 
 /* Offline banner */
-#offlineBanner{position:fixed;top:0;left:0;right:0;background:rgba(201,26,68,.95);color:#fff;text-align:center;font-size:12px;font-weight:600;padding:7px 12px;z-index:260;display:flex;align-items:center;justify-content:center;gap:8px;transform:translateY(-100%);transition:transform .25s}
-#offlineBanner svg{width:14px;height:14px}
+#offlineBanner{position:fixed;bottom:0;left:0;right:0;background:rgba(201,26,68,.96);color:#fff;text-align:center;font-size:12px;font-weight:600;padding:8px 14px calc(8px + env(safe-area-inset-bottom));z-index:150;display:flex;align-items:center;justify-content:center;gap:8px;transform:translateY(120%);transition:transform .25s}
+#offlineBanner svg{width:14px;height:14px;flex-shrink:0}
 #offlineBanner.show{transform:translateY(0)}
 
 /* ── Responsive ── */
@@ -214,7 +214,7 @@ body{font-family:'Outfit',sans-serif;color:var(--text);background:var(--bg);min-
 <body>
 
 <!-- Offline banner -->
-<div id="offlineBanner"><span data-ico="wifiOff"></span> Sin conexión — los registros se guardarán y se sincronizarán al volver la señal</div>
+<div id="offlineBanner"><span data-ico="wifiOff"></span> Sin conexión · se guardará y se sincroniza al reconectar</div>
 
 <!-- Loading -->
 <div id="screen-loading"><div class="spinner"></div><div class="load-text">Cargando…</div></div>
@@ -370,6 +370,30 @@ function validarCedulaEC(ci){
   const d=ci.split("").map(Number);let s=0;
   for(let i=0;i<9;i++){let v=d[i];if(i%2===0){v*=2;if(v>9)v-=9;}s+=v;}
   return ((10-(s%10))%10)===d[9];
+}
+// Fecha dd/mm/aaaa, día 00 permitido (cuando no se conoce el día)
+function validarFechaFlex(s){
+  const m=/^(\d{2})\/(\d{2})\/(\d{4})$/.exec(s);
+  if(!m)return false;
+  const d=+m[1],mo=+m[2],y=+m[3];
+  if(d<0||d>31)return false;
+  if(mo<1||mo>12)return false;
+  if(y<1900||y>new Date().getFullYear())return false;
+  return true;
+}
+// Muestra fechas guardadas (acepta aaaa-mm-dd antiguas) como dd/mm/aaaa
+function fechaDisplay(v){
+  if(!v)return "";
+  const iso=/^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+  return iso?(iso[3]+"/"+iso[2]+"/"+iso[1]):v;
+}
+function maskFecha(el){
+  el.addEventListener("input",e=>{
+    let v=e.target.value.replace(/\D/g,"").slice(0,8),out=v;
+    if(v.length>4)out=v.slice(0,2)+"/"+v.slice(2,4)+"/"+v.slice(4);
+    else if(v.length>2)out=v.slice(0,2)+"/"+v.slice(2);
+    e.target.value=out;
+  });
 }
 
 /* ============================================================
@@ -708,7 +732,8 @@ function abrirForm(fila){
           </div>
           <div class="form-group">
             <label class="form-label">Fecha de nacimiento</label>
-            <input class="form-input" id="fNac" type="date" value="${esc(f.fecha_nacimiento||"")}" max="${new Date().toISOString().slice(0,10)}">
+            <input class="form-input" id="fNac" inputmode="numeric" maxlength="10" placeholder="dd/mm/aaaa" value="${esc(fechaDisplay(f.fecha_nacimiento||""))}">
+            <div class="form-hint">Si no sabes el día, usa 00 (ej. 00/06/1985).</div>
           </div>
         </div>
         <div class="form-grid-2">
@@ -761,6 +786,7 @@ function abrirForm(fila){
   // Cédula live hint
   $("#fCedula").addEventListener("input",e=>{e.target.value=e.target.value.replace(/\D/g,"").slice(0,10);});
   $("#fCelular").addEventListener("input",e=>{e.target.value=e.target.value.replace(/\D/g,"").slice(0,10);});
+  maskFecha($("#fNac"));
   // close handlers
   const close=()=>cerrarForm();
   $("#formClose").addEventListener("click",close);
@@ -816,13 +842,14 @@ async function guardarForm(fila){
   const cedula=$("#fCedula").value.trim();
   const celular=$("#fCelular").value.trim();
   const cargas=$("#fCargas").value;
+  const fnac=$("#fNac").value.trim();
   const ruc=$("#fRuc").querySelector(".seg-opt.active").getAttribute("data-val")==="si";
   const cuenta_bancaria=$("#fBanco").querySelector(".seg-opt.active").getAttribute("data-val")==="si";
   const data={
     id_asociacion,asociacion_nombre,
     nombres_apellidos:nombres,
     cedula,
-    fecha_nacimiento:$("#fNac").value||"",
+    fecha_nacimiento:fnac,
     domicilio:$("#fDomicilio").value.trim(),
     celular,
     cargas_familiares:cargas===""?null:parseInt(cargas,10),
@@ -832,10 +859,11 @@ async function guardarForm(fila){
   // Validaciones — solo "nombres y apellidos" es obligatorio
   let err=null;
   const setInvalid=(sel,bad)=>{const el=$(sel);if(el)el.classList.toggle("invalid",bad);};
-  setInvalid("#fNombre",false);setInvalid("#fCedula",false);setInvalid("#fCelular",false);
+  setInvalid("#fNombre",false);setInvalid("#fCedula",false);setInvalid("#fCelular",false);setInvalid("#fNac",false);
   $("#fCedulaHint").classList.remove("err");
   if(!nombres){err="Ingresa nombres y apellidos.";setInvalid("#fNombre",true);}
   else if(cedula&&!validarCedulaEC(cedula)){err="La cédula no es válida (10 dígitos, ecuatoriana).";setInvalid("#fCedula",true);$("#fCedulaHint").classList.add("err");$("#fCedulaHint").textContent="Cédula inválida. Verifica los 10 dígitos.";}
+  else if(fnac&&!validarFechaFlex(fnac)){err="Fecha inválida. Usa dd/mm/aaaa (día 00 si no lo sabes).";setInvalid("#fNac",true);}
   else if(celular&&!/^\d{10}$/.test(celular)){err="El celular debe tener 10 dígitos.";setInvalid("#fCelular",true);}
   if(err){showToast(err);return;}
 
