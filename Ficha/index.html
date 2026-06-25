@@ -460,6 +460,13 @@ async function driveSubir(blob,filename,padre,token){
   if(!r.ok)throw await driveErr(r,"upload");
   return await r.json();
 }
+async function driveTrash(fileId,token){
+  const r=await fetch("https://www.googleapis.com/drive/v3/files/"+fileId+"?fields=id",{method:"PATCH",headers:{Authorization:"Bearer "+token,"Content-Type":"application/json"},body:JSON.stringify({trashed:true})});
+  if(r.status===401)throw new AuthErr();
+  if(r.status===404)return true; // ya no existe
+  if(!r.ok)throw await driveErr(r,"trash");
+  return true;
+}
 
 /* ============================================================
    Firestore
@@ -669,7 +676,7 @@ function abrirForm(fila){
       </div>
       <div class="modal-body">
         <div class="form-group">
-          <label class="form-label">Asociación <span class="req">*</span></label>
+          <label class="form-label">Asociación</label>
           <select class="form-select" id="fAsoc">${optionsAsoc(editing?f.id_asociacion:"")}</select>
         </div>
         <div class="form-group">
@@ -682,9 +689,9 @@ function abrirForm(fila){
         </div>
         <div class="form-grid-2">
           <div class="form-group">
-            <label class="form-label">Cédula <span class="req">*</span></label>
+            <label class="form-label">Cédula</label>
             <input class="form-input" id="fCedula" value="${esc(f.cedula||"")}" inputmode="numeric" maxlength="10" placeholder="10 dígitos">
-            <div class="form-hint" id="fCedulaHint">Cédula ecuatoriana de 10 dígitos.</div>
+            <div class="form-hint" id="fCedulaHint">Opcional · cédula ecuatoriana de 10 dígitos.</div>
           </div>
           <div class="form-group">
             <label class="form-label">Fecha de nacimiento</label>
@@ -713,9 +720,9 @@ function abrirForm(fila){
           </div>
         </div>
         <div class="form-group">
-          <label class="form-label">Fotografías <span class="req">*</span></label>
+          <label class="form-label">Fotografías</label>
           <div class="photo-grid" id="photoGrid"></div>
-          <div class="form-hint" id="photoHint">Toca cada recuadro para tomar la foto con la cámara.</div>
+          <div class="form-hint" id="photoHint">Opcional · toca cada recuadro para tomar la foto con la cámara.</div>
         </div>
       </div>
       <div class="modal-foot">
@@ -799,21 +806,14 @@ async function guardarForm(fila){
     cargas_familiares:cargas===""?null:parseInt(cargas,10),
     ruc
   };
-  // Validaciones
+  // Validaciones — solo "nombres y apellidos" es obligatorio
   let err=null;
   const setInvalid=(sel,bad)=>{const el=$(sel);if(el)el.classList.toggle("invalid",bad);};
-  setInvalid("#fAsoc",false);setInvalid("#fNombre",false);setInvalid("#fCedula",false);
-  if(!id_asociacion){err="Selecciona la asociación.";setInvalid("#fAsoc",true);}
-  else if(!nombres){err="Ingresa nombres y apellidos.";setInvalid("#fNombre",true);}
-  else if(!validarCedulaEC(cedula)){err="La cédula no es válida (10 dígitos, ecuatoriana).";setInvalid("#fCedula",true);$("#fCedulaHint").classList.add("err");$("#fCedulaHint").textContent="Cédula inválida. Verifica los 10 dígitos.";}
+  setInvalid("#fNombre",false);setInvalid("#fCedula",false);setInvalid("#fCelular",false);
+  $("#fCedulaHint").classList.remove("err");
+  if(!nombres){err="Ingresa nombres y apellidos.";setInvalid("#fNombre",true);}
+  else if(cedula&&!validarCedulaEC(cedula)){err="La cédula no es válida (10 dígitos, ecuatoriana).";setInvalid("#fCedula",true);$("#fCedulaHint").classList.add("err");$("#fCedulaHint").textContent="Cédula inválida. Verifica los 10 dígitos.";}
   else if(celular&&!/^\d{10}$/.test(celular)){err="El celular debe tener 10 dígitos.";setInvalid("#fCelular",true);}
-  // fotos: requerir las 3 salvo que ya existan (en edición)
-  const faltan=PHOTO_DEFS.filter(p=>!formPhotos[p.key]&&!formExisting[p.urlField]);
-  if(!err&&faltan.length){
-    err="Faltan fotos: "+faltan.map(p=>p.label.toLowerCase()).join(", ")+".";
-    $("#photoHint").classList.add("err");$("#photoHint").textContent=err;
-    document.querySelectorAll("#photoGrid .photo-tile").forEach((t,i)=>{if(!formPhotos[PHOTO_DEFS[i].key]&&!formExisting[PHOTO_DEFS[i].urlField])t.classList.add("invalid");});
-  }
   if(err){showToast(err);return;}
 
   // Construir item de cola
@@ -837,10 +837,7 @@ async function guardarForm(fila){
   procesarCola(true); // hay gesto de usuario → puede re-autenticar si hiciera falta
 }
 
-$("#btnAdd").addEventListener("click",()=>{
-  if(asociaciones.length===0){showToast("No hay asociaciones cargadas. Revisa tu conexión.");return;}
-  abrirForm(null);
-});
+$("#btnAdd").addEventListener("click",()=>{abrirForm(null);});
 
 /* ============================================================
    Eliminar (confirm)
@@ -851,7 +848,7 @@ function confirmarEliminar(fila){
   <div class="modal-overlay" id="confOverlay">
     <div class="modal" style="max-width:420px">
       <div class="modal-head"><div><div class="modal-title">Eliminar ficha</div></div><button class="modal-close" id="confClose">${ico("close")}</button></div>
-      <div class="modal-body"><p style="font-size:14px;color:var(--text);line-height:1.5">¿Seguro que quieres eliminar la ficha de <b>${nombre}</b>?<br><span style="color:var(--text-muted);font-size:13px">Las fotos en Drive no se borran.</span></p></div>
+      <div class="modal-body"><p style="font-size:14px;color:var(--text);line-height:1.5">¿Seguro que quieres eliminar la ficha de <b>${nombre}</b>?<br><span style="color:var(--text-muted);font-size:13px">Su carpeta de fotos se moverá a la papelera de Drive (recuperable 30 días).</span></p></div>
       <div class="modal-foot"><button class="btn btn-glass" id="confCancel">Cancelar</button><button class="btn btn-danger" id="confOk">Eliminar</button></div>
     </div>
   </div>`;
@@ -861,13 +858,35 @@ function confirmarEliminar(fila){
   $("#confCancel").addEventListener("click",close);
   $("#confOverlay").addEventListener("click",e=>{if(e.target.id==="confOverlay")close();});
   $("#confOk").addEventListener("click",async()=>{
+    const okBtn=$("#confOk");
+    if(fila.fromQueue){
+      try{await idbDel("queue",fila.localId);}
+      catch(e){showToast("No se pudo eliminar");console.error(e);return;}
+      close();cola=await idbAll("queue");fichasFS=await cargarFichas();renderLista();actualizarIndicadorSync();showToast("Ficha eliminada");
+      return;
+    }
+    // Registro sincronizado: primero la carpeta de Drive, luego Firestore
+    okBtn.disabled=true;okBtn.textContent="Eliminando…";
     try{
-      if(fila.fromQueue){await idbDel("queue",fila.localId);}
-      else{await deleteDoc(doc(db,COL_FICHAS,fila.id));}
-      close();
-      cola=await idbAll("queue");fichasFS=await cargarFichas();renderLista();actualizarIndicadorSync();
-      showToast("Ficha eliminada");
-    }catch(e){showToast("No se pudo eliminar (¿sin conexión?)");console.error(e);}
+      if(fila.f&&fila.f.carpeta_id){
+        let token;
+        try{token=await ensureDriveToken(true);}
+        catch(_){showToast("Inicia sesión para poder eliminar");okBtn.disabled=false;okBtn.textContent="Eliminar";return;}
+        try{await driveTrash(fila.f.carpeta_id,token);}
+        catch(e){
+          if(e instanceof AuthErr){
+            tokenInvalido();
+            try{token=await ensureDriveToken(true);await driveTrash(fila.f.carpeta_id,token);}
+            catch(_2){showToast("No se pudo borrar la carpeta en Drive");okBtn.disabled=false;okBtn.textContent="Eliminar";return;}
+          }else{
+            showToast(navigator.onLine?("No se pudo borrar la carpeta: "+(e.message||"")):"Necesitas conexión para eliminar");
+            okBtn.disabled=false;okBtn.textContent="Eliminar";return;
+          }
+        }
+      }
+      await deleteDoc(doc(db,COL_FICHAS,fila.id));
+      close();cola=await idbAll("queue");fichasFS=await cargarFichas();renderLista();actualizarIndicadorSync();showToast("Ficha eliminada");
+    }catch(e){showToast("No se pudo eliminar el registro");console.error(e);okBtn.disabled=false;okBtn.textContent="Eliminar";}
   });
 }
 
