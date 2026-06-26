@@ -5,7 +5,7 @@
 // Colección: Diagnosticos
 // ============================================================
 
-let DIAG_FILTROS = { prov: [], cat: [] };
+let DIAG_FILTROS = { prov: [], cat: [], orden: ['cat'] };
 let DIAGNOSTICOS_DATA = [];
 
 const CATEGORIAS_DIAG = ['Líderes de ReCircula', 'En Fortalecimiento', 'En Acompañamiento'];
@@ -17,6 +17,12 @@ function registerDiagnosticosFilters() {
     sections: [
       { key: 'prov', title: 'Provincia', type: 'options', options: _provinciasDiag() },
       { key: 'cat',  title: 'Categoría', type: 'options', options: CATEGORIAS_DIAG },
+      { key: 'orden', title: 'Ordenar por valoración', type: 'radio', noBadge: true, def: 'cat',
+        options: [
+          { val: 'cat',  lbl: 'Por categoría (predeterminado)' },
+          { val: 'desc', lbl: 'Mayor valoración a menor' },
+          { val: 'asc',  lbl: 'Menor valoración a mayor' },
+        ] },
     ],
     getValue: function (k) { return DIAG_FILTROS[k] || []; },
     setValue: function (k, v) { DIAG_FILTROS[k] = v; },
@@ -46,13 +52,25 @@ function renderDiagnosticos() {
   updateFilterBadge('diagnosticos');
 }
 
+// Rango de categoría para ordenar (Líderes primero → Acompañamiento último)
+function _catRank(d) {
+  const c = categoriaDesdePuntaje(parseFloat(d.valoracion_total));
+  return c === 'Líderes de ReCircula' ? 0 : c === 'En Fortalecimiento' ? 1 : 2;
+}
+
 function cargarDiagnosticos() {
+  const orden = (DIAG_FILTROS.orden && DIAG_FILTROS.orden[0]) || 'cat';
   DIAGNOSTICOS_DATA = CAT.diagnosticos.filter(function (d) {
-    return pasaFiltro(DIAG_FILTROS.prov, d.provincia) && pasaFiltro(DIAG_FILTROS.cat, d.categoria);
+    return pasaFiltro(DIAG_FILTROS.prov, d.provincia) &&
+           pasaFiltro(DIAG_FILTROS.cat, categoriaDesdePuntaje(parseFloat(d.valoracion_total)));
   }).slice().sort(function (a, b) {
-    const ay = parseFloat(a.anio) || 0, by = parseFloat(b.anio) || 0;
-    if (by !== ay) return by - ay;
-    return (a.nombre || '').localeCompare(b.nombre || '');
+    const va = parseFloat(a.valoracion_total) || 0, vb = parseFloat(b.valoracion_total) || 0;
+    if (orden === 'asc')  return va - vb;
+    if (orden === 'desc') return vb - va;
+    // Predeterminado: por categoría (Líderes → Acompañamiento), luego mayor valoración
+    const ra = _catRank(a), rb = _catRank(b);
+    if (ra !== rb) return ra - rb;
+    return vb - va;
   });
   renderTablaDiagnosticos();
 }
@@ -68,36 +86,59 @@ function renderTablaDiagnosticos() {
   }
   const puedeEditar = SESSION.rol !== 'Visualizador';
   const pct = function (v) { return (v == null || isNaN(v)) ? '—' : fmtNum(v, 1) + '%'; };
-  const filas = DIAGNOSTICOS_DATA.map(function (d) {
+  const cat = function (d) { return categoriaDesdePuntaje(parseFloat(d.valoracion_total)); };
+
+  const acciones = function (d) {
     const docId = jsEsc(d._docId || '');
     const carpeta = jsEsc(d.id_carpeta_drive || '');
+    return (carpeta ? '<button class="icon-btn" onclick="window.open(\'https://drive.google.com/drive/folders/' + carpeta + '\',\'_blank\')" title="Carpeta">' + icoHTML('folder') + '</button>' : '') +
+      '<button class="icon-btn" onclick="verDiagnostico(\'' + docId + '\')" title="Ver">' + icoHTML('view') + '</button>' +
+      (puedeEditar ? '<button class="icon-btn primary" onclick="editarDiagnostico(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' : '');
+  };
+
+  // ── Tabla (desktop) ──
+  const filas = DIAGNOSTICOS_DATA.map(function (d) {
     return '<tr>' +
-      '<td style="font-weight:600"><strong>Asociación</strong><br>' + esc(d.nombre || '—') + '</td>' +
-      '<td><strong>Año</strong><br>' + esc(d.anio || '—') + '</td>' +
-      '<td><strong>Tipo</strong><br>' + _tipoBadge(d.tipo) + '</td>' +
-      '<td data-hide-mobile style="text-align:right"><strong>Organiz.</strong><br>' + pct(d.p_organizacional) + '</td>' +
-      '<td data-hide-mobile style="text-align:right"><strong>Product.</strong><br>' + pct(d.p_productivo) + '</td>' +
-      '<td data-hide-mobile style="text-align:right"><strong>Empres.</strong><br>' + pct(d.p_empresarial) + '</td>' +
-      '<td data-hide-mobile style="text-align:right"><strong>Ambien.</strong><br>' + pct(d.p_ambiental) + '</td>' +
-      '<td data-hide-mobile style="text-align:right"><strong>Financ.</strong><br>' + pct(d.p_financiero) + '</td>' +
-      '<td style="text-align:right;font-weight:700;color:#0a9e83"><strong>Valoración</strong><br>' + pct(d.valoracion_total) + '</td>' +
-      '<td data-hide-mobile><strong>Módulo débil</strong><br>' + esc(d.modulo_debil || '—') + '</td>' +
-      '<td><strong>Categoría</strong><br>' + categoriaBadge(d.categoria) + '</td>' +
-      '<td data-actions-row><div class="td-actions">' +
-        (carpeta ? '<button class="icon-btn" onclick="window.open(\'https://drive.google.com/drive/folders/' + carpeta + '\',\'_blank\')" title="Carpeta">' + icoHTML('folder') + '</button>' : '') +
-        '<button class="icon-btn" onclick="verDiagnostico(\'' + docId + '\')" title="Ver">' + icoHTML('view') + '</button>' +
-        (puedeEditar ? '<button class="icon-btn primary" onclick="editarDiagnostico(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' : '') +
-      '</div></td>' +
+      '<td style="font-weight:600">' + esc(d.nombre || '—') + '</td>' +
+      '<td>' + esc(d.anio || '—') + '</td>' +
+      '<td>' + _tipoBadge(d.tipo) + '</td>' +
+      '<td style="text-align:right">' + pct(d.p_organizacional) + '</td>' +
+      '<td style="text-align:right">' + pct(d.p_productivo) + '</td>' +
+      '<td style="text-align:right">' + pct(d.p_empresarial) + '</td>' +
+      '<td style="text-align:right">' + pct(d.p_ambiental) + '</td>' +
+      '<td style="text-align:right">' + pct(d.p_financiero) + '</td>' +
+      '<td style="text-align:right;font-weight:700;color:#0a9e83">' + pct(d.valoracion_total) + '</td>' +
+      '<td>' + esc(d.modulo_debil || '—') + '</td>' +
+      '<td>' + categoriaBadge(cat(d)) + '</td>' +
+      '<td data-actions-row><div class="td-actions">' + acciones(d) + '</div></td>' +
     '</tr>';
   }).join('');
-  wrap.innerHTML =
-    '<div class="table-wrap"><table>' +
-      '<thead><tr><th>Asociación</th><th>Año</th><th>Tipo</th>' +
-        '<th style="text-align:right">Organiz.</th><th style="text-align:right">Product.</th><th style="text-align:right">Empres.</th>' +
-        '<th style="text-align:right">Ambien.</th><th style="text-align:right">Financ.</th>' +
-        '<th style="text-align:right">Valoración</th><th>Módulo débil</th><th>Categoría</th><th></th></tr></thead>' +
-      '<tbody>' + filas + '</tbody></table></div>' +
-    '<div style="font-size:12px;color:var(--text-dim);text-align:right">' + DIAGNOSTICOS_DATA.length + ' registro' + (DIAGNOSTICOS_DATA.length !== 1 ? 's' : '') + '</div>';
+  const tabla = '<div class="table-wrap diag-tabla-desktop"><table>' +
+    '<thead><tr><th>Asociación</th><th>Año</th><th>Tipo</th>' +
+      '<th style="text-align:right">Organiz.</th><th style="text-align:right">Product.</th><th style="text-align:right">Empres.</th>' +
+      '<th style="text-align:right">Ambien.</th><th style="text-align:right">Financ.</th>' +
+      '<th style="text-align:right">Valoración</th><th>Módulo débil</th><th>Categoría</th><th></th></tr></thead>' +
+    '<tbody>' + filas + '</tbody></table></div>';
+
+  // ── Tarjetas (móvil) ──
+  const cards = DIAGNOSTICOS_DATA.map(function (d) {
+    return '<div class="diag-card">' +
+      '<div class="diag-card-top">' +
+        '<div class="diag-card-id"><div class="diag-card-label">Asociación</div><div class="diag-card-nombre">' + esc(d.nombre || '—') + '</div></div>' +
+        categoriaBadge(cat(d)) +
+      '</div>' +
+      '<div class="diag-card-grid">' +
+        '<div class="diag-cell"><span class="diag-mini">Año</span><b>' + esc(d.anio || '—') + '</b></div>' +
+        '<div class="diag-cell"><span class="diag-mini">Tipo</span>' + _tipoBadge(d.tipo) + '</div>' +
+        '<div class="diag-cell"><span class="diag-mini">Valoración</span><b class="diag-val">' + pct(d.valoracion_total) + '</b></div>' +
+      '</div>' +
+      '<div class="diag-card-foot"><div class="td-actions">' + acciones(d) + '</div></div>' +
+    '</div>';
+  }).join('');
+  const cardsWrap = '<div class="diag-cards-mobile">' + cards + '</div>';
+
+  wrap.innerHTML = tabla + cardsWrap +
+    '<div style="font-size:12px;color:var(--text-dim);text-align:right;margin-top:10px">' + DIAGNOSTICOS_DATA.length + ' registro' + (DIAGNOSTICOS_DATA.length !== 1 ? 's' : '') + '</div>';
 }
 
 function _tipoBadge(t) {
@@ -315,6 +356,25 @@ async function exportarDiagnosticosExcel() {
     .diag-calc-item { display:flex; align-items:center; justify-content:space-between; padding:10px 0; border-bottom:1px solid var(--border); font-size:14px; color:var(--text-muted); }
     .diag-calc-item:last-child { border-bottom:none; }
     .diag-calc-item b { font-size:16px; font-weight:800; color:var(--text); }
+
+    /* Tarjetas móviles */
+    .diag-cards-mobile { display:none; flex-direction:column; gap:12px; }
+    .diag-card { background:var(--surface); border-radius:20px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.04); }
+    .diag-card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+    .diag-card-id { min-width:0; }
+    .diag-card-label { font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.7px; }
+    .diag-card-nombre { font-size:16px; font-weight:700; color:var(--text); margin-top:2px; line-height:1.3; }
+    .diag-card-grid { display:flex; gap:10px; margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
+    .diag-cell { flex:1; display:flex; flex-direction:column; gap:5px; align-items:flex-start; min-width:0; }
+    .diag-cell b { font-size:15px; font-weight:700; color:var(--text); }
+    .diag-cell .diag-val { color:#0a9e83; font-weight:800; }
+    .diag-mini { font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.5px; }
+    .diag-card-foot { display:flex; justify-content:flex-end; margin-top:14px; }
+
+    @media (max-width:768px) {
+      .diag-tabla-desktop { display:none; }
+      .diag-cards-mobile { display:flex; }
+    }
   `;
   document.head.appendChild(s);
 })();
