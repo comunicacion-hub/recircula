@@ -60,11 +60,11 @@ function nuevoId(prefijo) {
 // ============================================================
 
 // Categoría según la valoración total (0–100).
-// Líderes ≥ 89 · Fortalecimiento 79–88.99 · Acompañamiento < 79
+// Líderes ≥ 90 (100–90) · Fortalecimiento 80–89 · Acompañamiento ≤ 79
 function categoriaDesdePuntaje(v) {
   if (v == null || isNaN(v)) return '';
-  if (v >= 89) return 'Líderes de ReCircula';
-  if (v >= 79) return 'En Fortalecimiento';
+  if (v >= 90) return 'Líderes de ReCircula';
+  if (v >= 80) return 'En Fortalecimiento';
   return 'En Acompañamiento';
 }
 
@@ -90,7 +90,9 @@ function categoriaVigente(idAsociacion) {
     const rank = function (t) { return t === 'Cierre' ? 1 : 0; };
     return rank(b.tipo) - rank(a.tipo);
   });
-  return ds[0].categoria || categoriaDesdePuntaje(ds[0].valoracion_total);
+  // Se recalcula desde la valoración para que los nuevos umbrales apliquen
+  // también a registros guardados con umbrales anteriores.
+  return categoriaDesdePuntaje(parseFloat(ds[0].valoracion_total));
 }
 
 // ============================================================
@@ -431,6 +433,17 @@ function renderFilterSection(sec) {
       ' value="' + esc(txt) + '"' +
       ' oninput="pendingFilters[\'' + sec.key + '\'] = this.value ? [this.value] : []">';
   }
+  if (sec.type === 'radio') {
+    const opts = sec.options || [];
+    const sel = arr[0] || sec.def || '';
+    return opts.map(function (o) {
+      const val = typeof o === 'object' ? o.val : o;
+      const lbl = typeof o === 'object' ? o.lbl : o;
+      const on = val === sel ? 'checked' : '';
+      return '<label class="filter-opt"><input type="radio" name="rad-' + sec.key + '" value="' + esc(val) + '" ' + on +
+        ' onchange="toggleFilterRadio(\'' + sec.key + '\',\'' + jsEsc(val) + '\')"><span>' + esc(lbl) + '</span></label>';
+    }).join('');
+  }
   if (sec.type === 'options') {
     const opts = sec.options || [];
     if (!opts.length) return '<div style="font-size:13px;color:var(--text-dim);padding:8px 12px">Sin opciones disponibles</div>';
@@ -478,6 +491,7 @@ function toggleFilterValue(key, val, checked) {
 }
 
 function toggleFilterSection(btn) { btn.closest('.filter-section').classList.toggle('open'); }
+function toggleFilterRadio(key, val) { pendingFilters[key] = [val]; }
 function closeFilterDrawer() { const d = document.getElementById('filter-drawer'); if (d) d.classList.remove('open'); }
 
 function applyFilters() {
@@ -514,6 +528,7 @@ function updateFilterBadge(scope) {
   const badge = document.getElementById(cfg.badgeId);
   if (!badge) return;
   const count = cfg.sections.filter(function (sec) {
+    if (sec.noBadge) return false;
     const v = cfg.getValue(sec.key);
     if (!Array.isArray(v)) return v && v.toString().trim() !== '' && v !== '__ALL__';
     return v.length > 0 && !v.includes('__ALL__');
