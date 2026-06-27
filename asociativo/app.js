@@ -115,12 +115,12 @@ function asociacionFromFS(d) {
     nombre:          d.nombre || '',
     provincia:       d.provincia || '',
     num_recicladores:d.num_recicladores || 0,
-    linea_tiempo:    d.linea_tiempo === true,
     doc_legal:       d.doc_legal === true,
     estatutos:       d.estatutos === true,
     directiva:       d.directiva === true,
     acta_compromiso: d.acta_compromiso === true,
     ficha_reciclador:d.ficha_reciclador === true,
+    observaciones:   d.observaciones || '',
     id_carpeta_drive:d.id_carpeta_drive || '',
   };
 }
@@ -130,12 +130,12 @@ function asociacionToFS(o) {
     nombre:          o.nombre || '',
     provincia:       o.provincia || '',
     num_recicladores:parseFloat(o.num_recicladores) || 0,
-    linea_tiempo:    !!o.linea_tiempo,
     doc_legal:       !!o.doc_legal,
     estatutos:       !!o.estatutos,
     directiva:       !!o.directiva,
     acta_compromiso: !!o.acta_compromiso,
     ficha_reciclador:!!o.ficha_reciclador,
+    observaciones:   o.observaciones || '',
     id_carpeta_drive:o.id_carpeta_drive || '',
   };
 }
