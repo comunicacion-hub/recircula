@@ -50,7 +50,10 @@ function cargarAsociaciones() {
   ASOCIACIONES_DATA = CAT.asociaciones.filter(function (a) {
     return pasaFiltro(ASOC_FILTROS.prov, a.provincia) &&
            pasaFiltro(ASOC_FILTROS.cat, categoriaVigente(a.id_asociacion));
-  }).slice().sort(byNombre);
+  }).slice().sort(function (a, b) {
+    const p = (a.provincia || '').localeCompare(b.provincia || '');
+    return p !== 0 ? p : (a.nombre || '').localeCompare(b.nombre || '');
+  });
   renderTablaAsociaciones();
 }
 
@@ -64,32 +67,51 @@ function renderTablaAsociaciones() {
     return;
   }
   const puedeEditar = SESSION.rol !== 'Visualizador';
-  const filas = ASOCIACIONES_DATA.map(function (a) {
+  const acciones = function (a) {
     const docId = jsEsc(a._docId || '');
     const carpeta = jsEsc(a.id_carpeta_drive || '');
+    return (carpeta ? '<button class="icon-btn" onclick="window.open(\'https://drive.google.com/drive/folders/' + carpeta + '\',\'_blank\')" title="Carpeta">' + icoHTML('folder') + '</button>' : '') +
+      '<button class="icon-btn" onclick="verAsociacion(\'' + docId + '\')" title="Ver">' + icoHTML('view') + '</button>' +
+      (puedeEditar ? '<button class="icon-btn primary" onclick="editarAsociacion(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' : '');
+  };
+
+  // ── Tabla (desktop) ──
+  const filas = ASOCIACIONES_DATA.map(function (a) {
     return '<tr>' +
-      '<td style="font-weight:600"><strong>Asociación</strong><br>' + esc(a.nombre || '—') + '</td>' +
-      '<td><strong>Provincia</strong><br>' + esc(a.provincia || '—') + '</td>' +
-      '<td style="text-align:right"><strong>Recicladores</strong><br>' + fmtNum(a.num_recicladores) + '</td>' +
-      '<td><strong>Documentos</strong><br>' + _docDots(a) + '</td>' +
-      '<td data-actions-row><div class="td-actions">' +
-        (carpeta ? '<button class="icon-btn" onclick="window.open(\'https://drive.google.com/drive/folders/' + carpeta + '\',\'_blank\')" title="Carpeta">' + icoHTML('folder') + '</button>' : '') +
-        '<button class="icon-btn" onclick="verAsociacion(\'' + docId + '\')" title="Ver">' + icoHTML('view') + '</button>' +
-        (puedeEditar ? '<button class="icon-btn primary" onclick="editarAsociacion(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' : '') +
-      '</div></td>' +
+      '<td style="font-weight:600">' + esc(a.nombre || '—') + '</td>' +
+      '<td>' + esc(a.provincia || '—') + '</td>' +
+      '<td style="text-align:right">' + fmtNum(a.num_recicladores) + '</td>' +
+      '<td>' + _docDots(a) + '</td>' +
+      '<td data-actions-row><div class="td-actions">' + acciones(a) + '</div></td>' +
     '</tr>';
   }).join('');
-  wrap.innerHTML =
-    '<div class="table-wrap"><table>' +
-      '<thead><tr><th>Asociación</th><th>Provincia</th><th style="text-align:right">Recicladores</th><th>Documentos</th><th></th></tr></thead>' +
-      '<tbody>' + filas + '</tbody></table></div>' +
-    '<div style="font-size:12px;color:var(--text-dim);text-align:right">' + ASOCIACIONES_DATA.length + ' registro' + (ASOCIACIONES_DATA.length !== 1 ? 's' : '') + '</div>';
+  const tabla = '<div class="table-wrap fic-desk"><table>' +
+    '<thead><tr><th>Asociación</th><th>Provincia</th><th style="text-align:right">Recicladores</th><th>Documentos</th><th></th></tr></thead>' +
+    '<tbody>' + filas + '</tbody></table></div>';
+
+  // ── Tarjetas (móvil) ──
+  const cards = ASOCIACIONES_DATA.map(function (a) {
+    return '<div class="fic-card">' +
+      '<div class="fic-top"><div class="fic-id"><div class="fic-label">Asociación</div>' +
+        '<div class="fic-nombre">' + esc(a.nombre || '—') + '</div></div></div>' +
+      '<div class="fic-grid">' +
+        '<div class="fic-cell"><span class="fic-mini">Provincia</span><b>' + esc(a.provincia || '—') + '</b></div>' +
+        '<div class="fic-cell"><span class="fic-mini">Recicladores</span><b>' + fmtNum(a.num_recicladores) + '</b></div>' +
+      '</div>' +
+      '<div class="fic-docs"><span class="fic-mini">Documentos</span>' + _docDots(a) + '</div>' +
+      '<div class="fic-foot"><div class="td-actions">' + acciones(a) + '</div></div>' +
+    '</div>';
+  }).join('');
+  const cardsWrap = '<div class="fic-mob">' + cards + '</div>';
+
+  wrap.innerHTML = tabla + cardsWrap +
+    '<div style="font-size:12px;color:var(--text-dim);text-align:right;margin-top:10px">' + ASOCIACIONES_DATA.length + ' registro' + (ASOCIACIONES_DATA.length !== 1 ? 's' : '') + '</div>';
 }
 
-// Indicadores compactos del checklist (6 documentos)
+// Indicadores compactos del checklist (5 documentos)
 function _docDots(a) {
   const items = [
-    ['Línea de tiempo', a.linea_tiempo], ['Documento legal', a.doc_legal], ['Estatutos', a.estatutos],
+    ['Documento legal', a.doc_legal], ['Estatutos', a.estatutos],
     ['Directiva', a.directiva], ['Acta de compromiso', a.acta_compromiso], ['Ficha del reciclador', a.ficha_reciclador],
   ];
   return '<div class="doc-dots">' + items.map(function (it) {
@@ -102,7 +124,7 @@ function verAsociacion(docId) {
   const a = CAT.asociaciones.find(function (x) { return x._docId === docId; });
   if (!a) { showToast('Ficha no encontrada'); return; }
   const items = [
-    ['Línea de tiempo', a.linea_tiempo], ['Documento legal central', a.doc_legal], ['Estatutos', a.estatutos],
+    ['Documento legal central', a.doc_legal], ['Estatutos', a.estatutos],
     ['Directiva', a.directiva], ['Acta de compromiso', a.acta_compromiso], ['Ficha del reciclador', a.ficha_reciclador],
   ];
   const lista = items.map(function (it) {
@@ -122,6 +144,7 @@ function verAsociacion(docId) {
           '</div></div>' +
         '</div>' +
         '<div class="form-label" style="margin-bottom:8px">Checklist de documentos</div>' + lista +
+        (a.observaciones ? '<div style="margin-top:14px"><div class="form-label">Observaciones</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px">' + esc(a.observaciones) + '</div></div>' : '') +
       '</div>' +
       '<div class="modal-foot"><button class="btn btn-glass" onclick="cerrarModal()">Cerrar</button></div>' +
     '</div>'
@@ -156,12 +179,13 @@ function abrirFormAsociacion(docId) {
             '<input type="number" class="form-input" id="asoc-recic" min="0" step="1" value="' + (a ? a.num_recicladores : '') + '"></div>' +
         '</div>' +
         '<div class="form-label" style="margin:16px 0 8px">Checklist de documentos (en Drive)</div>' +
-        _sino('asoc-linea', 'Línea de tiempo', a ? a.linea_tiempo : false) +
         _sino('asoc-legal', 'Documento legal central', a ? a.doc_legal : false) +
         _sino('asoc-estatutos', 'Estatutos', a ? a.estatutos : false) +
         _sino('asoc-directiva', 'Directiva', a ? a.directiva : false) +
         _sino('asoc-acta', 'Acta de compromiso', a ? a.acta_compromiso : false) +
         _sino('asoc-ficha', 'Ficha del reciclador', a ? a.ficha_reciclador : false) +
+        '<div class="form-group" style="margin-top:16px"><label class="form-label">Observaciones</label>' +
+          '<textarea class="form-textarea" id="asoc-obs" placeholder="Notas adicionales…">' + esc(a ? a.observaciones : '') + '</textarea></div>' +
       '</div>' +
       '<div class="modal-foot">' +
         '<button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>' +
@@ -206,12 +230,12 @@ async function guardarAsociacion(docId) {
     nombre:          amb ? amb.nombre : (actual ? actual.nombre : ''),
     provincia:       amb ? amb.provincia : (actual ? actual.provincia : ((document.getElementById('asoc-provincia') || {}).value || '')),
     num_recicladores:(document.getElementById('asoc-recic') || {}).value || 0,
-    linea_tiempo:    _chk('asoc-linea'),
     doc_legal:       _chk('asoc-legal'),
     estatutos:       _chk('asoc-estatutos'),
     directiva:       _chk('asoc-directiva'),
     acta_compromiso: _chk('asoc-acta'),
     ficha_reciclador:_chk('asoc-ficha'),
+    observaciones:   (document.getElementById('asoc-obs') || {}).value || '',
     id_carpeta_drive:(actual && actual.id_carpeta_drive) ? actual.id_carpeta_drive : '',
   };
 
@@ -255,14 +279,14 @@ async function exportarAsociacionesExcel() {
     await cargarSheetJS();
     if (!window.XLSX) { showToast('No se pudo cargar el exportador'); return; }
     const sino = function (b) { return b ? 'Sí' : 'No'; };
-    const header = ['Asociación', 'Provincia', 'N° Recicladores', 'Línea de tiempo', 'Doc. legal central', 'Estatutos', 'Directiva', 'Acta de compromiso', 'Ficha del reciclador', 'Categoría', 'URL Carpeta'];
+    const header = ['Asociación', 'Provincia', 'N° Recicladores', 'Doc. legal central', 'Estatutos', 'Directiva', 'Acta de compromiso', 'Ficha del reciclador', 'Categoría', 'Observaciones', 'URL Carpeta'];
     const filas = ASOCIACIONES_DATA.map(function (a) {
       return [a.nombre, a.provincia, parseFloat(a.num_recicladores) || 0,
-        sino(a.linea_tiempo), sino(a.doc_legal), sino(a.estatutos), sino(a.directiva), sino(a.acta_compromiso), sino(a.ficha_reciclador),
-        categoriaVigente(a.id_asociacion) || '', urlCarpeta(a.id_carpeta_drive)];
+        sino(a.doc_legal), sino(a.estatutos), sino(a.directiva), sino(a.acta_compromiso), sino(a.ficha_reciclador),
+        categoriaVigente(a.id_asociacion) || '', a.observaciones || '', urlCarpeta(a.id_carpeta_drive)];
     });
     const ws = XLSX.utils.aoa_to_sheet([header].concat(filas));
-    ws['!cols'] = [{ wch: 26 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 11 }, { wch: 11 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 40 }];
+    ws['!cols'] = [{ wch: 26 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 11 }, { wch: 11 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 30 }, { wch: 40 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Asociaciones');
     XLSX.writeFile(wb, 'Asociaciones_' + new Date().toISOString().substring(0, 10) + '.xlsx');
@@ -294,6 +318,25 @@ async function exportarAsociacionesExcel() {
     .ficha-si { display:inline-flex; align-items:center; gap:5px; color:#0a9e83; font-weight:600; font-size:13px; }
     .ficha-si svg { width:14px; height:14px; }
     .ficha-no { color:var(--text-dim); font-size:13px; font-weight:600; }
+
+    /* Tarjetas móviles de la ficha asociativa */
+    .fic-mob { display:none; flex-direction:column; gap:12px; }
+    .fic-card { background:var(--surface); border-radius:20px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.04); }
+    .fic-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+    .fic-id { min-width:0; }
+    .fic-label { font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.7px; }
+    .fic-nombre { font-size:16px; font-weight:700; color:var(--text); margin-top:2px; line-height:1.3; }
+    .fic-grid { display:flex; gap:10px; margin-top:14px; }
+    .fic-cell { flex:1; display:flex; flex-direction:column; gap:5px; align-items:flex-start; min-width:0; }
+    .fic-cell b { font-size:15px; font-weight:700; color:var(--text); }
+    .fic-mini { font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.5px; }
+    .fic-docs { display:flex; align-items:center; gap:10px; margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
+    .fic-foot { display:flex; justify-content:flex-end; margin-top:14px; }
+
+    @media (max-width:768px) {
+      .fic-desk { display:none; }
+      .fic-mob { display:flex; }
+    }
   `;
   document.head.appendChild(s);
 })();
