@@ -111,7 +111,7 @@ function renderTablaAsociaciones() {
 // Indicadores compactos del checklist (5 documentos)
 function _docDots(a) {
   const items = [
-    ['Documento legal', a.doc_legal], ['Estatutos', a.estatutos],
+    ['Resolución', a.doc_legal], ['Reglamento/Estatuto', a.estatutos],
     ['Directiva', a.directiva], ['Acta de compromiso', a.acta_compromiso], ['Ficha del reciclador', a.ficha_reciclador],
   ];
   return '<div class="doc-dots">' + items.map(function (it) {
@@ -124,7 +124,7 @@ function verAsociacion(docId) {
   const a = CAT.asociaciones.find(function (x) { return x._docId === docId; });
   if (!a) { showToast('Ficha no encontrada'); return; }
   const items = [
-    ['Documento legal central', a.doc_legal], ['Estatutos', a.estatutos],
+    ['Resolución', a.doc_legal], ['Reglamento/Estatuto', a.estatutos],
     ['Directiva', a.directiva], ['Acta de compromiso', a.acta_compromiso], ['Ficha del reciclador', a.ficha_reciclador],
   ];
   const lista = items.map(function (it) {
@@ -179,8 +179,8 @@ function abrirFormAsociacion(docId) {
             '<input type="number" class="form-input" id="asoc-recic" min="0" step="1" value="' + (a ? a.num_recicladores : '') + '"></div>' +
         '</div>' +
         '<div class="form-label" style="margin:16px 0 8px">Checklist de documentos (en Drive)</div>' +
-        _sino('asoc-legal', 'Documento legal central', a ? a.doc_legal : false) +
-        _sino('asoc-estatutos', 'Estatutos', a ? a.estatutos : false) +
+        _sino('asoc-legal', 'Resolución', a ? a.doc_legal : false) +
+        _sino('asoc-estatutos', 'Reglamento/Estatuto', a ? a.estatutos : false) +
         _sino('asoc-directiva', 'Directiva', a ? a.directiva : false) +
         _sino('asoc-acta', 'Acta de compromiso', a ? a.acta_compromiso : false) +
         _sino('asoc-ficha', 'Ficha del reciclador', a ? a.ficha_reciclador : false) +
@@ -279,7 +279,7 @@ async function exportarAsociacionesExcel() {
     await cargarSheetJS();
     if (!window.XLSX) { showToast('No se pudo cargar el exportador'); return; }
     const sino = function (b) { return b ? 'Sí' : 'No'; };
-    const header = ['Asociación', 'Provincia', 'N° Recicladores', 'Doc. legal central', 'Estatutos', 'Directiva', 'Acta de compromiso', 'Ficha del reciclador', 'Categoría', 'Observaciones', 'URL Carpeta'];
+    const header = ['Asociación', 'Provincia', 'N° Recicladores', 'Resolución', 'Reglamento/Estatuto', 'Directiva', 'Acta de compromiso', 'Ficha del reciclador', 'Categoría', 'Observaciones', 'URL Carpeta'];
     const filas = ASOCIACIONES_DATA.map(function (a) {
       return [a.nombre, a.provincia, parseFloat(a.num_recicladores) || 0,
         sino(a.doc_legal), sino(a.estatutos), sino(a.directiva), sino(a.acta_compromiso), sino(a.ficha_reciclador),
