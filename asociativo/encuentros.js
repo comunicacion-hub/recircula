@@ -53,6 +53,8 @@ function cargarEncuentros() {
            pasaFiltro(ENC_FILTROS.asoc, e.id_asociacion) &&
            pasaFiltro(ENC_FILTROS.tipo, e.tipo_encuentro);
   }).slice().sort(function (a, b) {
+    const p = (a.provincia || '').localeCompare(b.provincia || '');
+    if (p !== 0) return p;
     return String(b.fecha_encuentro || '').localeCompare(String(a.fecha_encuentro || ''));
   });
   renderTablaEncuentros();
@@ -68,29 +70,52 @@ function renderTablaEncuentros() {
     return;
   }
   const puedeEditar = SESSION.rol !== 'Visualizador';
-  const filas = ENCUENTROS_DATA.map(function (e) {
+  const acciones = function (e) {
     const docId = jsEsc(e._docId || '');
     const carpeta = jsEsc(e.id_carpeta_drive || '');
+    return (carpeta ? '<button class="icon-btn" onclick="window.open(\'https://drive.google.com/drive/folders/' + carpeta + '\',\'_blank\')" title="Carpeta">' + icoHTML('folder') + '</button>' : '') +
+      '<button class="icon-btn" onclick="verEncuentro(\'' + docId + '\')" title="Ver">' + icoHTML('view') + '</button>' +
+      (puedeEditar ? '<button class="icon-btn primary" onclick="editarEncuentro(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' +
+        '<button class="icon-btn del" onclick="confirmarEliminarEncuentro(\'' + docId + '\',\'' + carpeta + '\')" title="Eliminar">' + icoHTML('trash') + '</button>' : '');
+  };
+
+  // ── Tabla (desktop) ──
+  const filas = ENCUENTROS_DATA.map(function (e) {
     return '<tr>' +
-      '<td style="font-weight:600"><strong>Asociación</strong><br>' + esc(e.nombre_asociacion || '—') + '</td>' +
-      '<td><strong>Encuentro</strong><br>' + esc(e.nombre_encuentro || '—') + '</td>' +
-      '<td data-hide-mobile><strong>Provincia</strong><br>' + esc(e.provincia || '—') + '</td>' +
-      '<td><strong>Fecha</strong><br>' + fmtFecha(e.fecha_encuentro) + '</td>' +
-      '<td><strong>Tipo</strong><br>' + _tipoEncBadge(e.tipo_encuentro) + '</td>' +
-      '<td style="text-align:right"><strong>Asistentes</strong><br>' + fmtNum(e.num_asistentes) + '</td>' +
-      '<td data-actions-row><div class="td-actions">' +
-        (carpeta ? '<button class="icon-btn" onclick="window.open(\'https://drive.google.com/drive/folders/' + carpeta + '\',\'_blank\')" title="Carpeta">' + icoHTML('folder') + '</button>' : '') +
-        '<button class="icon-btn" onclick="verEncuentro(\'' + docId + '\')" title="Ver">' + icoHTML('view') + '</button>' +
-        (puedeEditar ? '<button class="icon-btn primary" onclick="editarEncuentro(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' +
-          '<button class="icon-btn del" onclick="confirmarEliminarEncuentro(\'' + docId + '\',\'' + carpeta + '\')" title="Eliminar">' + icoHTML('trash') + '</button>' : '') +
-      '</div></td>' +
+      '<td style="font-weight:600">' + esc(e.nombre_asociacion || '—') + '</td>' +
+      '<td>' + esc(e.nombre_encuentro || '—') + '</td>' +
+      '<td>' + esc(e.provincia || '—') + '</td>' +
+      '<td>' + fmtFecha(e.fecha_encuentro) + '</td>' +
+      '<td>' + _tipoEncBadge(e.tipo_encuentro) + '</td>' +
+      '<td style="text-align:right">' + fmtNum(e.num_asistentes) + '</td>' +
+      '<td data-actions-row><div class="td-actions">' + acciones(e) + '</div></td>' +
     '</tr>';
   }).join('');
-  wrap.innerHTML =
-    '<div class="table-wrap"><table>' +
-      '<thead><tr><th>Asociación</th><th>Encuentro</th><th>Provincia</th><th>Fecha</th><th>Tipo</th><th style="text-align:right">Asistentes</th><th></th></tr></thead>' +
-      '<tbody>' + filas + '</tbody></table></div>' +
-    '<div style="font-size:12px;color:var(--text-dim);text-align:right">' + ENCUENTROS_DATA.length + ' registro' + (ENCUENTROS_DATA.length !== 1 ? 's' : '') + '</div>';
+  const tabla = '<div class="table-wrap enc-desk"><table>' +
+    '<thead><tr><th>Asociación</th><th>Encuentro</th><th>Provincia</th><th>Fecha</th><th>Tipo</th><th style="text-align:right">Asistentes</th><th></th></tr></thead>' +
+    '<tbody>' + filas + '</tbody></table></div>';
+
+  // ── Tarjetas (móvil) ──
+  const cards = ENCUENTROS_DATA.map(function (e) {
+    return '<div class="enc-card">' +
+      '<div class="enc-top">' +
+        '<div class="enc-id"><div class="enc-label">Asociación</div>' +
+          '<div class="enc-nombre">' + esc(e.nombre_asociacion || '—') + '</div></div>' +
+        _tipoEncBadge(e.tipo_encuentro) +
+      '</div>' +
+      '<div class="enc-evento">' + esc(e.nombre_encuentro || '—') + '</div>' +
+      '<div class="enc-grid">' +
+        '<div class="enc-cell"><span class="enc-mini">Fecha</span><b>' + fmtFecha(e.fecha_encuentro) + '</b></div>' +
+        '<div class="enc-cell"><span class="enc-mini">Asistentes</span><b>' + fmtNum(e.num_asistentes) + '</b></div>' +
+        '<div class="enc-cell"><span class="enc-mini">Provincia</span><b>' + esc(e.provincia || '—') + '</b></div>' +
+      '</div>' +
+      '<div class="enc-foot"><div class="td-actions">' + acciones(e) + '</div></div>' +
+    '</div>';
+  }).join('');
+  const cardsWrap = '<div class="enc-mob">' + cards + '</div>';
+
+  wrap.innerHTML = tabla + cardsWrap +
+    '<div style="font-size:12px;color:var(--text-dim);text-align:right;margin-top:10px">' + ENCUENTROS_DATA.length + ' registro' + (ENCUENTROS_DATA.length !== 1 ? 's' : '') + '</div>';
 }
 
 function _tipoEncBadge(t) {
@@ -291,3 +316,30 @@ async function exportarEncuentrosExcel() {
     showToast('Excel descargado ✓');
   } catch (e) { console.error('export encuentros:', e); showToast('Error al exportar'); }
 }
+
+// ── Estilos propios (tarjetas móviles) ──
+(function () {
+  if (document.getElementById('enc-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'enc-styles';
+  s.textContent = `
+    .enc-mob { display:none; flex-direction:column; gap:12px; }
+    .enc-card { background:var(--surface); border-radius:20px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.04); }
+    .enc-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+    .enc-id { min-width:0; }
+    .enc-label { font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.7px; }
+    .enc-nombre { font-size:16px; font-weight:700; color:var(--text); margin-top:2px; line-height:1.3; }
+    .enc-evento { font-size:14px; color:#1c7aa8; font-weight:600; margin-top:8px; }
+    .enc-grid { display:flex; gap:10px; margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
+    .enc-cell { flex:1; display:flex; flex-direction:column; gap:5px; align-items:flex-start; min-width:0; }
+    .enc-cell b { font-size:14px; font-weight:700; color:var(--text); }
+    .enc-mini { font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.5px; }
+    .enc-foot { display:flex; justify-content:flex-end; margin-top:14px; }
+
+    @media (max-width:768px) {
+      .enc-desk { display:none; }
+      .enc-mob { display:flex; }
+    }
+  `;
+  document.head.appendChild(s);
+})();
