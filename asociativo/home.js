@@ -39,7 +39,14 @@ const HOME = (() => {
     };
   }
 
-  // ── Filas de la tabla (filtradas) ──
+  // Orden de categorías: Líderes → Fortalecimiento → Acompañamiento → sin diagnóstico
+  function _catRank(cat) {
+    return cat === 'Líderes de ReCircula' ? 0
+         : cat === 'En Fortalecimiento'   ? 1
+         : cat === 'En Acompañamiento'    ? 2 : 3;
+  }
+
+  // ── Filas de la tabla (filtradas y ordenadas por categoría) ──
   function _filas() {
     return CAT.asociaciones
       .filter(function (a) {
@@ -51,6 +58,10 @@ const HOME = (() => {
         const cie = _pctTipo(a.id_asociacion, 'Cierre');
         const crec = (ini != null && cie != null) ? +(cie - ini).toFixed(2) : null;
         return { nombre: a.nombre, provincia: a.provincia, ini: ini, cie: cie, crec: crec, categoria: categoriaVigente(a.id_asociacion) };
+      })
+      .sort(function (x, y) {
+        const r = _catRank(x.categoria) - _catRank(y.categoria);
+        return r !== 0 ? r : (x.nombre || '').localeCompare(y.nombre || '');
       });
   }
 
