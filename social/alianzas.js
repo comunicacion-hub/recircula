@@ -1,6 +1,6 @@
 // ============================================================
 // DASHBOARD SOCIAL — alianzas.js
-// Sección Alianzas: CRUD (ver / editar; sin eliminar, según diseño).
+// Sección Alianzas: CRUD (ver / editar / eliminar).
 // Colección: Alianzas
 //  - Asociaciones beneficiarias: multiselección de Asoc_Ambiente.
 //  - Provincias: derivadas de las asociaciones elegidas (lista).
@@ -88,7 +88,8 @@ function renderTablaAlianzas() {
     const carpeta = jsEsc(a.id_carpeta_drive || '');
     return (carpeta ? '<button class="icon-btn" onclick="window.open(\'https://drive.google.com/drive/folders/' + carpeta + '\',\'_blank\')" title="Carpeta">' + icoHTML('folder') + '</button>' : '') +
       '<button class="icon-btn" onclick="verAlianza(\'' + docId + '\')" title="Ver">' + icoHTML('view') + '</button>' +
-      (edit ? '<button class="icon-btn primary" onclick="editarAlianza(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' : '');
+      (edit ? '<button class="icon-btn primary" onclick="editarAlianza(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' +
+        '<button class="icon-btn del" onclick="confirmarEliminarAlianza(\'' + docId + '\',\'' + carpeta + '\')" title="Eliminar">' + icoHTML('trash') + '</button>' : '');
   };
 
   // Tabla (desktop)
@@ -299,6 +300,37 @@ async function guardarAlianza(docId) {
 
   if (!r.ok) { showToast('Error al guardar: ' + (r.error || '')); if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; } return; }
   showToast(r.offline ? 'Guardado (se sincronizará) ✓' : 'Guardado ✓');
+  cerrarModal();
+  cargarAlianzas();
+}
+
+// ── Eliminar (registro + papelera de la carpeta del convenio) ──
+function confirmarEliminarAlianza(docId, carpetaId) {
+  abrirModal(
+    '<div class="modal" style="max-width:440px">' +
+      '<div class="modal-head"><div class="modal-title">Eliminar alianza</div>' +
+        '<button class="modal-close" onclick="cerrarModal()"></button></div>' +
+      '<div class="modal-body"><p style="color:var(--text-muted);font-size:14px;line-height:1.6">' +
+        '¿Seguro que quieres eliminar esta alianza? Se quitará el registro y la carpeta del convenio se enviará a la papelera de Drive.' +
+      '</p></div>' +
+      '<div class="modal-foot">' +
+        '<button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>' +
+        '<button class="btn btn-danger" onclick="eliminarAlianza(\'' + jsEsc(docId) + '\',\'' + jsEsc(carpetaId) + '\')">Eliminar</button>' +
+      '</div>' +
+    '</div>'
+  );
+}
+
+async function eliminarAlianza(docId, carpetaId) {
+  if (!docId) { showToast('No se encontró la alianza'); return; }
+  if (carpetaId) {
+    const tok = driveToken();
+    if (tok) { try { await driveEliminarCarpeta(carpetaId, tok); } catch (e) { console.warn('Drive papelera alianza:', e); } }
+  }
+  const r = await fsWrite(function () { return window.fb.deleteDoc(fsDoc('Alianzas', docId)); });
+  if (!r.ok) { showToast('Error al eliminar: ' + (r.error || '')); return; }
+  CAT.alianzas = CAT.alianzas.filter(function (x) { return x._docId !== docId; });
+  showToast(r.offline ? 'Eliminado (se sincronizará) ✓' : 'Alianza eliminada ✓');
   cerrarModal();
   cargarAlianzas();
 }
