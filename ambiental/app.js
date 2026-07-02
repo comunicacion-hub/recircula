@@ -5,6 +5,7 @@
 // ============================================================
 
 const DOMAIN   = 'redesconrostro.org';
+const DOMINIO_VISUALIZADOR = 'cbc.co'; // Tesalia (CBC): acceso Visualizador (solo lectura)
 const HUB_URL  = 'https://recircula.redesconrostro.org';
 
 // Mini Apps Script SOLO para crear carpetas de evidencia en Drive.
@@ -178,6 +179,18 @@ async function establecerSesion(user) {
       if (parsed && parsed.rol) { SESSION = parsed; return true; }
     } catch (e) {}
   }
+  // Tesalia (CBC): Visualizador automatico aunque no esté en Usuarios
+  const emailLower = (user.email || '').toLowerCase();
+  if (emailLower.endsWith('@' + DOMINIO_VISUALIZADOR)) {
+    SESSION = {
+      nombre: user.displayName || 'Tesalia',
+      email:  emailLower,
+      rol:    'Visualizador',
+      externo: true
+    };
+    sessionStorage.setItem('rcr_session', JSON.stringify(SESSION));
+    return true;
+  }
   try {
     const snap = await window.fb.getDocs(
       window.fb.query(fsCol('Usuarios'), window.fb.where('email', '==', user.email))
@@ -200,6 +213,26 @@ async function establecerSesion(user) {
 // "Salir" del módulo: vuelve al Hub SIN cerrar la sesión (se conserva el login)
 function cerrarSesion() {
   window.location.href = HUB_URL;
+}
+
+// ============================================================
+// PERMISOS POR ROL
+// ============================================================
+
+// Solo Admin y Editor pueden crear/editar/eliminar.
+// Visualizador (incluye Tesalia/CBC) es solo lectura.
+function puedeEditar() {
+  return !!(SESSION && (SESSION.rol === 'Admin' || SESSION.rol === 'Editor'));
+}
+
+// Guard para las funciones de escritura. Si no puede editar, avisa y corta.
+// Devuelve true si la operación NO está permitida (para hacer "return" temprano).
+function bloqueadoSoloLectura() {
+  if (!puedeEditar()) {
+    if (typeof showToast === 'function') showToast('Solo lectura: no tienes permiso para esta accion');
+    return true;
+  }
+  return false;
 }
 
 // ============================================================
@@ -310,6 +343,7 @@ async function asegurarCarpetaEntrega(data) {
 // ============================================================
 
 async function guardarEntregaFS(docId, data) {
+  if (bloqueadoSoloLectura()) return { ok: false, error: 'sin_permiso' };
   await asegurarCarpetaEntrega(data);   // crea la carpeta si corresponde
   const f = entregaToFS(data);
   if (docId) {
@@ -331,6 +365,7 @@ async function guardarEntregaFS(docId, data) {
 }
 
 async function eliminarEntregaFS(docId) {
+  if (bloqueadoSoloLectura()) return { ok: false, error: 'sin_permiso' };
   const r = await fsWrite(function() { return window.fb.deleteDoc(fsDoc('Entregas', docId)); });
   if (r.ok) CAT.entregas = CAT.entregas.filter(function(e) { return e._docId !== docId; });
   return r;
@@ -341,6 +376,7 @@ async function eliminarEntregaFS(docId) {
 // ============================================================
 
 async function guardarCompradorFS(docId, data) {
+  if (bloqueadoSoloLectura()) return { ok: false, error: 'sin_permiso' };
   const f = compradorToFS(data);
   if (docId) {
     const actual = CAT.compradores.find(function(c) { return c._docId === docId; });
@@ -364,6 +400,7 @@ async function guardarCompradorFS(docId, data) {
 }
 
 async function eliminarCompradorFS(docId) {
+  if (bloqueadoSoloLectura()) return { ok: false, error: 'sin_permiso' };
   const r = await fsWrite(function() { return window.fb.deleteDoc(fsDoc('Compradores', docId)); });
   if (r.ok) CAT.compradores = CAT.compradores.filter(function(c) { return c._docId !== docId; });
   return r;
@@ -726,8 +763,10 @@ window.addEventListener('load', async function() {
   await window.fbReady;
 
   window.fb.onAuthStateChanged(window.fb.auth, async function(user) {
-    // Sin sesión válida del dominio → volver al Hub a iniciar sesión
-    if (!user || !user.email || !user.email.toLowerCase().endsWith('@' + DOMAIN)) {
+    // Sin sesión válida (RCR o Tesalia) → volver al Hub a iniciar sesión
+    var emailLower = (user && user.email) ? user.email.toLowerCase() : '';
+    var dominioOk = emailLower.endsWith('@' + DOMAIN) || emailLower.endsWith('@' + DOMINIO_VISUALIZADOR);
+    if (!user || !dominioOk) {
       window.location.href = HUB_URL;
       return;
     }
