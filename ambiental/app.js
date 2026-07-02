@@ -5,7 +5,7 @@
 // ============================================================
 
 const DOMAIN   = 'redesconrostro.org';
-const HUB_URL  = 'https://comunicacion-hub.github.io/recirculaapp/';
+const HUB_URL  = 'https://recircula.redesconrostro.org';
 
 // Mini Apps Script SOLO para crear carpetas de evidencia en Drive.
 // 1) Desplegá carpetas.gs como app web ("Cualquier usuario").
