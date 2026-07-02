@@ -230,7 +230,7 @@ function abrirFormReciclador(docId) {
       '</div>' +
       '<div class="modal-foot">' +
         '<button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>' +
-        '<button class="btn btn-primary" id="rec-save-btn" onclick="guardarReciclador(' + (docId ? '\'' + jsEsc(docId) + '\'' : 'null') + ')">Guardar</button>' +
+        (puedeEditar() ? '<button class="btn btn-primary" id="rec-save-btn" onclick="guardarReciclador(' + (docId ? '\'' + jsEsc(docId) + '\'' : 'null') + ')">Guardar</button>' : '') +
       '</div>' +
     '</div>'
   );
