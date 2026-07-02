@@ -30,7 +30,6 @@ function _provinciasAsoc() {
 // ── Render principal ──
 function renderAsociaciones() {
   registerAsociacionesFilters();
-  const puedeEditar = SESSION.rol !== 'Visualizador';
   document.getElementById('main-content').innerHTML =
     '<div class="page-header">' +
       '<div><div class="page-title">Asociaciones</div><div class="page-sub">Registro</div></div>' +
@@ -38,7 +37,7 @@ function renderAsociaciones() {
         '<button class="hdr-circle" onclick="openFilterDrawer(\'asociaciones\')" title="Filtros">' +
           icoHTML('filter') + '<span class="filter-badge" id="asoc-filter-badge" style="display:none">0</span></button>' +
         '<button class="hdr-circle" onclick="exportarAsociacionesExcel()" title="Descargar Excel">' + icoHTML('download') + '</button>' +
-        (puedeEditar ? '<button class="hdr-circle hdr-circle-primary" onclick="abrirFormAsociacion()" title="Nueva asociación">' + icoHTML('plus') + '</button>' : '') +
+        (puedeEditar() ? '<button class="hdr-circle hdr-circle-primary" onclick="abrirFormAsociacion()" title="Nueva asociación">' + icoHTML('plus') + '</button>' : '') +
       '</div>' +
     '</div>' +
     '<div id="asoc-table-wrap"></div>';
@@ -66,13 +65,12 @@ function renderTablaAsociaciones() {
       '<p>No hay asociaciones con estos filtros</p></div>';
     return;
   }
-  const puedeEditar = SESSION.rol !== 'Visualizador';
   const acciones = function (a) {
     const docId = jsEsc(a._docId || '');
     const carpeta = jsEsc(a.id_carpeta_drive || '');
     return (carpeta ? '<button class="icon-btn" onclick="window.open(\'https://drive.google.com/drive/folders/' + carpeta + '\',\'_blank\')" title="Carpeta">' + icoHTML('folder') + '</button>' : '') +
       '<button class="icon-btn" onclick="verAsociacion(\'' + docId + '\')" title="Ver">' + icoHTML('view') + '</button>' +
-      (puedeEditar ? '<button class="icon-btn primary" onclick="editarAsociacion(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' : '');
+      (puedeEditar() ? '<button class="icon-btn primary" onclick="editarAsociacion(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' : '');
   };
 
   // ── Tabla (desktop) ──
@@ -189,7 +187,7 @@ function abrirFormAsociacion(docId) {
       '</div>' +
       '<div class="modal-foot">' +
         '<button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>' +
-        '<button class="btn btn-primary" id="asoc-save-btn" onclick="guardarAsociacion(' + (docId ? '\'' + jsEsc(docId) + '\'' : 'null') + ')">Guardar</button>' +
+        (puedeEditar() ? '<button class="btn btn-primary" id="asoc-save-btn" onclick="guardarAsociacion(' + (docId ? '\'' + jsEsc(docId) + '\'' : 'null') + ')">Guardar</button>' : '') +
       '</div>' +
     '</div>'
   );
