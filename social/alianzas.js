@@ -220,7 +220,7 @@ function abrirFormAlianza(docId) {
       '</div>' +
       '<div class="modal-foot">' +
         '<button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>' +
-        '<button class="btn btn-primary" id="ali-save-btn" onclick="guardarAlianza(' + (docId ? '\'' + jsEsc(docId) + '\'' : 'null') + ')">Guardar</button>' +
+        (puedeEditar() ? '<button class="btn btn-primary" id="ali-save-btn" onclick="guardarAlianza(' + (docId ? '\'' + jsEsc(docId) + '\'' : 'null') + ')">Guardar</button>' : '') +
       '</div>' +
     '</div>'
   );
