@@ -573,7 +573,16 @@ tbody tr:hover .td-actions { opacity: 1; }
       </svg>
       Continuar con Google
     </button>
-    <p class="login-domain-note">Solo cuentas @redesconrostro.org</p>
+    <button class="login-google-btn" id="btn-login-ms" onclick="iniciarLoginMicrosoft()" style="margin-top:12px">
+      <svg class="login-google-icon" viewBox="0 0 24 24">
+        <path fill="#F25022" d="M1 1h10.4v10.4H1z"/>
+        <path fill="#7FBA00" d="M12.6 1H23v10.4H12.6z"/>
+        <path fill="#00A4EF" d="M1 12.6h10.4V23H1z"/>
+        <path fill="#FFB900" d="M12.6 12.6H23V23H12.6z"/>
+      </svg>
+      Continuar con Microsoft
+    </button>
+    <p class="login-domain-note">RCR con Google · Tesalia (CBC) con Microsoft</p>
   </div>
 </div>
 
@@ -625,7 +634,7 @@ tbody tr:hover .td-actions { opacity: 1; }
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import {
-  getAuth, GoogleAuthProvider, signInWithPopup, signOut,
+  getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signOut,
   onAuthStateChanged, setPersistence, browserSessionPersistence
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 import {
@@ -657,6 +666,7 @@ try {
 }
 
 const DOMAIN = 'redesconrostro.org';
+const DOMINIO_VISUALIZADOR = 'cbc.co'; // Tesalia (CBC): entra automatico como Visualizador
 const TOKEN_MARGIN_MS = 5 * 60 * 1000;
 
 // Scopes que heredan las apps hijas (transitorio hasta migrarlas a Firebase)
@@ -748,14 +758,67 @@ async function iniciarLogin() {
   }
 }
 
-// ── Cargar datos desde Firestore y entrar ──────────────────
+// ── LOGIN con Microsoft (Tesalia / CBC) ────────────────────
+async function iniciarLoginMicrosoft() {
+  const btn = document.getElementById('btn-login-ms');
+  if (btn) btn.disabled = true;
+  try {
+    await setPersistence(auth, browserSessionPersistence);
+
+    const provider = new OAuthProvider('microsoft.com');
+    // Permite cuentas de cualquier organizacion Microsoft;
+    // el filtro real por dominio se hace despues en onAuthStateChanged.
+    provider.setCustomParameters({ prompt: 'select_account' });
+
+    await signInWithPopup(auth, provider);
+    // El resto del flujo lo maneja onAuthStateChanged
+  } catch(e) {
+    console.error('iniciarLoginMicrosoft:', e);
+    if (e && e.code === 'auth/popup-closed-by-user') {
+      showToast('Inicio de sesion cancelado');
+    } else if (e && e.code === 'auth/account-exists-with-different-credential') {
+      showToast('Esa cuenta ya existe con otro metodo de acceso');
+    } else {
+      showToast('Error al iniciar sesion con Microsoft');
+    }
+    if (btn) btn.disabled = false;
+  }
+}
 async function cargarDatosYEntrar(user) {
   try {
     // 1) Mi documento de usuario (por email)
     const qUsr = query(collection(db, 'Usuarios'), where('email', '==', user.email));
     const usrSnap = await getDocs(qUsr);
 
+    const emailLower = (user.email || '').toLowerCase();
+    const esTesalia = emailLower.endsWith('@' + DOMINIO_VISUALIZADOR);
+
     if (usrSnap.empty) {
+      // Tesalia (CBC): acceso automatico como Visualizador, sin registro previo
+      if (esTesalia) {
+        const modSnap = await getDocs(collection(db, 'Modulos'));
+        const modulos = modSnap.docs.map(d => ({ _docId: d.id, ...d.data() }));
+        // Visualizador de Tesalia ve todos los modulos activos en solo lectura
+        const idsVisibles = modulos
+          .filter(m => isActivo(m.activo))
+          .map(m => m.id_modulo);
+
+        session = {
+          _docId:  null,
+          nombre:  user.displayName || 'Tesalia',
+          email:   emailLower,
+          rol:     'Visualizador',
+          modulos: idsVisibles,
+          externo: true
+        };
+        hubData = { usuario: session, usuarios: [session], modulos };
+
+        cacheData(hubData);
+        sessionStorage.setItem('rcr_hub_session', JSON.stringify(session));
+        iniciarHub();
+        return;
+      }
+
       showToast('Usuario no autorizado. Contacta al administrador.');
       await signOut(auth);
       mostrarLogin();
@@ -1174,6 +1237,8 @@ function mostrarLogin() {
   document.getElementById('screen-hub').classList.add('hidden');
   var btn = document.getElementById('btn-login');
   if (btn) btn.disabled = false;
+  var btnMs = document.getElementById('btn-login-ms');
+  if (btnMs) btnMs.disabled = false;
 }
 function mostrarLoading() {
   document.getElementById('screen-login').classList.add('hidden');
@@ -1210,6 +1275,7 @@ function cerrarModal() {
 
 // ── Exponer al ámbito global (para onclick inline) ─────────
 window.iniciarLogin = iniciarLogin;
+window.iniciarLoginMicrosoft = iniciarLoginMicrosoft;
 window.cerrarSesion = cerrarSesion;
 window.abrirConfiguracion = abrirConfiguracion;
 window.App = {
@@ -1239,8 +1305,12 @@ onAuthStateChanged(auth, async function(user) {
     return;
   }
 
-  if (!user.email || !user.email.toLowerCase().endsWith('@' + DOMAIN)) {
-    showToast('Solo cuentas @' + DOMAIN);
+  var emailOk = user.email && (
+    user.email.toLowerCase().endsWith('@' + DOMAIN) ||
+    user.email.toLowerCase().endsWith('@' + DOMINIO_VISUALIZADOR)
+  );
+  if (!emailOk) {
+    showToast('Cuenta no permitida');
     await signOut(auth);
     mostrarLogin();
     return;
