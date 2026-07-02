@@ -42,9 +42,11 @@ function renderCompradores() {
         <button class="hdr-circle" onclick="exportarCompradoresExcel()" title="Descargar Excel">
           ${icoHTML('download')}
         </button>
+        ${puedeEditar() ? `
         <button class="hdr-circle hdr-circle-primary" onclick="abrirFormComprador()" title="Nuevo comprador">
           ${icoHTML('plus')}
         </button>
+        ` : ''}
       </div>
     </div>
 
@@ -91,7 +93,7 @@ function renderTablaCompradores() {
       <td data-actions-row>
         <div class="td-actions">
           <button class="icon-btn" onclick="verComprador('${id}')" title="Ver">${icoHTML('view')}</button>
-          ${SESSION.rol !== 'Visualizador' ? `
+          ${puedeEditar() ? `
             <button class="icon-btn primary" onclick="abrirFormComprador('${id}')" title="Editar">${icoHTML('edit')}</button>
             <button class="icon-btn del" onclick="confirmarEliminarComprador('${id}')" title="Eliminar">${icoHTML('trash')}</button>
           ` : ''}
@@ -154,7 +156,7 @@ function verComprador(id) {
       </div>
       <div class="modal-foot">
         <button class="btn btn-glass" onclick="cerrarModal()">Cerrar</button>
-        ${SESSION.rol !== 'Visualizador' ? `<button class="btn btn-primary" onclick="cerrarModal();abrirFormComprador('${jsEsc(id)}')">Editar</button>` : ''}
+        ${puedeEditar() ? `<button class="btn btn-primary" onclick="cerrarModal();abrirFormComprador('${jsEsc(id)}')">Editar</button>` : ''}
       </div>
     </div>
   `);
@@ -213,7 +215,7 @@ function abrirFormComprador(id = null) {
       </div>
       <div class="modal-foot">
         <button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>
-        <button class="btn btn-primary" id="btn-guardar-com" onclick="guardarComprador('${jsEsc(id||'')}')">${c?'Actualizar':'Guardar'}</button>
+        ${puedeEditar() ? `<button class="btn btn-primary" id="btn-guardar-com" onclick="guardarComprador('${jsEsc(id||'')}')">${c?'Actualizar':'Guardar'}</button>` : ''}
       </div>
     </div>
   `);
