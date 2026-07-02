@@ -7,7 +7,7 @@
 // ============================================================
 
 const DOMAIN  = 'redesconrostro.org';
-const HUB_URL = 'https://comunicacion-hub.github.io/recirculaapp/';
+const HUB_URL = 'https://recircula.redesconrostro.org';
 
 // Carpetas raíz de Drive (ya creadas). Las subcarpetas se crean automáticamente.
 const DRIVE_PARENTS = {
