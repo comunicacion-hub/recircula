@@ -49,9 +49,11 @@ function renderEntregas() {
         <button class="hdr-circle" onclick="exportarEntregasExcel()" title="Descargar Excel">
           ${icoHTML('download')}
         </button>
+        ${puedeEditar() ? `
         <button class="hdr-circle hdr-circle-primary" onclick="abrirFormEntrega()" title="Nueva entrega">
           ${icoHTML('plus')}
         </button>
+        ` : ''}
       </div>
     </div>
 
@@ -148,7 +150,7 @@ function renderTablaEntregas() {
               ? `<button class="icon-btn" onclick="window.open('https://drive.google.com/drive/folders/${idCarpeta}','_blank')" title="Carpeta de evidencias">${icoHTML('folder')}</button>`
               : ''}
             <button class="icon-btn" onclick="verEntrega('${idEnt}')" title="Ver">${icoHTML('view')}</button>
-            ${SESSION.rol !== 'Visualizador' ? `
+            ${puedeEditar() ? `
               <button class="icon-btn primary" onclick="editarEntrega('${idEnt}')" title="Editar">${icoHTML('edit')}</button>
               <button class="icon-btn del" onclick="confirmarEliminarEntrega('${docId}','${idCarpeta}')" title="Eliminar">${icoHTML('trash')}</button>
             ` : ''}
@@ -408,7 +410,7 @@ function abrirFormEntrega(id = null) {
       </div>
       <div class="modal-foot">
         <button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>
-        <button class="btn btn-primary" id="btn-guardar-entrega" onclick="guardarEntrega('${jsEsc(id||'')}')">${e?'Actualizar':'Guardar entrega'}</button>
+        ${puedeEditar() ? `<button class="btn btn-primary" id="btn-guardar-entrega" onclick="guardarEntrega('${jsEsc(id||'')}')">${e?'Actualizar':'Guardar entrega'}</button>` : ''}
       </div>
     </div>
   `);
