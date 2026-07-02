@@ -36,7 +36,6 @@ function _provinciasDiag() {
 
 function renderDiagnosticos() {
   registerDiagnosticosFilters();
-  const puedeEditar = SESSION.rol !== 'Visualizador';
   document.getElementById('main-content').innerHTML =
     '<div class="page-header">' +
       '<div><div class="page-title">Diagnósticos</div><div class="page-sub">Asociativos</div></div>' +
@@ -44,7 +43,7 @@ function renderDiagnosticos() {
         '<button class="hdr-circle" onclick="openFilterDrawer(\'diagnosticos\')" title="Filtros">' +
           icoHTML('filter') + '<span class="filter-badge" id="diag-filter-badge" style="display:none">0</span></button>' +
         '<button class="hdr-circle" onclick="exportarDiagnosticosExcel()" title="Descargar Excel">' + icoHTML('download') + '</button>' +
-        (puedeEditar ? '<button class="hdr-circle hdr-circle-primary" onclick="abrirFormDiagnostico()" title="Nuevo diagnóstico">' + icoHTML('plus') + '</button>' : '') +
+        (puedeEditar() ? '<button class="hdr-circle hdr-circle-primary" onclick="abrirFormDiagnostico()" title="Nuevo diagnóstico">' + icoHTML('plus') + '</button>' : '') +
       '</div>' +
     '</div>' +
     '<div id="diag-table-wrap"></div>';
@@ -84,7 +83,6 @@ function renderTablaDiagnosticos() {
       '<p>No hay diagnósticos con estos filtros</p></div>';
     return;
   }
-  const puedeEditar = SESSION.rol !== 'Visualizador';
   const pct = function (v) { return (v == null || isNaN(v)) ? '—' : fmtNum(v, 1) + '%'; };
   const cat = function (d) { return categoriaDesdePuntaje(parseFloat(d.valoracion_total)); };
 
@@ -93,7 +91,7 @@ function renderTablaDiagnosticos() {
     const carpeta = jsEsc(d.id_carpeta_drive || '');
     return (carpeta ? '<button class="icon-btn" onclick="window.open(\'https://drive.google.com/drive/folders/' + carpeta + '\',\'_blank\')" title="Carpeta">' + icoHTML('folder') + '</button>' : '') +
       '<button class="icon-btn" onclick="verDiagnostico(\'' + docId + '\')" title="Ver">' + icoHTML('view') + '</button>' +
-      (puedeEditar ? '<button class="icon-btn primary" onclick="editarDiagnostico(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' : '');
+      (puedeEditar() ? '<button class="icon-btn primary" onclick="editarDiagnostico(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' : '');
   };
 
   // ── Tabla (desktop) ──
@@ -226,7 +224,7 @@ function abrirFormDiagnostico(docId) {
       '</div>' +
       '<div class="modal-foot">' +
         '<button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>' +
-        '<button class="btn btn-primary" id="diag-save-btn" onclick="guardarDiagnostico(' + (docId ? '\'' + jsEsc(docId) + '\'' : 'null') + ')">Guardar</button>' +
+        (puedeEditar() ? '<button class="btn btn-primary" id="diag-save-btn" onclick="guardarDiagnostico(' + (docId ? '\'' + jsEsc(docId) + '\'' : 'null') + ')">Guardar</button>' : '') +
       '</div>' +
     '</div>'
   );
