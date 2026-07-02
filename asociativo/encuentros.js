@@ -31,7 +31,6 @@ function _provinciasEnc() {
 
 function renderEncuentros() {
   registerEncuentrosFilters();
-  const puedeEditar = SESSION.rol !== 'Visualizador';
   document.getElementById('main-content').innerHTML =
     '<div class="page-header">' +
       '<div><div class="page-title">Encuentros</div><div class="page-sub">Talleres/Reuniones</div></div>' +
@@ -39,7 +38,7 @@ function renderEncuentros() {
         '<button class="hdr-circle" onclick="openFilterDrawer(\'encuentros\')" title="Filtros">' +
           icoHTML('filter') + '<span class="filter-badge" id="enc-filter-badge" style="display:none">0</span></button>' +
         '<button class="hdr-circle" onclick="exportarEncuentrosExcel()" title="Descargar Excel">' + icoHTML('download') + '</button>' +
-        (puedeEditar ? '<button class="hdr-circle hdr-circle-primary" onclick="abrirFormEncuentro()" title="Nuevo encuentro">' + icoHTML('plus') + '</button>' : '') +
+        (puedeEditar() ? '<button class="hdr-circle hdr-circle-primary" onclick="abrirFormEncuentro()" title="Nuevo encuentro">' + icoHTML('plus') + '</button>' : '') +
       '</div>' +
     '</div>' +
     '<div id="enc-table-wrap"></div>';
@@ -69,13 +68,12 @@ function renderTablaEncuentros() {
       '<p>No hay encuentros con estos filtros</p></div>';
     return;
   }
-  const puedeEditar = SESSION.rol !== 'Visualizador';
   const acciones = function (e) {
     const docId = jsEsc(e._docId || '');
     const carpeta = jsEsc(e.id_carpeta_drive || '');
     return (carpeta ? '<button class="icon-btn" onclick="window.open(\'https://drive.google.com/drive/folders/' + carpeta + '\',\'_blank\')" title="Carpeta">' + icoHTML('folder') + '</button>' : '') +
       '<button class="icon-btn" onclick="verEncuentro(\'' + docId + '\')" title="Ver">' + icoHTML('view') + '</button>' +
-      (puedeEditar ? '<button class="icon-btn primary" onclick="editarEncuentro(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' +
+      (puedeEditar() ? '<button class="icon-btn primary" onclick="editarEncuentro(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' +
         '<button class="icon-btn del" onclick="confirmarEliminarEncuentro(\'' + docId + '\',\'' + carpeta + '\')" title="Eliminar">' + icoHTML('trash') + '</button>' : '');
   };
 
@@ -222,7 +220,7 @@ function abrirFormEncuentro(docId) {
       '</div>' +
       '<div class="modal-foot">' +
         '<button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>' +
-        '<button class="btn btn-primary" id="enc-save-btn" onclick="guardarEncuentro(' + (docId ? '\'' + jsEsc(docId) + '\'' : 'null') + ')">Guardar</button>' +
+        (puedeEditar() ? '<button class="btn btn-primary" id="enc-save-btn" onclick="guardarEncuentro(' + (docId ? '\'' + jsEsc(docId) + '\'' : 'null') + ')">Guardar</button>' : '') +
       '</div>' +
     '</div>'
   );
