@@ -9,6 +9,7 @@
 // ============================================================
 
 const DOMAIN  = 'redesconrostro.org';
+const DOMINIO_VISUALIZADOR = 'cbc.co'; // Tesalia (CBC): acceso Visualizador (solo lectura)
 const HUB_URL = 'https://recircula.redesconrostro.org';
 
 // Carpetas raíz de Drive (ya creadas). Las subcarpetas se crean automáticamente.
@@ -43,6 +44,11 @@ async function fsGetAll(nombre) {
 
 // Escritura tolerante a offline (Firestore encola con su persistencia nativa).
 async function fsWrite(opFactory) {
+  // Guard central: ninguna escritura procede si el usuario es solo lectura.
+  if (!puedeEditar()) {
+    if (typeof showToast === 'function') showToast('Solo lectura: no tienes permiso para esta accion');
+    return { ok: false, error: 'sin_permiso' };
+  }
   if (!navigator.onLine) {
     try { opFactory(); } catch (e) { console.warn(e); }
     return { ok: true, offline: true };
@@ -298,6 +304,13 @@ async function establecerSesion(user) {
       if (parsed && parsed.rol) { SESSION = parsed; return true; }
     } catch (e) {}
   }
+  // Tesalia (CBC): Visualizador automatico aunque no esté en Usuarios.
+  const emailLower = (user.email || '').toLowerCase();
+  if (emailLower.endsWith('@' + DOMINIO_VISUALIZADOR)) {
+    SESSION = { nombre: user.displayName || 'Tesalia', email: emailLower, rol: 'Visualizador', externo: true };
+    sessionStorage.setItem('rcr_session', JSON.stringify(SESSION));
+    return true;
+  }
   try {
     const snap = await window.fb.getDocs(
       window.fb.query(fsCol('Usuarios'), window.fb.where('email', '==', user.email))
@@ -316,7 +329,9 @@ async function establecerSesion(user) {
 // Vuelve al Hub SIN cerrar sesión.
 function volverAlHub() { window.location.href = HUB_URL; }
 
-function puedeEditar() { return SESSION && SESSION.rol !== 'Visualizador'; }
+// Solo Admin y Editor pueden crear/editar/eliminar.
+// Visualizador (incluye Tesalia/CBC) es solo lectura.
+function puedeEditar() { return !!(SESSION && (SESSION.rol === 'Admin' || SESSION.rol === 'Editor')); }
 
 // ============================================================
 // CARGA DE DATOS
@@ -708,7 +723,9 @@ window.addEventListener('load', async function () {
   await window.fbReady;
 
   window.fb.onAuthStateChanged(window.fb.auth, async function (user) {
-    if (!user || !user.email || !user.email.toLowerCase().endsWith('@' + DOMAIN)) {
+    var emailLower = (user && user.email) ? user.email.toLowerCase() : '';
+    var dominioOk = emailLower.endsWith('@' + DOMAIN) || emailLower.endsWith('@' + DOMINIO_VISUALIZADOR);
+    if (!user || !dominioOk) {
       window.location.href = HUB_URL;
       return;
     }
