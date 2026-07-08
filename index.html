@@ -146,6 +146,48 @@ body {
 .login-icon-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 .login-icon-btn svg { width: 26px; height: 26px; display: block; }
 
+/* Modal de acceso con correo */
+.modal-correo-overlay {
+  position: fixed; inset: 0; z-index: 1000;
+  background: rgba(10, 25, 47, 0.45);
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px; backdrop-filter: blur(2px);
+}
+.modal-correo-card {
+  position: relative;
+  background: #fff; border-radius: 20px;
+  padding: 32px 28px; width: 100%; max-width: 400px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+  text-align: center;
+}
+.modal-correo-close {
+  position: absolute; top: 14px; right: 16px;
+  border: none; background: none; font-size: 26px; line-height: 1;
+  color: #9aa7b5; cursor: pointer;
+}
+.modal-correo-close:hover { color: #5b6b7f; }
+.modal-correo-title { font-size: 20px; font-weight: 800; color: var(--tx, #1b1b1b); margin-bottom: 8px; }
+.modal-correo-sub { font-size: 13.5px; color: var(--tl, #6b7785); line-height: 1.55; margin-bottom: 20px; }
+.modal-correo-input {
+  width: 100%; padding: 13px 15px; font-size: 15px;
+  border: 1px solid var(--border, #d9e2ec); border-radius: var(--radius-md, 14px);
+  outline: none; transition: border-color 0.15s; margin-bottom: 14px;
+  box-sizing: border-box;
+}
+.modal-correo-input:focus { border-color: var(--b1, #0778bf); }
+.modal-correo-btn {
+  width: 100%; padding: 13px; font-size: 15px; font-weight: 700;
+  color: #fff; background: var(--b1, #0778bf); border: none;
+  border-radius: var(--radius-md, 14px); cursor: pointer; transition: opacity 0.15s;
+}
+.modal-correo-btn:hover { opacity: 0.9; }
+.modal-correo-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.modal-correo-check {
+  width: 56px; height: 56px; margin: 0 auto 12px;
+  border-radius: 50%; background: #e4fbf4; color: #0f6e56;
+  font-size: 30px; display: flex; align-items: center; justify-content: center;
+}
+
 .login-brand {
   font-size: 13px;
   color: var(--tl);
@@ -597,16 +639,36 @@ tbody tr:hover .td-actions { opacity: 1; }
           <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
         </svg>
       </button>
-      <button class="login-icon-btn" id="btn-login-ms" onclick="iniciarLoginMicrosoft()" title="Continuar con Microsoft" aria-label="Continuar con Microsoft">
-        <svg viewBox="0 0 24 24">
-          <path fill="#F25022" d="M1 1h10.4v10.4H1z"/>
-          <path fill="#7FBA00" d="M12.6 1H23v10.4H12.6z"/>
-          <path fill="#00A4EF" d="M1 12.6h10.4V23H1z"/>
-          <path fill="#FFB900" d="M12.6 12.6H23V23H12.6z"/>
+      <button class="login-icon-btn" id="btn-login-mail" onclick="abrirModalCorreo()" title="Acceso con correo (Tesalia)" aria-label="Acceso con correo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#5b6b7f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="4" width="20" height="16" rx="2"/>
+          <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
         </svg>
       </button>
     </div>
     <div class="login-brand" style="margin-bottom:0;margin-top:24px">Una app de Redes Con Rostro</div>
+  </div>
+</div>
+
+<!-- MODAL: acceso con correo (Email Link) -->
+<div id="modal-correo" class="modal-correo-overlay hidden" onclick="if(event.target===this)cerrarModalCorreo()">
+  <div class="modal-correo-card">
+    <button class="modal-correo-close" onclick="cerrarModalCorreo()" aria-label="Cerrar">&times;</button>
+
+    <!-- Paso 1: ingresar correo -->
+    <div id="correo-paso-form">
+      <div class="modal-correo-title">Acceso con correo</div>
+      <div class="modal-correo-sub">Te enviaremos un enlace de acceso a tu correo institucional.</div>
+      <input type="email" id="input-correo" class="modal-correo-input" placeholder="tucorreo@cbc.co" autocomplete="email" onkeydown="if(event.key==='Enter')enviarLinkAcceso()">
+      <button class="modal-correo-btn" id="btn-enviar-link" onclick="enviarLinkAcceso()">Enviar enlace</button>
+    </div>
+
+    <!-- Paso 2: correo enviado -->
+    <div id="correo-paso-enviado" class="hidden">
+      <div class="modal-correo-check">✓</div>
+      <div class="modal-correo-title">Revisa tu correo</div>
+      <div class="modal-correo-sub">Enviamos un enlace de acceso a<br><strong id="correo-destino"></strong>.<br><br>Haz clic en el enlace desde tu bandeja para entrar. Puede tardar un par de minutos en llegar (revisa spam).</div>
+    </div>
   </div>
 </div>
 
@@ -658,7 +720,8 @@ tbody tr:hover .td-actions { opacity: 1; }
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import {
-  getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signOut,
+  getAuth, GoogleAuthProvider, signInWithPopup, signOut,
+  sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink,
   onAuthStateChanged, setPersistence, browserSessionPersistence
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 import {
@@ -782,32 +845,76 @@ async function iniciarLogin() {
   }
 }
 
-// ── LOGIN con Microsoft (Tesalia / CBC) ────────────────────
-async function iniciarLoginMicrosoft() {
-  const btn = document.getElementById('btn-login-ms');
-  if (btn) btn.disabled = true;
+// ── ACCESO CON CORREO (Email Link, passwordless) — Tesalia/CBC ──
+const ACCION_LINK = {
+  url: 'https://recircula.redesconrostro.org/', // el link del correo regresa aquí
+  handleCodeInApp: true
+};
+
+function abrirModalCorreo() {
+  document.getElementById('correo-paso-form').classList.remove('hidden');
+  document.getElementById('correo-paso-enviado').classList.add('hidden');
+  const inp = document.getElementById('input-correo');
+  if (inp) inp.value = '';
+  document.getElementById('modal-correo').classList.remove('hidden');
+  setTimeout(function(){ if (inp) inp.focus(); }, 50);
+}
+function cerrarModalCorreo() {
+  document.getElementById('modal-correo').classList.add('hidden');
+}
+
+async function enviarLinkAcceso() {
+  const email = (document.getElementById('input-correo').value || '').trim().toLowerCase();
+  if (!email || email.indexOf('@') === -1) {
+    showToast('Escribe un correo válido');
+    return;
+  }
+  // Solo el dominio de Tesalia usa este acceso.
+  if (!email.endsWith('@' + DOMINIO_VISUALIZADOR)) {
+    showToast('Usa tu correo @' + DOMINIO_VISUALIZADOR);
+    return;
+  }
+  const btn = document.getElementById('btn-enviar-link');
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
   try {
-    await setPersistence(auth, browserSessionPersistence);
-
-    const provider = new OAuthProvider('microsoft.com');
-    // Permite cuentas de cualquier organizacion Microsoft;
-    // el filtro real por dominio se hace despues en onAuthStateChanged.
-    provider.setCustomParameters({ prompt: 'select_account' });
-
-    await signInWithPopup(auth, provider);
-    // El resto del flujo lo maneja onAuthStateChanged
+    await sendSignInLinkToEmail(auth, email, ACCION_LINK);
+    // Guardar el correo para completar el login al volver del link.
+    window.localStorage.setItem('rcr_email_link', email);
+    document.getElementById('correo-destino').textContent = email;
+    document.getElementById('correo-paso-form').classList.add('hidden');
+    document.getElementById('correo-paso-enviado').classList.remove('hidden');
   } catch(e) {
-    console.error('iniciarLoginMicrosoft:', e);
-    if (e && e.code === 'auth/popup-closed-by-user') {
-      showToast('Inicio de sesion cancelado');
-    } else if (e && e.code === 'auth/account-exists-with-different-credential') {
-      showToast('Esa cuenta ya existe con otro metodo de acceso');
-    } else {
-      showToast('Error al iniciar sesion con Microsoft');
-    }
-    if (btn) btn.disabled = false;
+    console.error('enviarLinkAcceso:', e);
+    showToast('No se pudo enviar el enlace. Intenta de nuevo.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Enviar enlace'; }
   }
 }
+
+// Al cargar la página: si venimos de un link de correo, completar el login.
+async function completarLinkSiAplica() {
+  try {
+    if (!isSignInWithEmailLink(auth, window.location.href)) return false;
+    let email = window.localStorage.getItem('rcr_email_link');
+    if (!email) {
+      // Abrió el link en otro navegador/dispositivo: pedir el correo.
+      email = window.prompt('Confirma tu correo para completar el acceso:');
+    }
+    if (!email) { mostrarLogin(); return false; }
+    await setPersistence(auth, browserSessionPersistence);
+    await signInWithEmailLink(auth, email.trim().toLowerCase(), window.location.href);
+    window.localStorage.removeItem('rcr_email_link');
+    // Limpiar la URL (quitar los parámetros del link) sin recargar.
+    window.history.replaceState({}, document.title, window.location.pathname);
+    return true; // onAuthStateChanged se encarga del resto
+  } catch(e) {
+    console.error('completarLinkSiAplica:', e);
+    showToast('El enlace no es válido o expiró. Solicita uno nuevo.');
+    mostrarLogin();
+    return false;
+  }
+}
+
 async function cargarDatosYEntrar(user) {
   try {
     // 1) Mi documento de usuario (por email)
@@ -1261,8 +1368,8 @@ function mostrarLogin() {
   document.getElementById('screen-hub').classList.add('hidden');
   var btn = document.getElementById('btn-login');
   if (btn) btn.disabled = false;
-  var btnMs = document.getElementById('btn-login-ms');
-  if (btnMs) btnMs.disabled = false;
+  var btnMail = document.getElementById('btn-login-mail');
+  if (btnMail) btnMail.disabled = false;
 }
 function mostrarLoading() {
   document.getElementById('screen-login').classList.add('hidden');
@@ -1299,7 +1406,9 @@ function cerrarModal() {
 
 // ── Exponer al ámbito global (para onclick inline) ─────────
 window.iniciarLogin = iniciarLogin;
-window.iniciarLoginMicrosoft = iniciarLoginMicrosoft;
+window.abrirModalCorreo = abrirModalCorreo;
+window.cerrarModalCorreo = cerrarModalCorreo;
+window.enviarLinkAcceso = enviarLinkAcceso;
 window.cerrarSesion = cerrarSesion;
 window.abrirConfiguracion = abrirConfiguracion;
 window.App = {
@@ -1314,6 +1423,9 @@ window.App = {
 };
 
 // ── Punto de entrada: estado de autenticación ──────────────
+// Si la URL trae un link de acceso por correo, completarlo primero.
+completarLinkSiAplica();
+
 onAuthStateChanged(auth, async function(user) {
   // Restaurar token de Google guardado en esta sesión de pestaña
   var t = sessionStorage.getItem('rcr_hub_token');
@@ -1325,7 +1437,13 @@ onAuthStateChanged(auth, async function(user) {
 
   if (!user) {
     booted = true;
-    mostrarLogin();
+    // Si estamos completando un acceso por link de correo, mostrar "Cargando"
+    // en vez de la pantalla de login (evita el parpadeo antes de autenticar).
+    if (isSignInWithEmailLink(auth, window.location.href)) {
+      mostrarLoading();
+    } else {
+      mostrarLogin();
+    }
     return;
   }
 
