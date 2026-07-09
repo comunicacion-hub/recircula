@@ -19,7 +19,7 @@ function registerRecicladoresFilters() {
     badgeId: 'recs-filter-badge',
     sections: [
       { key: 'prov', title: 'Provincia',  type: 'options', options: _provinciasRecs() },
-      { key: 'asoc', title: 'Asociación', type: 'options', options: CAT.asocAmbiente.map(function (a) { return { val: a.id_asociacion, lbl: a.nombre }; }) },
+      { key: 'asoc', title: 'Asociación', type: 'options', options: CAT.asocAmbiente.map(function (a) { return { val: a._docId, lbl: a.nombre }; }) },
     ],
     getValue: function (k) { return RECS_FILTROS[k] || []; },
     setValue: function (k, v) { RECS_FILTROS[k] = v; },
@@ -186,7 +186,7 @@ function abrirFormReciclador(docId) {
   const editing = !!r;
 
   const asocOpts = '<option value="">Seleccioná una asociación…</option>' + CAT.asocAmbiente.map(function (a) {
-    return '<option value="' + esc(a.id_asociacion) + '"' + (r && r.id_asociacion === a.id_asociacion ? ' selected' : '') + '>' + esc(a.nombre) + '</option>';
+    return '<option value="' + esc(a._docId) + '"' + (r && r.id_asociacion === a._docId ? ' selected' : '') + '>' + esc(a.nombre) + '</option>';
   }).join('');
   const sexoOpts = '<option value="">—</option>' + SEXOS.map(function (s) {
     return '<option value="' + s + '"' + (r && r.sexo === s ? ' selected' : '') + '>' + s + '</option>';
@@ -230,7 +230,7 @@ function abrirFormReciclador(docId) {
       '</div>' +
       '<div class="modal-foot">' +
         '<button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>' +
-        (puedeEditar() ? '<button class="btn btn-primary" id="rec-save-btn" onclick="guardarReciclador(' + (docId ? '\'' + jsEsc(docId) + '\'' : 'null') + ')">Guardar</button>' : '') +
+        '<button class="btn btn-primary" id="rec-save-btn" onclick="guardarReciclador(' + (docId ? '\'' + jsEsc(docId) + '\'' : 'null') + ')">Guardar</button>' +
       '</div>' +
     '</div>'
   );
