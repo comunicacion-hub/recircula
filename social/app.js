@@ -9,8 +9,7 @@
 // ============================================================
 
 const DOMAIN  = 'redesconrostro.org';
-const DOMINIO_VISUALIZADOR = 'cbc.co'; // Tesalia (CBC): acceso Visualizador (solo lectura)
-const HUB_URL = 'https://recircula.redesconrostro.org';
+const HUB_URL = 'https://comunicacion-hub.github.io/recirculaapp/';
 
 // Carpetas raíz de Drive (ya creadas). Las subcarpetas se crean automáticamente.
 const DRIVE_PARENTS = {
@@ -44,11 +43,6 @@ async function fsGetAll(nombre) {
 
 // Escritura tolerante a offline (Firestore encola con su persistencia nativa).
 async function fsWrite(opFactory) {
-  // Guard central: ninguna escritura procede si el usuario es solo lectura.
-  if (!puedeEditar()) {
-    if (typeof showToast === 'function') showToast('Solo lectura: no tienes permiso para esta accion');
-    return { ok: false, error: 'sin_permiso' };
-  }
   if (!navigator.onLine) {
     try { opFactory(); } catch (e) { console.warn(e); }
     return { ok: true, offline: true };
@@ -86,6 +80,9 @@ function recicladorFromFS(d) {
     foto_perfil_url:         d.foto_perfil_url || '',
     foto_cedula_anverso_url: d.foto_cedula_anverso_url || '',
     foto_cedula_reverso_url: d.foto_cedula_reverso_url || '',
+    foto_perfil_id:          d.foto_perfil_id || '',
+    foto_cedula_anverso_id:  d.foto_cedula_anverso_id || '',
+    foto_cedula_reverso_id:  d.foto_cedula_reverso_id || '',
     carpeta_id:              d.carpeta_id || '',
     creado_por:              d.creado_por || '',
   };
@@ -107,6 +104,9 @@ function recicladorToFS(o) {
     foto_perfil_url:         o.foto_perfil_url || '',
     foto_cedula_anverso_url: o.foto_cedula_anverso_url || '',
     foto_cedula_reverso_url: o.foto_cedula_reverso_url || '',
+    foto_perfil_id:          o.foto_perfil_id || '',
+    foto_cedula_anverso_id:  o.foto_cedula_anverso_id || '',
+    foto_cedula_reverso_id:  o.foto_cedula_reverso_id || '',
     carpeta_id:              o.carpeta_id || '',
   };
 }
@@ -195,12 +195,20 @@ function cajaToFS(o) {
 // CRUCES (recicladores no tiene provincia: se resuelve por asociación)
 // ============================================================
 
+// Resuelve una asociación de Asoc_Ambiente aceptando tanto el doc.id de
+// Firestore como el campo id_asociacion (los recicladores del formulario
+// externo guardan el doc.id; el resto del dashboard usa id_asociacion).
+function _buscarAsoc(idOrDoc) {
+  if (!idOrDoc) return null;
+  return CAT.asocAmbiente.find(function (x) { return x._docId === idOrDoc || x.id_asociacion === idOrDoc; }) || null;
+}
+
 function provinciaDeAsociacion(idAsoc) {
-  const a = CAT.asocAmbiente.find(function (x) { return x.id_asociacion === idAsoc; });
+  const a = _buscarAsoc(idAsoc);
   return a ? (a.provincia || '') : '';
 }
 function nombreDeAsociacion(idAsoc) {
-  const a = CAT.asocAmbiente.find(function (x) { return x.id_asociacion === idAsoc; });
+  const a = _buscarAsoc(idAsoc);
   return a ? (a.nombre || '') : '';
 }
 function numRecicladoresDeAsociacion(idAsoc) {
@@ -209,8 +217,13 @@ function numRecicladoresDeAsociacion(idAsoc) {
 }
 
 // Provincia "operativa" de un reciclador (vía su asociación).
+// Respaldo por nombre si el id no resuelve.
 function provinciaDeReciclador(r) {
-  return provinciaDeAsociacion(r.id_asociacion);
+  let a = _buscarAsoc(r.id_asociacion);
+  if (!a && r.asociacion_nombre) {
+    a = CAT.asocAmbiente.find(function (x) { return (x.nombre || '').trim() === (r.asociacion_nombre || '').trim(); });
+  }
+  return a ? (a.provincia || '') : '';
 }
 
 // ============================================================
@@ -304,13 +317,6 @@ async function establecerSesion(user) {
       if (parsed && parsed.rol) { SESSION = parsed; return true; }
     } catch (e) {}
   }
-  // Tesalia (CBC): Visualizador automatico aunque no esté en Usuarios.
-  const emailLower = (user.email || '').toLowerCase();
-  if (emailLower.endsWith('@' + DOMINIO_VISUALIZADOR)) {
-    SESSION = { nombre: user.displayName || 'Tesalia', email: emailLower, rol: 'Visualizador', externo: true };
-    sessionStorage.setItem('rcr_session', JSON.stringify(SESSION));
-    return true;
-  }
   try {
     const snap = await window.fb.getDocs(
       window.fb.query(fsCol('Usuarios'), window.fb.where('email', '==', user.email))
@@ -329,9 +335,7 @@ async function establecerSesion(user) {
 // Vuelve al Hub SIN cerrar sesión.
 function volverAlHub() { window.location.href = HUB_URL; }
 
-// Solo Admin y Editor pueden crear/editar/eliminar.
-// Visualizador (incluye Tesalia/CBC) es solo lectura.
-function puedeEditar() { return !!(SESSION && (SESSION.rol === 'Admin' || SESSION.rol === 'Editor')); }
+function puedeEditar() { return SESSION && SESSION.rol !== 'Visualizador'; }
 
 // ============================================================
 // CARGA DE DATOS
@@ -723,9 +727,7 @@ window.addEventListener('load', async function () {
   await window.fbReady;
 
   window.fb.onAuthStateChanged(window.fb.auth, async function (user) {
-    var emailLower = (user && user.email) ? user.email.toLowerCase() : '';
-    var dominioOk = emailLower.endsWith('@' + DOMAIN) || emailLower.endsWith('@' + DOMINIO_VISUALIZADOR);
-    if (!user || !dominioOk) {
+    if (!user || !user.email || !user.email.toLowerCase().endsWith('@' + DOMAIN)) {
       window.location.href = HUB_URL;
       return;
     }
