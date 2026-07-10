@@ -754,6 +754,7 @@ try {
 
 const DOMAIN = 'redesconrostro.org';
 const DOMINIO_VISUALIZADOR = 'cbc.co'; // Tesalia (CBC): entra automatico como Visualizador
+const DOMINIO_PRUEBA = 'carlosandres.es'; // TEMPORAL: solo para probar entrega del correo. Quitar despues de la prueba.
 const TOKEN_MARGIN_MS = 5 * 60 * 1000;
 
 // Scopes que heredan las apps hijas (transitorio hasta migrarlas a Firebase)
@@ -869,8 +870,8 @@ async function enviarLinkAcceso() {
     showToast('Escribe un correo válido');
     return;
   }
-  // Solo el dominio de Tesalia usa este acceso.
-  if (!email.endsWith('@' + DOMINIO_VISUALIZADOR)) {
+  // Solo el dominio de Tesalia (o el de prueba, temporal) usa este acceso.
+  if (!email.endsWith('@' + DOMINIO_VISUALIZADOR) && !email.endsWith('@' + DOMINIO_PRUEBA)) {
     showToast('Usa tu correo @' + DOMINIO_VISUALIZADOR);
     return;
   }
@@ -922,7 +923,7 @@ async function cargarDatosYEntrar(user) {
     const usrSnap = await getDocs(qUsr);
 
     const emailLower = (user.email || '').toLowerCase();
-    const esTesalia = emailLower.endsWith('@' + DOMINIO_VISUALIZADOR);
+    const esTesalia = emailLower.endsWith('@' + DOMINIO_VISUALIZADOR) || emailLower.endsWith('@' + DOMINIO_PRUEBA);
 
     if (usrSnap.empty) {
       // Tesalia (CBC): acceso automatico como Visualizador, sin registro previo
@@ -1449,7 +1450,8 @@ onAuthStateChanged(auth, async function(user) {
 
   var emailOk = user.email && (
     user.email.toLowerCase().endsWith('@' + DOMAIN) ||
-    user.email.toLowerCase().endsWith('@' + DOMINIO_VISUALIZADOR)
+    user.email.toLowerCase().endsWith('@' + DOMINIO_VISUALIZADOR) ||
+    user.email.toLowerCase().endsWith('@' + DOMINIO_PRUEBA)
   );
   if (!emailOk) {
     showToast('Cuenta no permitida');
