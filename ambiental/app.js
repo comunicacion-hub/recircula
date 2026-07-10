@@ -6,6 +6,7 @@
 
 const DOMAIN   = 'redesconrostro.org';
 const DOMINIO_VISUALIZADOR = 'cbc.co'; // Tesalia (CBC): acceso Visualizador (solo lectura)
+const DOMINIO_PERSONAL = 'carlosandres.es'; // Dominio personal de Carlos: acceso Visualizador permanente
 const HUB_URL  = 'https://recircula.redesconrostro.org';
 
 // Mini Apps Script SOLO para crear carpetas de evidencia en Drive.
@@ -179,11 +180,11 @@ async function establecerSesion(user) {
       if (parsed && parsed.rol) { SESSION = parsed; return true; }
     } catch (e) {}
   }
-  // Tesalia (CBC): Visualizador automatico aunque no esté en Usuarios
+  // Tesalia (CBC) o dominio personal: Visualizador automatico aunque no esté en Usuarios
   const emailLower = (user.email || '').toLowerCase();
-  if (emailLower.endsWith('@' + DOMINIO_VISUALIZADOR)) {
+  if (emailLower.endsWith('@' + DOMINIO_VISUALIZADOR) || emailLower.endsWith('@' + DOMINIO_PERSONAL)) {
     SESSION = {
-      nombre: user.displayName || 'Tesalia',
+      nombre: user.displayName || 'Externo',
       email:  emailLower,
       rol:    'Visualizador',
       externo: true
@@ -763,9 +764,11 @@ window.addEventListener('load', async function() {
   await window.fbReady;
 
   window.fb.onAuthStateChanged(window.fb.auth, async function(user) {
-    // Sin sesión válida (RCR o Tesalia) → volver al Hub a iniciar sesión
+    // Sin sesión válida (RCR, Tesalia o dominio personal) → volver al Hub a iniciar sesión
     var emailLower = (user && user.email) ? user.email.toLowerCase() : '';
-    var dominioOk = emailLower.endsWith('@' + DOMAIN) || emailLower.endsWith('@' + DOMINIO_VISUALIZADOR);
+    var dominioOk = emailLower.endsWith('@' + DOMAIN)
+      || emailLower.endsWith('@' + DOMINIO_VISUALIZADOR)
+      || emailLower.endsWith('@' + DOMINIO_PERSONAL);
     if (!user || !dominioOk) {
       window.location.href = HUB_URL;
       return;
