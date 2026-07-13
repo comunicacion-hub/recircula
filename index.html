@@ -650,15 +650,25 @@ tbody tr:hover .td-actions { opacity: 1; }
   </div>
 </div>
 
-<!-- MODAL: acceso con correo y contraseña (invitado Tesalia) -->
+<!-- MODAL: acceso con correo (Email Link) -->
 <div id="modal-correo" class="modal-correo-overlay hidden" onclick="if(event.target===this)cerrarModalCorreo()">
   <div class="modal-correo-card">
     <button class="modal-correo-close" onclick="cerrarModalCorreo()" aria-label="Cerrar">&times;</button>
-    <div class="modal-correo-title">Acceso invitado</div>
-    <div class="modal-correo-sub">Ingresa con el correo y la contraseña que te compartieron.</div>
-    <input type="email" id="input-correo" class="modal-correo-input" placeholder="Correo" autocomplete="username" onkeydown="if(event.key==='Enter')document.getElementById('input-clave').focus()">
-    <input type="password" id="input-clave" class="modal-correo-input" placeholder="Contraseña" autocomplete="current-password" onkeydown="if(event.key==='Enter')ingresarInvitado()">
-    <button class="modal-correo-btn" id="btn-ingresar-invitado" onclick="ingresarInvitado()">Ingresar</button>
+
+    <!-- Paso 1: ingresar correo -->
+    <div id="correo-paso-form">
+      <div class="modal-correo-title">Acceso con correo</div>
+      <div class="modal-correo-sub">Te enviaremos un enlace de acceso a tu correo institucional.</div>
+      <input type="email" id="input-correo" class="modal-correo-input" placeholder="tucorreo@cbc.co" autocomplete="email" onkeydown="if(event.key==='Enter')enviarLinkAcceso()">
+      <button class="modal-correo-btn" id="btn-enviar-link" onclick="enviarLinkAcceso()">Enviar enlace</button>
+    </div>
+
+    <!-- Paso 2: correo enviado -->
+    <div id="correo-paso-enviado" class="hidden">
+      <div class="modal-correo-check">✓</div>
+      <div class="modal-correo-title">Revisa tu correo</div>
+      <div class="modal-correo-sub">Enviamos un enlace de acceso a<br><strong id="correo-destino"></strong>.<br><br>Haz clic en el enlace desde tu bandeja para entrar. Puede tardar un par de minutos en llegar (revisa spam).</div>
+    </div>
   </div>
 </div>
 
@@ -711,7 +721,7 @@ tbody tr:hover .td-actions { opacity: 1; }
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import {
   getAuth, GoogleAuthProvider, signInWithPopup, signOut,
-  signInWithEmailAndPassword,
+  isSignInWithEmailLink, signInWithEmailLink,
   onAuthStateChanged, setPersistence, browserSessionPersistence
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 import {
@@ -837,41 +847,82 @@ async function iniciarLogin() {
 }
 
 // ── ACCESO CON CORREO (Email Link, passwordless) — Tesalia/CBC ──
+// El correo lo envía nuestro Apps Script desde comunicacion@redesconrostro.org
+// (el envío nativo de Firebase lo bloquea el filtro de Microsoft 365 de CBC).
+const ENDPOINT_CORREO = 'https://script.google.com/macros/s/AKfycbzEKDnJlqgNKvt8iAJCn2V6k3f8gdDLgU6QA_FcsabAVNbk3iJVqsPqjsTHKbYR2Hd3/exec';
+const TOKEN_CORREO = 'rcr-8f3k2p9x-tk4m7q1-recircula-2026';
+
 function abrirModalCorreo() {
-  const inpCorreo = document.getElementById('input-correo');
-  const inpClave = document.getElementById('input-clave');
-  if (inpCorreo) inpCorreo.value = '';
-  if (inpClave) inpClave.value = '';
+  document.getElementById('correo-paso-form').classList.remove('hidden');
+  document.getElementById('correo-paso-enviado').classList.add('hidden');
+  const inp = document.getElementById('input-correo');
+  if (inp) inp.value = '';
   document.getElementById('modal-correo').classList.remove('hidden');
-  setTimeout(function(){ if (inpCorreo) inpCorreo.focus(); }, 50);
+  setTimeout(function(){ if (inp) inp.focus(); }, 50);
 }
 function cerrarModalCorreo() {
   document.getElementById('modal-correo').classList.add('hidden');
 }
 
-async function ingresarInvitado() {
+async function enviarLinkAcceso() {
   const email = (document.getElementById('input-correo').value || '').trim().toLowerCase();
-  const clave = document.getElementById('input-clave').value || '';
-  if (!email || email.indexOf('@') === -1) { showToast('Escribe un correo válido'); return; }
-  if (!clave) { showToast('Escribe la contraseña'); return; }
-
-  const btn = document.getElementById('btn-ingresar-invitado');
-  if (btn) { btn.disabled = true; btn.textContent = 'Ingresando...'; }
+  if (!email || email.indexOf('@') === -1) {
+    showToast('Escribe un correo válido');
+    return;
+  }
+  if (!email.endsWith('@' + DOMINIO_VISUALIZADOR) && !email.endsWith('@' + DOMINIO_PERSONAL)) {
+    showToast('Ese correo no tiene acceso');
+    return;
+  }
+  const btn = document.getElementById('btn-enviar-link');
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando...'; }
   try {
-    await setPersistence(auth, browserSessionPersistence);
-    await signInWithEmailAndPassword(auth, email, clave);
-    // onAuthStateChanged se encarga del resto (entra al Hub).
-    cerrarModalCorreo();
-  } catch(e) {
-    console.error('ingresarInvitado:', e);
-    if (e && (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential' || e.code === 'auth/user-not-found')) {
-      showToast('Correo o contraseña incorrectos');
-    } else if (e && e.code === 'auth/too-many-requests') {
-      showToast('Demasiados intentos. Espera un momento.');
-    } else {
-      showToast('No se pudo ingresar. Intenta de nuevo.');
+    window.localStorage.setItem('rcr_email_link', email);
+    const resp = await fetch(ENDPOINT_CORREO, {
+      method: 'POST',
+      body: JSON.stringify({ token: TOKEN_CORREO, email: email })
+    });
+    const data = await resp.json();
+    if (!data.ok) {
+      if (data.error === 'espera_un_momento') {
+        showToast('Espera un momento antes de pedir otro enlace');
+      } else if (data.error === 'dominio_no_permitido') {
+        showToast('Ese correo no tiene acceso');
+      } else {
+        showToast('No se pudo enviar el enlace. Intenta de nuevo.');
+      }
+      return;
     }
-    if (btn) { btn.disabled = false; btn.textContent = 'Ingresar'; }
+    document.getElementById('correo-destino').textContent = email;
+    document.getElementById('correo-paso-form').classList.add('hidden');
+    document.getElementById('correo-paso-enviado').classList.remove('hidden');
+  } catch(e) {
+    console.error('enviarLinkAcceso:', e);
+    showToast('No se pudo enviar el enlace. Intenta de nuevo.');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Enviar enlace'; }
+  }
+}
+
+// Al cargar la página: si venimos de un link de correo, completar el login.
+async function completarLinkSiAplica() {
+  try {
+    if (!isSignInWithEmailLink(auth, window.location.href)) return false;
+    let email = window.localStorage.getItem('rcr_email_link');
+    if (!email) {
+      email = window.prompt('Confirma tu correo para completar el acceso:');
+    }
+    if (!email) { mostrarLogin(); return false; }
+    await setPersistence(auth, browserSessionPersistence);
+    await signInWithEmailLink(auth, email.trim().toLowerCase(), window.location.href);
+    window.localStorage.removeItem('rcr_email_link');
+    window.history.replaceState({}, document.title, window.location.pathname);
+    return true;
+  } catch(e) {
+    console.error('completarLinkSiAplica:', e);
+    showToast('El enlace no es válido o expiró. Solicita uno nuevo.');
+    mostrarLogin();
+    return false;
   }
 }
 
@@ -1368,8 +1419,7 @@ function cerrarModal() {
 window.iniciarLogin = iniciarLogin;
 window.abrirModalCorreo = abrirModalCorreo;
 window.cerrarModalCorreo = cerrarModalCorreo;
-window.enviarLinkAcceso = ingresarInvitado; // compat: por si algún onclick viejo quedó
-window.ingresarInvitado = ingresarInvitado;
+window.enviarLinkAcceso = enviarLinkAcceso;
 window.cerrarSesion = cerrarSesion;
 window.abrirConfiguracion = abrirConfiguracion;
 window.App = {
@@ -1384,6 +1434,9 @@ window.App = {
 };
 
 // ── Punto de entrada: estado de autenticación ──────────────
+// Si la URL trae un link de acceso por correo, completarlo primero.
+completarLinkSiAplica();
+
 onAuthStateChanged(auth, async function(user) {
   // Restaurar token de Google guardado en esta sesión de pestaña
   var t = sessionStorage.getItem('rcr_hub_token');
@@ -1395,7 +1448,12 @@ onAuthStateChanged(auth, async function(user) {
 
   if (!user) {
     booted = true;
-    mostrarLogin();
+    // Si estamos completando un acceso por link de correo, mostrar "Cargando".
+    if (isSignInWithEmailLink(auth, window.location.href)) {
+      mostrarLoading();
+    } else {
+      mostrarLogin();
+    }
     return;
   }
 
