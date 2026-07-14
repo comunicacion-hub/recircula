@@ -348,13 +348,13 @@ body {
   background: #fff;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
-  padding: 28px 24px;
+  padding: 22px;
   cursor: pointer;
-  transition: box-shadow 0.2s, transform 0.15s;
+  transition: box-shadow 0.2s, transform 0.15s, border-color 0.2s;
   text-decoration: none;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 16px;
   position: relative;
 }
 
@@ -362,6 +362,7 @@ body {
   box-shadow: 0 6px 24px rgba(0,0,0,0.1);
   transform: translateY(-3px);
 }
+.modulo-card:hover .modulo-arrow { transform: translateX(3px); }
 
 .modulo-card.inactivo {
   opacity: 0.5;
@@ -374,21 +375,21 @@ body {
   border-style: dashed;
 }
 
-/* Mosaico de módulo (reemplaza al emoji) */
+.modulo-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
 .modulo-icon {
-  width: 52px; height: 52px;
+  width: 54px; height: 54px;
   border-radius: var(--radius-md);
   display: flex; align-items: center; justify-content: center;
-  color: #fff;
-  font-size: 22px;
-  font-weight: 800;
+  font-size: 24px;
   flex-shrink: 0;
-  text-transform: uppercase;
 }
-.mi-0 { background: linear-gradient(135deg, var(--b1), var(--b2)); }
-.mi-1 { background: linear-gradient(135deg, var(--g1), var(--g2)); }
-.mi-2 { background: linear-gradient(135deg, var(--c1), var(--c2)); }
-.mi-3 { background: linear-gradient(135deg, var(--d1), var(--d2)); }
+
+.modulo-txt { flex: 1; min-width: 0; }
 
 .modulo-nombre {
   font-size: 15px;
@@ -399,24 +400,48 @@ body {
 .modulo-desc {
   font-size: 12px;
   color: var(--tm);
-  line-height: 1.5;
+  line-height: 1.4;
+  margin-top: 3px;
 }
+
+.modulo-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.modulo-arrow {
+  color: var(--tl);
+  font-size: 17px;
+  display: inline-flex;
+  transition: transform 0.15s;
+}
+
+.modulo-edit {
+  position: absolute;
+  top: 12px; right: 12px;
+  border: none; background: none; cursor: pointer;
+  color: var(--tl); font-size: 15px;
+  width: 28px; height: 28px; border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+.modulo-edit:hover { background: #eef3f8; color: var(--tm); }
 
 .modulo-badge {
   display: inline-flex;
   align-items: center;
-  padding: 3px 10px;
+  padding: 4px 11px;
   border-radius: 20px;
   font-size: 10.5px;
   font-weight: 600;
   background: #f0f4f8;
   color: var(--tl);
-  align-self: flex-start;
 }
 
 .modulo-badge.activo {
-  background: linear-gradient(135deg, var(--b1), var(--b2));
-  color: #fff;
+  background: #e1f5ee;
+  color: #0f6e56;
 }
 
 /* ── MODAL ───────────────────────────────────────────────── */
@@ -590,6 +615,15 @@ tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover td { background: #f8fbfd; }
 .td-actions { display: flex; gap: 6px; opacity: 0; transition: opacity 0.15s; }
 tbody tr:hover .td-actions { opacity: 1; }
+.icon-act {
+  width: 32px; height: 32px; border: none; border-radius: 9px;
+  background: #eef3f8; color: var(--tm); cursor: pointer;
+  font-size: 15px; display: inline-flex; align-items: center; justify-content: center;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
+}
+.icon-act:hover { background: #e2e9f0; color: var(--tx); }
+.icon-act:active { transform: scale(0.92); }
+.icon-act-del:hover { background: #fdeaea; color: #dc2f3c; }
 
 .badge {
   display: inline-flex;
@@ -716,7 +750,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 import {
   initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-  collection, getDocs, query, where, doc, updateDoc, addDoc
+  collection, getDocs, query, where, doc, updateDoc, addDoc, deleteDoc
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 
 // ── Configuración Firebase ─────────────────────────────────
@@ -1007,6 +1041,18 @@ function modulosVisibles() {
   return todos.filter(m => permitidos.includes(m.id_modulo));
 }
 
+// Elige ícono + color de acento según el nombre del módulo (automático).
+function iconoModulo(nombre) {
+  var n = (nombre || '').toLowerCase();
+  if (n.indexOf('ambient') >= 0)  return { icon: 'ti-leaf',           fg: '#0778bf', bg: '#e6f1fb' };
+  if (n.indexOf('asociativ') >= 0) return { icon: 'ti-users-group',    fg: '#0f6e56', bg: '#e1f5ee' };
+  if (n.indexOf('social') >= 0)   return { icon: 'ti-heart-handshake', fg: '#185fa5', bg: '#eef3fb' };
+  if (n.indexOf('históric') >= 0 || n.indexOf('historic') >= 0) return { icon: 'ti-history', fg: '#5f5e5a', bg: '#f1efe8' };
+  if (n.indexOf('financ') >= 0)   return { icon: 'ti-cash',            fg: '#3b6d11', bg: '#eaf3de' };
+  if (n.indexOf('recicla') >= 0)  return { icon: 'ti-recycle',         fg: '#0f6e56', bg: '#e1f5ee' };
+  return { icon: 'ti-layout-dashboard', fg: '#0778bf', bg: '#e6f1fb' }; // por defecto
+}
+
 function renderModulos() {
   const grid = document.getElementById('modulos-grid');
   const modulos = modulosVisibles();
@@ -1019,27 +1065,30 @@ function renderModulos() {
   grid.innerHTML = modulos.map(function(m, i) {
     var activo   = isActivo(m.activo);
     var tieneURL = m.url && m.url.toString().trim() !== '';
-    var idMod    = m.id_modulo || '';
     var url      = m.url || '';
     var nombre   = m.nombre || '';
-    var inicial  = (nombre.trim()[0] || '?');
+    var disp     = activo && tieneURL;
+    var ic       = iconoModulo(nombre);
 
-    var clases  = activo && tieneURL ? '' : (session.rol === 'Admin' ? 'inactivo-admin' : 'inactivo');
-    var onclick = activo && tieneURL
+    var clases  = disp ? '' : (session.rol === 'Admin' ? 'inactivo-admin' : 'inactivo');
+    var onclick = disp
         ? "App.abrirModulo('" + escJs(url) + "')"
         : (session.rol === 'Admin' ? "App.editarModulo('" + escJs(m._docId) + "')" : '');
 
     return '<div class="modulo-card ' + clases + '" onclick="' + onclick + '">' +
-      '<div class="modulo-icon mi-' + (i % 4) + '">' + esc(inicial) + '</div>' +
-      '<div>' +
-        '<div class="modulo-nombre">' + esc(nombre) + '</div>' +
-        '<div class="modulo-desc" style="margin-top:4px">' + esc(m.descripcion || '') + '</div>' +
+      '<div class="modulo-top">' +
+        '<div class="modulo-icon" style="background:' + ic.bg + ';color:' + ic.fg + '"><i class="ti ' + ic.icon + '"></i></div>' +
+        '<div class="modulo-txt">' +
+          '<div class="modulo-nombre">' + esc(nombre) + '</div>' +
+          '<div class="modulo-desc">' + esc(m.descripcion || '') + '</div>' +
+        '</div>' +
       '</div>' +
-      '<span class="modulo-badge ' + (activo && tieneURL ? 'activo' : '') + '">' +
-        (activo && tieneURL ? 'Disponible' : 'Proximamente') +
-      '</span>' +
+      '<div class="modulo-foot">' +
+        '<span class="modulo-badge ' + (disp ? 'activo' : '') + '">' + (disp ? 'Disponible' : 'Proximamente') + '</span>' +
+        (disp ? '<span class="modulo-arrow"><i class="ti ti-arrow-right"></i></span>' : '') +
+      '</div>' +
       (session.rol === 'Admin'
-        ? '<button onclick="event.stopPropagation();App.editarModulo(\'' + escJs(m._docId) + '\')" style="position:absolute;top:12px;right:12px;border:none;background:none;cursor:pointer;color:var(--tl);font-size:16px"><i class="ti ti-pencil"></i></button>'
+        ? '<button class="modulo-edit" onclick="event.stopPropagation();App.editarModulo(\'' + escJs(m._docId) + '\')" title="Editar"><i class="ti ti-pencil"></i></button>'
         : '') +
     '</div>';
   }).join('');
@@ -1093,15 +1142,19 @@ function renderCfgModulos() {
     var a = isActivo(m.activo);
     return '<tr>' +
       '<td style="font-weight:500">' + esc(m.nombre) + '</td>' +
-      '<td style="font-size:12px;color:var(--tm);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(m.url || '') + '">' + esc(m.url || '\u2014') + '</td>' +
+      '<td style="font-size:12px;color:var(--tm);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(m.url || '') + '">' + esc(m.url || '\u2014') + '</td>' +
       '<td><span class="badge ' + (a ? 'badge-green' : 'badge-warn') + '">' + (a ? 'Activo' : 'Inactivo') + '</span></td>' +
       '<td><div class="td-actions">' +
-        '<button class="btn btn-glass btn-sm" onclick="App.editarModulo(\'' + escJs(m._docId) + '\')"><i class="ti ti-pencil"></i></button>' +
+        '<button class="icon-act" title="Editar" onclick="App.editarModulo(\'' + escJs(m._docId) + '\')"><i class="ti ti-pencil"></i></button>' +
+        '<button class="icon-act icon-act-del" title="Quitar del Hub" onclick="App.eliminarModulo(\'' + escJs(m._docId) + '\')"><i class="ti ti-trash"></i></button>' +
       '</div></td>' +
     '</tr>';
   }).join('');
 
   document.getElementById('cfg-content').innerHTML =
+    '<div style="display:flex;justify-content:flex-end;margin-bottom:12px">' +
+      '<button class="btn btn-primary btn-sm" onclick="App.nuevoModulo()"><i class="ti ti-plus"></i> Nuevo modulo</button>' +
+    '</div>' +
     '<div class="table-wrap">' +
       '<table>' +
         '<thead><tr><th>Nombre</th><th>URL</th><th>Estado</th><th></th></tr></thead>' +
@@ -1110,24 +1163,27 @@ function renderCfgModulos() {
     '</div>';
 }
 
-function editarModulo(docId) {
-  var m = (hubData.modulos || []).find(function(x) { return x._docId === docId; });
-  if (!m) return;
+function nuevoModulo() { editarModulo(null); }
 
-  var a = isActivo(m.activo);
+function editarModulo(docId) {
+  var m = docId ? (hubData.modulos || []).find(function(x) { return x._docId === docId; }) : null;
+  if (docId && !m) return;
+  var esNuevo = !m;
+
+  var a = m ? isActivo(m.activo) : true;
   var contenido =
     '<div style="padding:16px 0">' +
       '<div class="form-group">' +
-        '<label class="form-label">Nombre</label>' +
-        '<input type="text" class="form-input" id="mod-nombre" value="' + esc(m.nombre || '') + '" readonly style="background:#f8fbfd;color:var(--tm)">' +
+        '<label class="form-label">Nombre *</label>' +
+        '<input type="text" class="form-input" id="mod-nombre" placeholder="Dashboard ..." value="' + esc(m ? (m.nombre || '') : '') + '">' +
       '</div>' +
       '<div class="form-group">' +
         '<label class="form-label">URL</label>' +
-        '<input type="url" class="form-input" id="mod-url" placeholder="https://..." value="' + esc(m.url || '') + '">' +
+        '<input type="url" class="form-input" id="mod-url" placeholder="https://recircula.redesconrostro.org/..." value="' + esc(m ? (m.url || '') : '') + '">' +
       '</div>' +
       '<div class="form-group">' +
         '<label class="form-label">Descripcion</label>' +
-        '<input type="text" class="form-input" id="mod-desc" value="' + esc(m.descripcion || '') + '">' +
+        '<input type="text" class="form-input" id="mod-desc" value="' + esc(m ? (m.descripcion || '') : '') + '">' +
       '</div>' +
       '<div class="form-group">' +
         '<label class="form-label">Activo</label>' +
@@ -1138,7 +1194,7 @@ function editarModulo(docId) {
       '</div>' +
       '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:8px">' +
         '<button class="btn btn-glass" onclick="App.switchCfgTab(\'modulos\')">Cancelar</button>' +
-        '<button class="btn btn-primary" onclick="App.guardarModulo(\'' + escJs(docId) + '\')"><i class="ti ti-check"></i> Guardar</button>' +
+        '<button class="btn btn-primary" onclick="App.guardarModulo(\'' + escJs(docId || '') + '\')"><i class="ti ti-check"></i> ' + (esNuevo ? 'Crear' : 'Guardar') + '</button>' +
       '</div>' +
     '</div>';
 
@@ -1146,31 +1202,63 @@ function editarModulo(docId) {
 }
 
 async function guardarModulo(docId) {
+  var nombreEl = document.getElementById('mod-nombre');
   var urlEl    = document.getElementById('mod-url');
   var activoEl = document.getElementById('mod-activo');
   var descEl   = document.getElementById('mod-desc');
-  if (!urlEl || !activoEl || !descEl) { showToast('Error en el formulario'); return; }
+  if (!nombreEl || !urlEl || !activoEl || !descEl) { showToast('Error en el formulario'); return; }
 
+  var nombre = nombreEl.value.trim();
   var url    = urlEl.value.trim();
   var activo = activoEl.value === 'TRUE';
   var desc   = descEl.value.trim();
 
+  if (!nombre) { showToast('El nombre es obligatorio'); return; }
   if (url && !isValidUrl(url)) { showToast('URL invalida'); return; }
 
   try {
-    await updateDoc(doc(db, 'Modulos', docId), { url: url, descripcion: desc, activo: activo });
-
-    var idx = hubData.modulos.findIndex(function(x) { return x._docId === docId; });
-    if (idx >= 0) {
-      hubData.modulos[idx] = Object.assign({}, hubData.modulos[idx], { url: url, descripcion: desc, activo: activo });
+    if (docId) {
+      // Editar existente
+      await updateDoc(doc(db, 'Modulos', docId), { nombre: nombre, url: url, descripcion: desc, activo: activo });
+      var idx = hubData.modulos.findIndex(function(x) { return x._docId === docId; });
+      if (idx >= 0) {
+        hubData.modulos[idx] = Object.assign({}, hubData.modulos[idx], { nombre: nombre, url: url, descripcion: desc, activo: activo });
+      }
+      showToast('Modulo actualizado');
+    } else {
+      // Crear nuevo
+      var nuevo = {
+        id_modulo: 'MOD_' + Date.now(),
+        nombre: nombre, url: url, descripcion: desc, activo: activo
+      };
+      var ref = await addDoc(collection(db, 'Modulos'), nuevo);
+      hubData.modulos.push(Object.assign({ _docId: ref.id }, nuevo));
+      showToast('Modulo creado');
     }
     cacheData(hubData);
-    showToast('Modulo actualizado');
     renderModulos();
     switchCfgTab('modulos');
   } catch(e) {
     console.error('guardarModulo:', e);
     showToast('Error al guardar');
+  }
+}
+
+async function eliminarModulo(docId) {
+  var m = (hubData.modulos || []).find(function(x) { return x._docId === docId; });
+  if (!m) return;
+  if (!confirm('¿Quitar "' + (m.nombre || 'este modulo') + '" del Hub?\n\nEl dashboard seguira existiendo en su URL, pero dejara de aparecer aqui. Puedes volver a crearlo con "Nuevo modulo".')) return;
+
+  try {
+    await deleteDoc(doc(db, 'Modulos', docId));
+    hubData.modulos = (hubData.modulos || []).filter(function(x) { return x._docId !== docId; });
+    cacheData(hubData);
+    showToast('Modulo quitado del Hub');
+    renderModulos();
+    switchCfgTab('modulos');
+  } catch(e) {
+    console.error('eliminarModulo:', e);
+    showToast('Error al quitar el modulo');
   }
 }
 
@@ -1187,7 +1275,8 @@ function renderCfgUsuarios() {
       '<td style="font-size:12px;color:var(--tm)">' + nMods + ' mod.</td>' +
       '<td><span class="badge ' + (a ? 'badge-green' : 'badge-warn') + '">' + (a ? 'Activo' : 'Inactivo') + '</span></td>' +
       '<td><div class="td-actions">' +
-        '<button class="btn btn-glass btn-sm" onclick="App.editarUsuario(\'' + escJs(u._docId) + '\')"><i class="ti ti-pencil"></i></button>' +
+        '<button class="icon-act" title="Editar" onclick="App.editarUsuario(\'' + escJs(u._docId) + '\')"><i class="ti ti-pencil"></i></button>' +
+        '<button class="icon-act icon-act-del" title="Eliminar" onclick="App.eliminarUsuario(\'' + escJs(u._docId) + '\')"><i class="ti ti-trash"></i></button>' +
       '</div></td>' +
     '</tr>';
   }).join('');
@@ -1320,6 +1409,29 @@ async function guardarUsuario(docId) {
   }
 }
 
+async function eliminarUsuario(docId) {
+  var u = (hubData.usuarios || []).find(function(x) { return x._docId === docId; });
+  if (!u) return;
+
+  // Evitar que el admin se elimine a sí mismo y quede fuera.
+  if (session && session._docId === docId) {
+    showToast('No puedes eliminar tu propio usuario');
+    return;
+  }
+  if (!confirm('¿Eliminar al usuario "' + (u.nombre || u.email || '') + '"?\n\nEsta accion no se puede deshacer.')) return;
+
+  try {
+    await deleteDoc(doc(db, 'Usuarios', docId));
+    hubData.usuarios = (hubData.usuarios || []).filter(function(x) { return x._docId !== docId; });
+    cacheData(hubData);
+    showToast('Usuario eliminado');
+    switchCfgTab('usuarios');
+  } catch(e) {
+    console.error('eliminarUsuario:', e);
+    showToast('Error al eliminar');
+  }
+}
+
 // ── Pantallas / UI ─────────────────────────────────────────
 function mostrarLogin() {
   document.getElementById('screen-login').classList.remove('hidden');
@@ -1372,13 +1484,16 @@ window.cerrarSesion = cerrarSesion;
 window.abrirConfiguracion = abrirConfiguracion;
 window.App = {
   abrirModulo: abrirModulo,
+  nuevoModulo: nuevoModulo,
   editarModulo: editarModulo,
   guardarModulo: guardarModulo,
+  eliminarModulo: eliminarModulo,
   switchCfgTab: switchCfgTab,
   cerrarModal: cerrarModal,
   nuevoUsuario: nuevoUsuario,
   editarUsuario: editarUsuario,
-  guardarUsuario: guardarUsuario
+  guardarUsuario: guardarUsuario,
+  eliminarUsuario: eliminarUsuario
 };
 
 // ── Punto de entrada: estado de autenticación ──────────────
