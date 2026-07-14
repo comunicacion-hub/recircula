@@ -71,6 +71,14 @@ function renderTablaCompradores() {
   if (filtrarPorProv)  datos = datos.filter(c => fProv.includes(c['Provincia']));
   if (filtrarPorNivel) datos = datos.filter(c => fNivel.includes(c['Nivel Intermediacion'] || c['Nivel']));
 
+  // Ordenar por provincia y, dentro de cada provincia, por nombre
+  datos.sort((a, b) => {
+    const pa = (a['Provincia'] || '').toString();
+    const pb = (b['Provincia'] || '').toString();
+    if (pa !== pb) return pa.localeCompare(pb, 'es');
+    return (a['Nombre'] || '').localeCompare(b['Nombre'] || '', 'es');
+  });
+
   if (!datos.length) {
     wrap.innerHTML = `
       <div class="empty-state">
