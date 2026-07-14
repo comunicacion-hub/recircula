@@ -23,6 +23,9 @@ const FACTOR_AGUA = { PET: 3000, Suave: 1500, Duro: 2000 };  // litros / TN
 const MATS_TORTA = ['PET','Plástico Duro','Plástico Suave','Cartón','Lata Aluminio','Vidrio'];
 let MATS_FILTRO_ACTIVOS = MATS_TORTA.slice();
 
+// Material mostrado en el gráfico "Evolución por Material" (elegible con el ícono ⚙️)
+let MATERIAL_EVOLUCION = 'PET';
+
 let chartTorta = null;
 let chartLineas = null;
 
@@ -117,7 +120,7 @@ async function cargarDashboard() {
 function calcularDashboard(entregas) {
   const k = { totalTN: 0, tnPriorizables: 0, ingresosPET: 0, tnPET: 0, tnSuave: 0, tnDuro: 0 };
   const distribucion = {};
-  const porProvMes   = {};
+  const porProvMesMat = {}; // { provincia: { mes: { material: TN } } }
   const aniosSet = new Set();
   const mesesSet = new Set();
 
@@ -146,15 +149,20 @@ function calcularDashboard(entregas) {
     const prov = e['Provincia'] || e['_provinciaAsociacion'] || '—';
     const mes  = e['Mes'] || '';
     if (mes) {
-      porProvMes[prov] = porProvMes[prov] || {};
-      porProvMes[prov][mes] = (porProvMes[prov][mes] || 0) + (parseFloat(e['PET Kilos']) || 0) / 1000;
+      porProvMesMat[prov] = porProvMesMat[prov] || {};
+      porProvMesMat[prov][mes] = porProvMesMat[prov][mes] || {};
+      (CAT.materiales || []).forEach(function(m) {
+        const nombre = m['Nombre'];
+        const tn = (parseFloat(e[nombre + ' Kilos']) || 0) / 1000;
+        if (tn > 0) porProvMesMat[prov][mes][nombre] = (porProvMesMat[prov][mes][nombre] || 0) + tn;
+      });
     }
   });
 
   const meses = MESES.filter(function(m) { return mesesSet.has(m); });
   const anios = Array.from(aniosSet).filter(function(a) { return a && a !== 'undefined'; }).sort();
 
-  return { kpis: k, distribucion: distribucion, porProvMes: porProvMes, meses: meses, filtrosDisponibles: { anios: anios } };
+  return { kpis: k, distribucion: distribucion, porProvMesMat: porProvMesMat, meses: meses, filtrosDisponibles: { anios: anios } };
 }
 
 function poblarFiltrosDisponibles(f) {
@@ -247,13 +255,15 @@ function renderContenidoDashboard() {
     '</div>' +
 
     '<div class="card dash-row-bottom">' +
-      '<div class="card-title" style="justify-content:flex-end;">TN PET mensual por provincia</div>' +
+      '<div class="card-title"><span>Evolución por Material · ' + esc(MATERIAL_EVOLUCION) + '</span>' +
+        '<button class="icon-btn" onclick="abrirSelectorMaterialEvolucion()" title="Elegir material">' + icoHTML('settings') + '</button>' +
+      '</div>' +
       '<div style="position:relative;height:280px"><canvas id="chart-lineas"></canvas></div>' +
     '</div>';
 
   setTimeout(function() {
     initChartTorta(d.distribucion);
-    initChartLineas(d.porProvMes, d.meses);
+    initChartLineas(d.porProvMesMat, d.meses, MATERIAL_EVOLUCION);
   }, 50);
 }
 
@@ -334,22 +344,27 @@ function initChartTorta(distribucion) {
 // CHART: LÍNEAS
 // ============================================================
 
-function initChartLineas(porProvMes, meses) {
+function initChartLineas(porProvMesMat, meses, material) {
   const ctx = document.getElementById('chart-lineas');
   if (!ctx) return;
 
+  const mat = material || MATERIAL_EVOLUCION;
+  const valor = function(p, m) {
+    return (porProvMesMat[p] && porProvMesMat[p][m] && porProvMesMat[p][m][mat]) || 0;
+  };
+
   const provConDatos = PROVINCIAS.filter(function(p) {
-    return meses.some(function(m) { return (porProvMes[p] && porProvMes[p][m] || 0) > 0; });
+    return meses.some(function(m) { return valor(p, m) > 0; });
   });
   if (!provConDatos.length) {
-    ctx.parentElement.innerHTML = '<div class="empty-state"><p>Sin datos por provincia para este filtro</p></div>';
+    ctx.parentElement.innerHTML = '<div class="empty-state"><p>Sin datos de ' + esc(mat) + ' para este filtro</p></div>';
     return;
   }
 
   const datasets = provConDatos.map(function(p) {
     return {
       label: p,
-      data: meses.map(function(m) { return parseFloat((porProvMes[p] && porProvMes[p][m] || 0).toFixed(2)); }),
+      data: meses.map(function(m) { return parseFloat(valor(p, m).toFixed(2)); }),
       borderColor: COLORES_PROV[p],
       backgroundColor: COLORES_PROV[p] + '20',
       borderWidth: 2.5, tension: 0.35, pointRadius: 3.5, pointHoverRadius: 6, fill: false,
@@ -371,6 +386,43 @@ function initChartLineas(porProvMes, meses) {
       }
     }
   });
+}
+
+// ============================================================
+// SELECTOR DE MATERIAL (gráfico "Evolución por Material")
+// ============================================================
+
+function abrirSelectorMaterialEvolucion() {
+  const mats = (CAT.materiales || []).length
+    ? CAT.materiales.map(function(m) { return m['Nombre']; })
+    : ['PET','Plástico Duro','Plástico Suave','Cartón','Lata Aluminio','Vidrio'];
+
+  const opts = mats.map(function(m) {
+    return '<label class="filter-opt">' +
+      '<input type="radio" name="mat-evo" value="' + esc(m) + '" ' + (m === MATERIAL_EVOLUCION ? 'checked' : '') + '>' +
+      '<span>' + esc(m) + '</span></label>';
+  }).join('');
+
+  abrirModal(
+    '<div class="modal" style="max-width:420px">' +
+      '<div class="modal-head">' +
+        '<div><div class="modal-title">Evolución por material</div><div class="modal-sub">Elige el material a mostrar en la gráfica</div></div>' +
+        '<button class="modal-close" onclick="cerrarModal()"></button>' +
+      '</div>' +
+      '<div class="modal-body"><div id="mat-evo-opts">' + opts + '</div></div>' +
+      '<div class="modal-foot">' +
+        '<button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>' +
+        '<button class="btn btn-primary" onclick="aplicarMaterialEvolucion()">Aplicar</button>' +
+      '</div>' +
+    '</div>'
+  );
+}
+
+function aplicarMaterialEvolucion() {
+  const sel = document.querySelector('#mat-evo-opts input[name=mat-evo]:checked');
+  if (sel) MATERIAL_EVOLUCION = sel.value;
+  cerrarModal();
+  if (DASH_DATA) renderContenidoDashboard();
 }
 
 // ============================================================
