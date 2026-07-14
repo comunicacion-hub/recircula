@@ -10,6 +10,12 @@ const PRECIOS = (() => {
   const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   const MESES_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
+  // Meses que NO se muestran en Precios (0=Ene … 11=Dic). Oculta Enero–Abril
+  // en gráfico, tabla, tarjetas, detalle y exportación (aunque estén vacíos).
+  const PR_MESES_OCULTOS = [0, 1, 2, 3];
+  const PR_MESES_VIS = Array.from({ length: 12 }, (_, i) => i)
+    .filter(i => !PR_MESES_OCULTOS.includes(i));
+
   // Gradientes idénticos a styles.css (A–E). Stroke por url(#id); leyenda por var(--grad-*).
   const GRADS = [
     { id:'prGradB', from:'#33A8DE', to:'#506CFF', varName:'--grad-b' },
@@ -210,7 +216,7 @@ const PRECIOS = (() => {
         const meses = Array.from({ length: 12 }, (_, i) => ({
           mes: i, avg: stats[prov][i]?.avg ?? null, min: stats[prov][i]?.min ?? null, max: stats[prov][i]?.max ?? null,
         }));
-        const conDato = meses.filter(m => m.avg !== null);
+        const conDato = PR_MESES_VIS.map(i => meses[i]).filter(m => m.avg !== null);
         let tendencia = 0;
         if (conDato.length >= 2) tendencia = conDato[conDato.length - 1].avg - conDato[0].avg;
         rows.push({ provincia: prov, material: mat, meses, tendencia });
@@ -276,7 +282,8 @@ const PRECIOS = (() => {
     const lo = Math.min(...allAvgs), hi = Math.max(...allAvgs);
     const yMin = Math.max(0, lo === hi ? lo * 0.9 : lo - (hi - lo) * 0.15);
     const yMax = lo === hi ? (hi * 1.1 || 1) : hi + (hi - lo) * 0.15;
-    const xS = m => PAD.l + (m / 11) * innerW;
+    const nVis = PR_MESES_VIS.length;
+    const xS = pos => PAD.l + (nVis > 1 ? (pos / (nVis - 1)) : 0.5) * innerW;
     const yS = v => PAD.t + innerH - ((v - yMin) / ((yMax - yMin) || 1)) * innerH;
 
     const defs = `<defs>${GRADS.map(g =>
@@ -289,16 +296,16 @@ const PRECIOS = (() => {
         <text x="${PAD.l - 10}" y="${y + 4}" text-anchor="end" font-size="11" fill="#a0a0b0">$${v.toFixed(2)}</text>`;
     }).join('');
 
-    const xLab = MESES.map((m, i) =>
-      `<text x="${xS(i)}" y="${PAD.t + innerH + 18}" text-anchor="middle" font-size="11" fill="#a0a0b0">${m}</text>`
+    const xLab = PR_MESES_VIS.map((mi, pos) =>
+      `<text x="${xS(pos)}" y="${PAD.t + innerH + 18}" text-anchor="middle" font-size="11" fill="#a0a0b0">${MESES[mi]}</text>`
     ).join('');
 
     const lines = provs.map(prov => {
       const gi = _provincias.indexOf(prov);
       const g = GRADS[(gi < 0 ? 0 : gi) % GRADS.length];
-      const pts = Array.from({ length: 12 }, (_, m) => {
-        const s = stats[prov][m];
-        return s ? { x: xS(m), y: yS(s.avg), s, m } : null;
+      const pts = PR_MESES_VIS.map((mi, pos) => {
+        const s = stats[prov][mi];
+        return s ? { x: xS(pos), y: yS(s.avg), s, m: mi } : null;
       }).filter(Boolean);
       if (!pts.length) return '';
       const line = pts.map((p, i) => `${i ? 'L' : 'M'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
@@ -335,10 +342,10 @@ const PRECIOS = (() => {
     const resumen = _calcResumen();
     if (!resumen.length) return head + '<div class="card"><p class="pr-empty">Sin datos para este filtro.</p></div>';
 
-    // DESKTOP: tabla ancha (12 meses inline)
-    const ths = MESES.map(m => `<th>${m}</th>`).join('');
+    // DESKTOP: tabla ancha (solo meses visibles)
+    const ths = PR_MESES_VIS.map(i => `<th>${MESES[i]}</th>`).join('');
     const filas = resumen.map(({ provincia, material, meses, tendencia }) => {
-      const cels = meses.map(({ avg, min, max }) =>
+      const cels = PR_MESES_VIS.map(i => meses[i]).map(({ avg, min, max }) =>
         avg === null
           ? `<td class="pr-dash">—</td>`
           : `<td title="Mín $${min} · Máx $${max}"><span class="pr-avg">$${fmtNum(avg, 2)}</span><span class="pr-range">${fmtNum(min, 2)}–${fmtNum(max, 2)}</span></td>`
@@ -357,7 +364,7 @@ const PRECIOS = (() => {
 
     // MÓVIL: tarjetas resumen (tocar → detalle mensual completo)
     const cards = resumen.map(({ provincia, material, meses, tendencia }) => {
-      const conDato = meses.filter(m => m.avg !== null);
+      const conDato = PR_MESES_VIS.map(i => meses[i]).filter(m => m.avg !== null);
       const ultimo = conDato.length ? conDato[conDato.length - 1] : null;
       const resumenTxt = ultimo
         ? `Último: $${fmtNum(ultimo.avg, 2)} · ${conDato.length} ${conDato.length === 1 ? 'mes' : 'meses'} con dato`
@@ -387,13 +394,13 @@ const PRECIOS = (() => {
     if (typeof abrirModal !== 'function') return;
     const s = _calcStats(mat)[prov] || {};
     const anioTxt = _fAnios.filter(a => a !== '__ALL__').join(', ') || 'Todos los años';
-    const filas = MESES.map((_, i) => {
+    const filas = PR_MESES_VIS.map(i => {
       const d = s[i];
       return d
         ? `<div class="pr-det-row"><span class="pr-det-mes">${MESES_FULL[i]}</span><span class="pr-det-val"><b>$${fmtNum(d.avg, 2)}</b><small>${fmtNum(d.min, 2)}–${fmtNum(d.max, 2)} · n=${d.n}</small></span></div>`
         : `<div class="pr-det-row pr-det-empty"><span class="pr-det-mes">${MESES_FULL[i]}</span><span class="pr-dash">—</span></div>`;
     }).join('');
-    const conDato = MESES.map((_, i) => s[i]?.avg).filter(v => v != null);
+    const conDato = PR_MESES_VIS.map(i => s[i]?.avg).filter(v => v != null);
     let tend = 0;
     if (conDato.length >= 2) tend = +(conDato[conDato.length - 1] - conDato[0]).toFixed(3);
     abrirModal(`
@@ -429,16 +436,16 @@ const PRECIOS = (() => {
     try {
       if (typeof cargarSheetJS === 'function') await cargarSheetJS();
       if (!window.XLSX) { if (typeof showToast === 'function') showToast('No se pudo cargar el exportador'); return; }
-      const aoa = [['Provincia', 'Material', ...MESES, 'Tendencia ($)']];
+      const aoa = [['Provincia', 'Material', ...PR_MESES_VIS.map(i => MESES[i]), 'Tendencia ($)']];
       resumen.forEach(r => {
         aoa.push([
           r.provincia, r.material,
-          ...r.meses.map(m => m.avg === null ? '' : +m.avg.toFixed(2)),
+          ...PR_MESES_VIS.map(i => r.meses[i]).map(m => m.avg === null ? '' : +m.avg.toFixed(2)),
           r.tendencia > 0 ? `+${r.tendencia.toFixed(2)}` : r.tendencia < 0 ? `${r.tendencia.toFixed(2)}` : '0',
         ]);
       });
       const ws = XLSX.utils.aoa_to_sheet(aoa);
-      ws['!cols'] = [{ wch: 16 }, { wch: 16 }, ...MESES.map(() => ({ wch: 9 })), { wch: 12 }];
+      ws['!cols'] = [{ wch: 16 }, { wch: 16 }, ...PR_MESES_VIS.map(() => ({ wch: 9 })), { wch: 12 }];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Precios');
       const yrs = _fAnios.filter(a => a !== '__ALL__');
