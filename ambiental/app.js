@@ -6,7 +6,6 @@
 
 const DOMAIN   = 'redesconrostro.org';
 const DOMINIO_VISUALIZADOR = 'cbc.co'; // Tesalia (CBC): acceso Visualizador (solo lectura)
-const DOMINIO_PERSONAL = 'carlosandres.es'; // Dominio personal de Carlos: acceso Visualizador permanente
 const HUB_URL  = 'https://recircula.redesconrostro.org';
 
 // Mini Apps Script SOLO para crear carpetas de evidencia en Drive.
@@ -27,6 +26,28 @@ let CAT = {
   materiales:   [],
   entregas:     [],
 };
+
+// ── Período interno a ocultar (no se muestra en ninguna parte) ──
+// Oculta las entregas de estos meses del año indicado. Para dejar de
+// ocultar, poner OCULTAR_ANIO = 0 (o vaciar OCULTAR_MESES).
+const OCULTAR_ANIO  = 2026;
+const OCULTAR_MESES = [1, 2, 3, 4]; // 1=Enero ... 4=Abril
+
+function _mesANumero(mes) {
+  const m = String(mes || '').trim().toLowerCase();
+  const nombres = ['enero','febrero','marzo','abril','mayo','junio',
+                   'julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const idx = nombres.indexOf(m);
+  if (idx >= 0) return idx + 1;
+  const n = parseInt(m, 10);               // por si viniera numérico ("04")
+  return (!isNaN(n) && n >= 1 && n <= 12) ? n : 0;
+}
+
+function _entregaOculta(e) {
+  if (!OCULTAR_ANIO || !OCULTAR_MESES.length) return false;
+  if ((Number(e['Año']) || 0) !== OCULTAR_ANIO) return false;
+  return OCULTAR_MESES.indexOf(_mesANumero(e['Mes'])) >= 0;
+}
 
 // ============================================================
 // HELPERS FIRESTORE (sobre window.fb)
@@ -279,7 +300,10 @@ async function cargarCatalogos() {
       .sort(function(a, b) { return (a['Nombre'] || '').localeCompare(b['Nombre'] || ''); });
     CAT.materiales = resultados[2].map(materialFromFS);
     // Entregas se traducen al final porque dependen de materiales/asociaciones/compradores
-    CAT.entregas = resultados[3].map(entregaFromFS);
+    // Se ocultan los registros del período interno (ver _entregaOculta): no aparecen
+    // en ninguna parte (tarjetas, gráficos, totales, tablas ni exportaciones).
+    CAT.entregas = resultados[3].map(entregaFromFS)
+      .filter(function(e) { return !_entregaOculta(e); });
   } catch (e) {
     console.error('Error cargando catálogos:', e);
     showToast('Error al cargar datos');
