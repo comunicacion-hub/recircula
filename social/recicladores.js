@@ -71,7 +71,7 @@ function renderVistaRecs() {
   else renderAsociacionesCards();
 }
 
-// ── Nivel 1: tarjetas de asociación ──
+// ── Nivel 1: asociaciones agrupadas por provincia ──
 function renderAsociacionesCards() {
   RECS_VISTA = 'asociaciones';
   RECS_ASOC_SEL = null;
@@ -90,13 +90,6 @@ function renderAsociacionesCards() {
   if (fProv.length && !fProv.includes('__ALL__')) {
     asocs = asocs.filter(function (a) { return fProv.includes(a.provincia); });
   }
-  asocs.sort(function (a, b) {
-    const pa = (a.provincia || ''), pb = (b.provincia || '');
-    if (pa !== pb) return pa.localeCompare(pb, 'es');
-    return (a.nombre || '').localeCompare(b.nombre || '', 'es');
-  });
-
-  const CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
 
   const header =
     '<div class="page-header">' +
@@ -109,27 +102,43 @@ function renderAsociacionesCards() {
       '</div>' +
     '</div>';
 
-  let cuerpo;
   if (!asocs.length) {
-    cuerpo = '<div class="empty-state">' +
-      icoHTML('users').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"') +
+    document.getElementById('main-content').innerHTML = header +
+      '<div class="empty-state">' + icoHTML('users').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"') +
       '<p>No hay asociaciones</p></div>';
-  } else {
-    cuerpo = '<div class="asoc-grid">' + asocs.map(function (a) {
-      const n = conteo[a._docId] || 0;
-      return '<button class="asoc-card" onclick="abrirAsociacionRecs(\'' + jsEsc(a._docId) + '\')">' +
-        '<div class="asoc-card-ico">' + icoHTML('users') + '</div>' +
-        '<div class="asoc-card-body">' +
-          '<div class="asoc-card-nombre">' + esc(a.nombre || '—') + '</div>' +
-          '<div class="asoc-card-meta">' + (a.provincia ? esc(a.provincia) + ' · ' : '') +
-            '<b>' + n + '</b> reciclador' + (n !== 1 ? 'es' : '') + '</div>' +
-        '</div>' +
-        '<span class="asoc-card-arrow">' + CHEV + '</span>' +
-      '</button>';
-    }).join('') + '</div>';
+    return;
   }
 
-  document.getElementById('main-content').innerHTML = header + cuerpo;
+  // Agrupar por provincia
+  const grupos = {};
+  asocs.forEach(function (a) {
+    const prov = a.provincia || 'Sin provincia';
+    (grupos[prov] = grupos[prov] || []).push(a);
+  });
+  const provsOrden = Object.keys(grupos).sort(function (a, b) { return a.localeCompare(b, 'es'); });
+
+  const CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
+
+  const cuerpo = provsOrden.map(function (prov) {
+    const lista = grupos[prov].slice().sort(function (a, b) { return (a.nombre || '').localeCompare(b.nombre || '', 'es'); });
+    const filas = lista.map(function (a) {
+      const n = conteo[a._docId] || 0;
+      const vacia = n === 0;
+      const pill = vacia
+        ? '<span class="asoc-pill asoc-pill-0">0</span>'
+        : '<span class="asoc-pill">' + n + '</span>';
+      return '<button class="asoc-row' + (vacia ? ' asoc-row-vacia' : '') + '" onclick="abrirAsociacionRecs(\'' + jsEsc(a._docId) + '\')">' +
+        '<span class="asoc-row-nombre">' + esc(a.nombre || '—') + '</span>' +
+        '<span class="asoc-row-right">' + pill + '<span class="asoc-row-chev">' + CHEV + '</span></span>' +
+      '</button>';
+    }).join('');
+    return '<div class="asoc-grupo">' +
+      '<div class="asoc-grupo-titulo">' + esc(prov) + '</div>' +
+      '<div class="asoc-grupo-lista">' + filas + '</div>' +
+    '</div>';
+  }).join('');
+
+  document.getElementById('main-content').innerHTML = header + '<div class="asoc-provs">' + cuerpo + '</div>';
 }
 
 function abrirAsociacionRecs(docId) {
@@ -673,28 +682,33 @@ async function exportarRecicladoresExcel() {
     .rec-mini { font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.5px; }
     .rec-foot { display:flex; justify-content:flex-end; margin-top:14px; }
 
-    /* Nivel 1: tarjetas de asociación */
-    .asoc-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; }
-    .asoc-card {
-      display:flex; align-items:center; gap:14px; text-align:left; width:100%;
-      background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px 18px;
-      cursor:pointer; font-family:inherit; transition:box-shadow .18s, transform .12s, border-color .18s;
+    /* Nivel 1: asociaciones agrupadas por provincia */
+    .asoc-provs { display:flex; flex-direction:column; gap:18px; }
+    .asoc-grupo-titulo {
+      font-size:11px; font-weight:700; color:var(--text-dim);
+      text-transform:uppercase; letter-spacing:.6px; margin-bottom:7px; padding-left:2px;
     }
-    .asoc-card:hover { box-shadow:0 6px 22px rgba(0,0,0,.09); transform:translateY(-2px); border-color:transparent; }
-    .asoc-card:active { transform:translateY(0); }
-    .asoc-card-ico {
-      width:48px; height:48px; border-radius:14px; flex-shrink:0;
-      display:flex; align-items:center; justify-content:center;
-      background:rgba(80,108,255,.10); color:#506CFF;
+    .asoc-grupo-lista { background:var(--surface); border:1px solid var(--border); border-radius:14px; overflow:hidden; }
+    .asoc-row {
+      display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%;
+      background:none; border:none; border-bottom:1px solid var(--border);
+      padding:13px 16px; cursor:pointer; font-family:inherit; text-align:left;
+      transition:background .13s;
     }
-    .asoc-card-ico svg { width:24px; height:24px; }
-    .asoc-card-body { flex:1; min-width:0; }
-    .asoc-card-nombre { font-size:15px; font-weight:700; color:var(--text); line-height:1.3; }
-    .asoc-card-meta { font-size:12.5px; color:var(--text-muted); margin-top:3px; }
-    .asoc-card-meta b { color:var(--text); font-weight:700; }
-    .asoc-card-arrow { color:var(--text-dim); flex-shrink:0; display:inline-flex; transition:transform .15s; }
-    .asoc-card-arrow svg { width:20px; height:20px; }
-    .asoc-card:hover .asoc-card-arrow { transform:translateX(3px); color:#506CFF; }
+    .asoc-row:last-child { border-bottom:none; }
+    .asoc-row:hover { background:rgba(80,108,255,.05); }
+    .asoc-row-nombre { font-size:14px; color:var(--text); line-height:1.35; }
+    .asoc-row-vacia .asoc-row-nombre { color:var(--text-muted); }
+    .asoc-row-right { display:flex; align-items:center; gap:11px; flex-shrink:0; }
+    .asoc-pill {
+      background:rgba(80,108,255,.12); color:#506CFF; font-size:12px; font-weight:700;
+      min-width:26px; height:22px; padding:0 8px; border-radius:20px;
+      display:inline-flex; align-items:center; justify-content:center;
+    }
+    .asoc-pill-0 { background:rgba(0,0,0,.05); color:var(--text-dim); font-weight:600; }
+    .asoc-row-chev { color:var(--text-dim); display:inline-flex; transition:transform .13s; }
+    .asoc-row-chev svg { width:18px; height:18px; }
+    .asoc-row:hover .asoc-row-chev { transform:translateX(3px); color:#506CFF; }
 
     /* Nivel 2: breadcrumb + volver */
     .rec-breadcrumb { font-size:12.5px; color:var(--text-muted); margin-bottom:6px; }
@@ -714,7 +728,6 @@ async function exportarRecicladoresExcel() {
       .rec-mob { display:flex; }
       .rf-grid { grid-template-columns:1fr; }
       .rf-fotos { grid-template-columns:1fr; }
-      .asoc-grid { grid-template-columns:1fr; }
     }
   `;
   document.head.appendChild(s);
