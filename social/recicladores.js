@@ -8,30 +8,36 @@
 //  - Eliminar manda a la papelera la carpeta del reciclador en Drive.
 // ============================================================
 
-let RECS_FILTROS = { prov: [], asoc: [] };
+let RECS_FILTROS = { sexo: [], ruc: [], secap: [], cuenta: [] };
 let RECS_DATA = [];
 
 const SEXOS = ['Masculino', 'Femenino'];
 
-// ── Filtros (drawer): provincia (cruce con Asoc_Ambiente) + asociación ──
+// ── Filtros (drawer) del Nivel 2: aplican dentro de la asociación abierta ──
 function registerRecicladoresFilters() {
   registerFilterConfig('recicladores', {
     badgeId: 'recs-filter-badge',
     sections: [
-      { key: 'prov', title: 'Provincia',  type: 'options', options: _provinciasRecs() },
+      { key: 'sexo',   title: 'Sexo',              type: 'options', options: SEXOS },
+      { key: 'ruc',    title: 'RUC',               type: 'options', options: [{ val: 'si', lbl: 'Con RUC' }, { val: 'no', lbl: 'Sin RUC' }] },
+      { key: 'secap',  title: 'Certificación SECAP', type: 'options', options: [{ val: 'si', lbl: 'Con SECAP' }, { val: 'no', lbl: 'Sin SECAP' }] },
+      { key: 'cuenta', title: 'Cuenta bancaria',   type: 'options', options: [{ val: 'si', lbl: 'Con cuenta' }, { val: 'no', lbl: 'Sin cuenta' }] },
     ],
     getValue: function (k) { return RECS_FILTROS[k] || []; },
     setValue: function (k, v) { RECS_FILTROS[k] = v; },
-    apply: function () { cargarRecicladores(); },
+    apply: function () { renderVistaRecs(); },
   });
 }
 
-function _provinciasRecs() {
-  return Array.from(new Set(CAT.asocAmbiente.map(function (a) { return a.provincia; }).filter(Boolean))).sort();
-}
-
-function _hayFiltroRecs() {
-  return (RECS_FILTROS.prov && RECS_FILTROS.prov.length > 0) || (RECS_FILTROS.asoc && RECS_FILTROS.asoc.length > 0);
+// ¿pasa un booleano el filtro con/sin? (sel puede tener 'si', 'no', o ambos/ninguno)
+function _pasaBool(sel, valor) {
+  if (!sel || !sel.length || sel.indexOf('__ALL__') >= 0) return true;
+  const quiereSi = sel.indexOf('si') >= 0;
+  const quiereNo = sel.indexOf('no') >= 0;
+  if (quiereSi && quiereNo) return true;
+  if (quiereSi) return valor === true;
+  if (quiereNo) return valor !== true;
+  return true;
 }
 
 // ── Render principal ──
@@ -84,20 +90,13 @@ function renderAsociacionesCards() {
     if (id) conteo[id] = (conteo[id] || 0) + 1;
   });
 
-  // Asociaciones (filtro de provincia opcional del drawer)
-  let asocs = CAT.asocAmbiente.slice();
-  const fProv = RECS_FILTROS.prov || [];
-  if (fProv.length && !fProv.includes('__ALL__')) {
-    asocs = asocs.filter(function (a) { return fProv.includes(a.provincia); });
-  }
+  // Todas las asociaciones (el Nivel 1 ya no filtra)
+  const asocs = CAT.asocAmbiente.slice();
 
   const header =
     '<div class="page-header">' +
       '<div><div class="page-title">Recicladores</div><div class="page-sub">Elegí una asociación</div></div>' +
       '<div class="hdr-actions">' +
-        '<button class="hdr-circle" onclick="openFilterDrawer(\'recicladores\')" title="Filtrar por provincia">' +
-          icoHTML('filter') + '<span class="filter-badge" id="recs-filter-badge" style="display:none">0</span></button>' +
-        '<button class="hdr-circle" onclick="exportarRecicladoresExcel()" title="Descargar Excel">' + icoHTML('download') + '</button>' +
         (add ? '<button class="hdr-circle hdr-circle-primary" onclick="abrirFormReciclador()" title="Nuevo reciclador">' + icoHTML('plus') + '</button>' : '') +
       '</div>' +
     '</div>';
@@ -155,10 +154,15 @@ function volverAAsociaciones() {
 
 // ── Nivel 2: lista de recicladores de la asociación ──
 function renderListaAsociacion() {
-  const asoc = _buscarAsoc(RECS_ASOC_SEL);
-  const nombre = asoc ? (asoc.nombre || '—') : '—';
   const add = puedeEditar();
-  RECS_DATA = _recsDeAsociacion(RECS_ASOC_SEL);
+
+  // Recicladores de la asociación, con los filtros del drawer aplicados
+  RECS_DATA = _recsDeAsociacion(RECS_ASOC_SEL).filter(function (r) {
+    return pasaFiltro(RECS_FILTROS.sexo, r.sexo) &&
+      _pasaBool(RECS_FILTROS.ruc, r.ruc === true) &&
+      _pasaBool(RECS_FILTROS.secap, r.certificacion_secap === true) &&
+      _pasaBool(RECS_FILTROS.cuenta, r.cuenta_bancaria === true);
+  });
 
   const BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>';
 
@@ -168,12 +172,14 @@ function renderListaAsociacion() {
         '<div class="rec-title-row">' +
           '<button class="rec-back" onclick="volverAAsociaciones()" title="Volver a asociaciones">' + BACK + '</button>' +
           '<div class="rec-asoc-info">' +
-            '<div class="rec-asoc-nombre">' + esc(nombre) + '</div>' +
+            '<div class="page-title">Recicladores</div>' +
             '<div class="rec-asoc-conteo">' + RECS_DATA.length + ' reciclador' + (RECS_DATA.length !== 1 ? 'es' : '') + '</div>' +
           '</div>' +
         '</div>' +
       '</div>' +
       '<div class="hdr-actions">' +
+        '<button class="hdr-circle" onclick="openFilterDrawer(\'recicladores\')" title="Filtrar">' +
+          icoHTML('filter') + '<span class="filter-badge" id="recs-filter-badge" style="display:none">0</span></button>' +
         '<button class="hdr-circle" onclick="exportarRecicladoresExcel()" title="Descargar Excel">' + icoHTML('download') + '</button>' +
         (add ? '<button class="hdr-circle hdr-circle-primary" onclick="abrirFormReciclador(null,\'' + jsEsc(RECS_ASOC_SEL) + '\')" title="Nuevo reciclador">' + icoHTML('plus') + '</button>' : '') +
       '</div>' +
@@ -181,6 +187,7 @@ function renderListaAsociacion() {
     '<div id="recs-wrap"></div>';
 
   document.getElementById('main-content').innerHTML = header;
+  updateFilterBadge('recicladores');
   renderTablaRecicladores();
 }
 
@@ -611,24 +618,25 @@ function _construirPDF(r, imgs) {
   doc.save('Ficha_' + nomArch + '.pdf');
 }
 
-// ── Exportar Excel (respeta filtros) ──
+// ── Exportar Excel (recicladores de la asociación abierta, con filtros aplicados) ──
 async function exportarRecicladoresExcel() {
-  if (!_hayFiltroRecs()) { showToast('Aplicá un filtro primero.'); return; }
   if (!RECS_DATA.length) { showToast('No hay datos para exportar.'); return; }
   try {
     await cargarSheetJS();
     if (!window.XLSX) { showToast('No se pudo cargar el exportador'); return; }
     const sino = function (b) { return b ? 'Sí' : 'No'; };
-    const header = ['Nombres y Apellidos', 'Sexo', 'Cédula', 'Fecha Nacimiento', 'Asociación', 'Provincia', 'Fecha Afiliación', 'Domicilio', 'Celular', 'Cargas Familiares', 'RUC', 'Cuenta Bancaria'];
+    const header = ['Nombres y Apellidos', 'Sexo', 'Cédula', 'Fecha Nacimiento', 'Asociación', 'Provincia', 'Fecha Afiliación', 'Domicilio', 'Celular', 'Cargas Familiares', 'RUC', 'Cuenta Bancaria', 'Certificación SECAP'];
     const filas = RECS_DATA.map(function (r) {
       return [r.nombres_apellidos, r.sexo, r.cedula, r.fecha_nacimiento, r.asociacion_nombre || nombreDeAsociacion(r.id_asociacion),
-        provinciaDeReciclador(r), r.fecha_afiliacion, r.domicilio, r.celular, parseFloat(r.cargas_familiares) || 0, sino(r.ruc), sino(r.cuenta_bancaria)];
+        provinciaDeReciclador(r), r.fecha_afiliacion, r.domicilio, r.celular, parseFloat(r.cargas_familiares) || 0, sino(r.ruc), sino(r.cuenta_bancaria), sino(r.certificacion_secap)];
     });
     const ws = XLSX.utils.aoa_to_sheet([header].concat(filas));
-    ws['!cols'] = [{ wch: 28 }, { wch: 11 }, { wch: 13 }, { wch: 15 }, { wch: 26 }, { wch: 14 }, { wch: 15 }, { wch: 26 }, { wch: 12 }, { wch: 10 }, { wch: 7 }, { wch: 14 }];
+    ws['!cols'] = [{ wch: 28 }, { wch: 11 }, { wch: 13 }, { wch: 15 }, { wch: 26 }, { wch: 14 }, { wch: 15 }, { wch: 26 }, { wch: 12 }, { wch: 10 }, { wch: 7 }, { wch: 14 }, { wch: 18 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Recicladores');
-    XLSX.writeFile(wb, 'Recicladores_' + new Date().toISOString().substring(0, 10) + '.xlsx');
+    const asoc = _buscarAsoc(RECS_ASOC_SEL);
+    const nombreArch = (asoc && asoc.nombre ? asoc.nombre : 'Recicladores').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_');
+    XLSX.writeFile(wb, nombreArch + '_' + new Date().toISOString().substring(0, 10) + '.xlsx');
     showToast('Excel descargado ✓');
   } catch (e) { console.error('export recicladores:', e); showToast('Error al exportar'); }
 }
