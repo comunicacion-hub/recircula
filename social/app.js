@@ -9,6 +9,8 @@
 // ============================================================
 
 const DOMAIN  = 'redesconrostro.org';
+const DOMINIO_VISUALIZADOR = 'cbc.co';          // Tesalia (CBC): Visualizador (solo lectura)
+const DOMINIO_PERSONAL     = 'carlosandres.es'; // Dominio personal de Carlos: Visualizador
 const HUB_URL = 'https://recircula.redesconrostro.org';
 
 // Carpetas raíz de Drive (ya creadas). Las subcarpetas se crean automáticamente.
@@ -318,10 +320,21 @@ async function establecerSesion(user) {
     } catch (e) {}
   }
   try {
+    const emailLower = (user.email || '').toLowerCase();
+    const esExterno = emailLower.endsWith('@' + DOMINIO_VISUALIZADOR) || emailLower.endsWith('@' + DOMINIO_PERSONAL);
+
     const snap = await window.fb.getDocs(
       window.fb.query(fsCol('Usuarios'), window.fb.where('email', '==', user.email))
     );
-    if (snap.empty) return false;
+    if (snap.empty) {
+      // Tesalia / dominio personal: Visualizador automático aunque no esté en Usuarios
+      if (esExterno) {
+        SESSION = { nombre: user.displayName || 'Externo', email: user.email, rol: 'Visualizador', externo: true };
+        sessionStorage.setItem('rcr_session', JSON.stringify(SESSION));
+        return true;
+      }
+      return false;
+    }
     const u = snap.docs[0].data();
     SESSION = { nombre: u.nombre || user.displayName || 'Usuario', email: user.email, rol: u.rol || 'Visualizador' };
     sessionStorage.setItem('rcr_session', JSON.stringify(SESSION));
@@ -727,7 +740,11 @@ window.addEventListener('load', async function () {
   await window.fbReady;
 
   window.fb.onAuthStateChanged(window.fb.auth, async function (user) {
-    if (!user || !user.email || !user.email.toLowerCase().endsWith('@' + DOMAIN)) {
+    var emailLower = (user && user.email) ? user.email.toLowerCase() : '';
+    var dominioOk = emailLower.endsWith('@' + DOMAIN)
+      || emailLower.endsWith('@' + DOMINIO_VISUALIZADOR)
+      || emailLower.endsWith('@' + DOMINIO_PERSONAL);
+    if (!user || !dominioOk) {
       window.location.href = HUB_URL;
       return;
     }
