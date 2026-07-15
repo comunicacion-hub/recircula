@@ -167,9 +167,11 @@ function renderListaAsociacion() {
       '<div>' +
         '<div class="rec-title-row">' +
           '<button class="rec-back" onclick="volverAAsociaciones()" title="Volver a asociaciones">' + BACK + '</button>' +
-          '<div class="page-title">' + esc(nombre) + '</div>' +
+          '<div class="rec-asoc-info">' +
+            '<div class="rec-asoc-nombre">' + esc(nombre) + '</div>' +
+            '<div class="rec-asoc-conteo">' + RECS_DATA.length + ' reciclador' + (RECS_DATA.length !== 1 ? 'es' : '') + '</div>' +
+          '</div>' +
         '</div>' +
-        '<div class="page-sub">' + RECS_DATA.length + ' reciclador' + (RECS_DATA.length !== 1 ? 'es' : '') + '</div>' +
       '</div>' +
       '<div class="hdr-actions">' +
         '<button class="hdr-circle" onclick="exportarRecicladoresExcel()" title="Descargar Excel">' + icoHTML('download') + '</button>' +
@@ -716,7 +718,10 @@ async function exportarRecicladoresExcel() {
     .rec-breadcrumb { font-size:12.5px; color:var(--text-muted); margin-bottom:6px; }
     .rec-breadcrumb a { color:#506CFF; cursor:pointer; font-weight:600; }
     .rec-breadcrumb a:hover { text-decoration:underline; }
-    .rec-title-row { display:flex; align-items:center; gap:10px; }
+    .rec-title-row { display:flex; align-items:center; gap:12px; }
+    .rec-asoc-info { min-width:0; }
+    .rec-asoc-nombre { font-size:17px; font-weight:700; color:var(--text); line-height:1.3; }
+    .rec-asoc-conteo { font-size:12.5px; color:var(--text-muted); margin-top:2px; }
     .rec-back {
       width:34px; height:34px; border-radius:10px; flex-shrink:0; border:1px solid var(--border);
       background:var(--surface); color:var(--text-muted); cursor:pointer;
