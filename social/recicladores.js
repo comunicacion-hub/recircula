@@ -19,7 +19,6 @@ function registerRecicladoresFilters() {
     badgeId: 'recs-filter-badge',
     sections: [
       { key: 'prov', title: 'Provincia',  type: 'options', options: _provinciasRecs() },
-      { key: 'asoc', title: 'Asociación', type: 'options', options: CAT.asocAmbiente.map(function (a) { return { val: a._docId, lbl: a.nombre }; }) },
     ],
     getValue: function (k) { return RECS_FILTROS[k] || []; },
     setValue: function (k, v) { RECS_FILTROS[k] = v; },
@@ -36,43 +35,142 @@ function _hayFiltroRecs() {
 }
 
 // ── Render principal ──
+// ── Estado de navegación (dos niveles) ──
+let RECS_VISTA = 'asociaciones';  // 'asociaciones' | 'lista'
+let RECS_ASOC_SEL = null;         // _docId de la asociación abierta
+
+// docId canónico de la asociación de un reciclador (tolera id_asociacion o nombre)
+function _asocDocIdDeReciclador(r) {
+  let a = _buscarAsoc(r.id_asociacion);
+  if (!a && r.asociacion_nombre) {
+    a = CAT.asocAmbiente.find(function (x) { return (x.nombre || '').trim() === (r.asociacion_nombre || '').trim(); });
+  }
+  return a ? a._docId : null;
+}
+
+function _recsDeAsociacion(docId) {
+  return CAT.recicladores
+    .filter(function (r) { return _asocDocIdDeReciclador(r) === docId; })
+    .slice()
+    .sort(function (a, b) { return (a.nombres_apellidos || '').localeCompare(b.nombres_apellidos || ''); });
+}
+
 function renderRecicladores() {
   registerRecicladoresFilters();
+  RECS_VISTA = 'asociaciones';   // al entrar siempre se muestran las asociaciones
+  RECS_ASOC_SEL = null;
+  renderVistaRecs();
+  updateFilterBadge('recicladores');
+}
+
+// Wrapper: guardar/eliminar/aplicar-filtro refrescan la vista activa.
+function cargarRecicladores() { renderVistaRecs(); }
+
+function renderVistaRecs() {
+  if (RECS_VISTA === 'lista' && RECS_ASOC_SEL) renderListaAsociacion();
+  else renderAsociacionesCards();
+}
+
+// ── Nivel 1: tarjetas de asociación ──
+function renderAsociacionesCards() {
+  RECS_VISTA = 'asociaciones';
+  RECS_ASOC_SEL = null;
   const add = puedeEditar();
-  document.getElementById('main-content').innerHTML =
+
+  // Conteo de recicladores por asociación
+  const conteo = {};
+  CAT.recicladores.forEach(function (r) {
+    const id = _asocDocIdDeReciclador(r);
+    if (id) conteo[id] = (conteo[id] || 0) + 1;
+  });
+
+  // Asociaciones (filtro de provincia opcional del drawer)
+  let asocs = CAT.asocAmbiente.slice();
+  const fProv = RECS_FILTROS.prov || [];
+  if (fProv.length && !fProv.includes('__ALL__')) {
+    asocs = asocs.filter(function (a) { return fProv.includes(a.provincia); });
+  }
+  asocs.sort(function (a, b) {
+    const pa = (a.provincia || ''), pb = (b.provincia || '');
+    if (pa !== pb) return pa.localeCompare(pb, 'es');
+    return (a.nombre || '').localeCompare(b.nombre || '', 'es');
+  });
+
+  const CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
+
+  const header =
     '<div class="page-header">' +
-      '<div><div class="page-title">Recicladores</div><div class="page-sub">Registro</div></div>' +
+      '<div><div class="page-title">Recicladores</div><div class="page-sub">Elegí una asociación</div></div>' +
       '<div class="hdr-actions">' +
-        '<button class="hdr-circle" onclick="openFilterDrawer(\'recicladores\')" title="Filtros">' +
+        '<button class="hdr-circle" onclick="openFilterDrawer(\'recicladores\')" title="Filtrar por provincia">' +
           icoHTML('filter') + '<span class="filter-badge" id="recs-filter-badge" style="display:none">0</span></button>' +
         '<button class="hdr-circle" onclick="exportarRecicladoresExcel()" title="Descargar Excel">' + icoHTML('download') + '</button>' +
         (add ? '<button class="hdr-circle hdr-circle-primary" onclick="abrirFormReciclador()" title="Nuevo reciclador">' + icoHTML('plus') + '</button>' : '') +
       '</div>' +
-    '</div>' +
-    '<div id="recs-wrap"></div>';
-  cargarRecicladores();
-  updateFilterBadge('recicladores');
-}
+    '</div>';
 
-function cargarRecicladores() {
-  const wrap = document.getElementById('recs-wrap');
-  if (!wrap) return;
-
-  if (!_hayFiltroRecs()) {
-    wrap.innerHTML =
-      '<div class="recs-hint">' +
-        '<div class="recs-hint-ico">' + icoHTML('filter').replace('<svg', '<svg style="width:44px;height:44px"') + '</div>' +
-        '<div class="recs-hint-txt">Use los filtros para ver la información</div>' +
-        '<div class="recs-hint-sub">Seleccioná una provincia o asociación para listar a los recicladores.</div>' +
-      '</div>';
-    return;
+  let cuerpo;
+  if (!asocs.length) {
+    cuerpo = '<div class="empty-state">' +
+      icoHTML('users').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"') +
+      '<p>No hay asociaciones</p></div>';
+  } else {
+    cuerpo = '<div class="asoc-grid">' + asocs.map(function (a) {
+      const n = conteo[a._docId] || 0;
+      return '<button class="asoc-card" onclick="abrirAsociacionRecs(\'' + jsEsc(a._docId) + '\')">' +
+        '<div class="asoc-card-ico">' + icoHTML('users') + '</div>' +
+        '<div class="asoc-card-body">' +
+          '<div class="asoc-card-nombre">' + esc(a.nombre || '—') + '</div>' +
+          '<div class="asoc-card-meta">' + (a.provincia ? esc(a.provincia) + ' · ' : '') +
+            '<b>' + n + '</b> reciclador' + (n !== 1 ? 'es' : '') + '</div>' +
+        '</div>' +
+        '<span class="asoc-card-arrow">' + CHEV + '</span>' +
+      '</button>';
+    }).join('') + '</div>';
   }
 
-  RECS_DATA = CAT.recicladores.filter(function (r) {
-    return pasaFiltro(RECS_FILTROS.prov, provinciaDeReciclador(r)) && pasaFiltro(RECS_FILTROS.asoc, r.id_asociacion);
-  }).slice().sort(function (a, b) {
-    return (a.nombres_apellidos || '').localeCompare(b.nombres_apellidos || '');
-  });
+  document.getElementById('main-content').innerHTML = header + cuerpo;
+}
+
+function abrirAsociacionRecs(docId) {
+  RECS_ASOC_SEL = docId;
+  RECS_VISTA = 'lista';
+  renderVistaRecs();
+}
+
+function volverAAsociaciones() {
+  RECS_ASOC_SEL = null;
+  RECS_VISTA = 'asociaciones';
+  renderVistaRecs();
+}
+
+// ── Nivel 2: lista de recicladores de la asociación ──
+function renderListaAsociacion() {
+  const asoc = _buscarAsoc(RECS_ASOC_SEL);
+  const nombre = asoc ? (asoc.nombre || '—') : '—';
+  const add = puedeEditar();
+  RECS_DATA = _recsDeAsociacion(RECS_ASOC_SEL);
+
+  const BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>';
+
+  const header =
+    '<div class="page-header">' +
+      '<div>' +
+        '<div class="rec-breadcrumb"><a onclick="volverAAsociaciones()">Asociaciones</a> / <span>' + esc(nombre) + '</span></div>' +
+        '<div class="rec-title-row">' +
+          '<button class="rec-back" onclick="volverAAsociaciones()" title="Volver a asociaciones">' + BACK + '</button>' +
+          '<div class="page-title">' + esc(nombre) + '</div>' +
+        '</div>' +
+        '<div class="page-sub">' + RECS_DATA.length + ' reciclador' + (RECS_DATA.length !== 1 ? 'es' : '') + '</div>' +
+      '</div>' +
+      '<div class="hdr-actions">' +
+        '<button class="hdr-circle" onclick="exportarRecicladoresExcel()" title="Descargar Excel">' + icoHTML('download') + '</button>' +
+        (add ? '<button class="hdr-circle hdr-circle-primary" onclick="abrirFormReciclador(null,\'' + jsEsc(RECS_ASOC_SEL) + '\')" title="Nuevo reciclador">' + icoHTML('plus') + '</button>' : '') +
+      '</div>' +
+    '</div>' +
+    '<div id="recs-wrap"></div>';
+
+  document.getElementById('main-content').innerHTML = header;
   renderTablaRecicladores();
 }
 
@@ -180,13 +278,14 @@ function verReciclador(docId) {
 // ── Formulario (crear / editar) ──
 function editarReciclador(docId) { abrirFormReciclador(docId); }
 
-function abrirFormReciclador(docId) {
+function abrirFormReciclador(docId, presetAsoc) {
   docId = docId || null;
   const r = docId ? CAT.recicladores.find(function (x) { return x._docId === docId; }) : null;
   const editing = !!r;
 
+  const asocSel = r ? r.id_asociacion : (presetAsoc || '');
   const asocOpts = '<option value="">Seleccioná una asociación…</option>' + CAT.asocAmbiente.map(function (a) {
-    return '<option value="' + esc(a._docId) + '"' + (r && r.id_asociacion === a._docId ? ' selected' : '') + '>' + esc(a.nombre) + '</option>';
+    return '<option value="' + esc(a._docId) + '"' + (asocSel === a._docId ? ' selected' : '') + '>' + esc(a.nombre) + '</option>';
   }).join('');
   const sexoOpts = '<option value="">—</option>' + SEXOS.map(function (s) {
     return '<option value="' + s + '"' + (r && r.sexo === s ? ' selected' : '') + '>' + s + '</option>';
@@ -574,11 +673,48 @@ async function exportarRecicladoresExcel() {
     .rec-mini { font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.5px; }
     .rec-foot { display:flex; justify-content:flex-end; margin-top:14px; }
 
+    /* Nivel 1: tarjetas de asociación */
+    .asoc-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:14px; }
+    .asoc-card {
+      display:flex; align-items:center; gap:14px; text-align:left; width:100%;
+      background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px 18px;
+      cursor:pointer; font-family:inherit; transition:box-shadow .18s, transform .12s, border-color .18s;
+    }
+    .asoc-card:hover { box-shadow:0 6px 22px rgba(0,0,0,.09); transform:translateY(-2px); border-color:transparent; }
+    .asoc-card:active { transform:translateY(0); }
+    .asoc-card-ico {
+      width:48px; height:48px; border-radius:14px; flex-shrink:0;
+      display:flex; align-items:center; justify-content:center;
+      background:rgba(80,108,255,.10); color:#506CFF;
+    }
+    .asoc-card-ico svg { width:24px; height:24px; }
+    .asoc-card-body { flex:1; min-width:0; }
+    .asoc-card-nombre { font-size:15px; font-weight:700; color:var(--text); line-height:1.3; }
+    .asoc-card-meta { font-size:12.5px; color:var(--text-muted); margin-top:3px; }
+    .asoc-card-meta b { color:var(--text); font-weight:700; }
+    .asoc-card-arrow { color:var(--text-dim); flex-shrink:0; display:inline-flex; transition:transform .15s; }
+    .asoc-card-arrow svg { width:20px; height:20px; }
+    .asoc-card:hover .asoc-card-arrow { transform:translateX(3px); color:#506CFF; }
+
+    /* Nivel 2: breadcrumb + volver */
+    .rec-breadcrumb { font-size:12.5px; color:var(--text-muted); margin-bottom:6px; }
+    .rec-breadcrumb a { color:#506CFF; cursor:pointer; font-weight:600; }
+    .rec-breadcrumb a:hover { text-decoration:underline; }
+    .rec-title-row { display:flex; align-items:center; gap:10px; }
+    .rec-back {
+      width:34px; height:34px; border-radius:10px; flex-shrink:0; border:1px solid var(--border);
+      background:var(--surface); color:var(--text-muted); cursor:pointer;
+      display:flex; align-items:center; justify-content:center; transition:background .15s, color .15s;
+    }
+    .rec-back:hover { background:rgba(80,108,255,.08); color:#506CFF; }
+    .rec-back svg { width:18px; height:18px; }
+
     @media (max-width:768px) {
       .rec-desk { display:none; }
       .rec-mob { display:flex; }
       .rf-grid { grid-template-columns:1fr; }
       .rf-fotos { grid-template-columns:1fr; }
+      .asoc-grid { grid-template-columns:1fr; }
     }
   `;
   document.head.appendChild(s);
