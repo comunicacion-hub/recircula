@@ -1,760 +1,741 @@
 // ============================================================
-// DASHBOARD SOCIAL — app.js
-// Core: sesión (heredada del Hub), datos (Firestore), Drive API,
-//       navegación, drawer, modales, helpers.
-// Mismo proyecto Firebase (recircula360). Copiar firebase-init.js,
-// styles.css e icons.js (versión social) sin cambios.
-//
-// Secciones: Home · Recicladores · Alianzas · Financiero
+// DASHBOARD SOCIAL — recicladores.js
+// Sección Recicladores: lee/escribe la colección "recicladores"
+// (compartida con la app de Fichas). CRUD: ver / editar / eliminar.
+//  - La tabla NO muestra nada hasta aplicar filtros.
+//  - Ficha completa al hacer clic en el nombre + descarga en PDF (con fotos).
+//  - Editar permite reemplazar las 3 fotos (opcional) en la misma carpeta.
+//  - Eliminar manda a la papelera la carpeta del reciclador en Drive.
 // ============================================================
 
-const DOMAIN  = 'redesconrostro.org';
-const DOMINIO_VISUALIZADOR = 'cbc.co';          // Tesalia (CBC): Visualizador (solo lectura)
-const DOMINIO_PERSONAL     = 'carlosandres.es'; // Dominio personal de Carlos: Visualizador
-const HUB_URL = 'https://recircula.redesconrostro.org';
+let RECS_FILTROS = { prov: [], asoc: [] };
+let RECS_DATA = [];
 
-// Carpetas raíz de Drive (ya creadas). Las subcarpetas se crean automáticamente.
-const DRIVE_PARENTS = {
-  recicladores: '1eNVLmzcYuvfVY7fFZVTfvhFZbEuZHNqS', // "Recicladores"  (estructura: Recicladores > Asociación > Nombre)
-  alianzas:     '1AxMaVMUP3MwkGoVvRhKnE_6Zi1_ui0_U', // "Alianzas"      (estructura: Alianzas > Convenio)
-  cajas:        '1mIssgggP4j8Vn9Je71mW22q_3sMPYuj3', // "Caja de ahorro" (estructura: Caja de ahorro > Asociación)
-};
+const SEXOS = ['Masculino', 'Femenino'];
 
-let SESSION = null;
-
-// Colecciones en memoria.
-let CAT = {
-  recicladores: [],   // recicladores  (colección compartida con la app de Fichas)
-  asocAmbiente: [],   // Asoc_Ambiente (fuente de desplegables: id, nombre, provincia)
-  asociaciones: [],   // Asoc_Asociativo (solo para num_recicladores → suma en Alianzas)
-  alianzas:     [],   // Alianzas
-  cajas:        [],   // CajasAhorro
-};
-
-// ============================================================
-// HELPERS FIRESTORE (sobre window.fb)
-// ============================================================
-
-function fsCol(nombre) { return window.fb.collection(window.fb.db, nombre); }
-function fsDoc(nombre, id) { return window.fb.doc(window.fb.db, nombre, id); }
-
-async function fsGetAll(nombre) {
-  const snap = await window.fb.getDocs(fsCol(nombre));
-  return snap.docs.map(function (d) { return Object.assign({ _docId: d.id }, d.data()); });
+// ── Filtros (drawer): provincia (cruce con Asoc_Ambiente) + asociación ──
+function registerRecicladoresFilters() {
+  registerFilterConfig('recicladores', {
+    badgeId: 'recs-filter-badge',
+    sections: [
+      { key: 'prov', title: 'Provincia',  type: 'options', options: _provinciasRecs() },
+    ],
+    getValue: function (k) { return RECS_FILTROS[k] || []; },
+    setValue: function (k, v) { RECS_FILTROS[k] = v; },
+    apply: function () { cargarRecicladores(); },
+  });
 }
 
-// Escritura tolerante a offline (Firestore encola con su persistencia nativa).
-async function fsWrite(opFactory) {
-  if (!navigator.onLine) {
-    try { opFactory(); } catch (e) { console.warn(e); }
-    return { ok: true, offline: true };
-  }
-  try { await opFactory(); return { ok: true }; }
-  catch (e) { console.error(e); return { ok: false, error: e.message }; }
+function _provinciasRecs() {
+  return Array.from(new Set(CAT.asocAmbiente.map(function (a) { return a.provincia; }).filter(Boolean))).sort();
 }
 
-function byNombre(a, b) { return (a.nombre || '').localeCompare(b.nombre || ''); }
-
-function nuevoId(prefijo) {
-  return prefijo + '_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+function _hayFiltroRecs() {
+  return (RECS_FILTROS.prov && RECS_FILTROS.prov.length > 0) || (RECS_FILTROS.asoc && RECS_FILTROS.asoc.length > 0);
 }
 
-// ============================================================
-// TRADUCTORES Firestore ⇄ objeto en memoria (claves = campos FS)
-// ============================================================
+// ── Render principal ──
+// ── Estado de navegación (dos niveles) ──
+let RECS_VISTA = 'asociaciones';  // 'asociaciones' | 'lista'
+let RECS_ASOC_SEL = null;         // _docId de la asociación abierta
 
-// — recicladores (esquema definido por la app de Fichas; agregamos 'sexo') —
-function recicladorFromFS(d) {
-  return {
-    _docId: d._docId,
-    id_asociacion:           d.id_asociacion || '',
-    asociacion_nombre:       d.asociacion_nombre || '',
-    nombres_apellidos:       d.nombres_apellidos || '',
-    sexo:                    d.sexo || '',
-    cedula:                  d.cedula || '',
-    fecha_nacimiento:        d.fecha_nacimiento || '',
-    fecha_afiliacion:        d.fecha_afiliacion || '',
-    domicilio:               d.domicilio || '',
-    celular:                 d.celular || '',
-    cargas_familiares:       d.cargas_familiares || 0,
-    ruc:                     d.ruc === true,
-    cuenta_bancaria:         d.cuenta_bancaria === true,
-    certificacion_secap:     d.certificacion_secap === true,
-    foto_perfil_url:         d.foto_perfil_url || '',
-    foto_cedula_anverso_url: d.foto_cedula_anverso_url || '',
-    foto_cedula_reverso_url: d.foto_cedula_reverso_url || '',
-    foto_perfil_id:          d.foto_perfil_id || '',
-    foto_cedula_anverso_id:  d.foto_cedula_anverso_id || '',
-    foto_cedula_reverso_id:  d.foto_cedula_reverso_id || '',
-    carpeta_id:              d.carpeta_id || '',
-    creado_por:              d.creado_por || '',
-  };
-}
-function recicladorToFS(o) {
-  return {
-    id_asociacion:           o.id_asociacion || '',
-    asociacion_nombre:       o.asociacion_nombre || '',
-    nombres_apellidos:       o.nombres_apellidos || '',
-    sexo:                    o.sexo || '',
-    cedula:                  o.cedula || '',
-    fecha_nacimiento:        o.fecha_nacimiento || '',
-    fecha_afiliacion:        o.fecha_afiliacion || '',
-    domicilio:               o.domicilio || '',
-    celular:                 o.celular || '',
-    cargas_familiares:       parseFloat(o.cargas_familiares) || 0,
-    ruc:                     !!o.ruc,
-    cuenta_bancaria:         !!o.cuenta_bancaria,
-    certificacion_secap:     !!o.certificacion_secap,
-    foto_perfil_url:         o.foto_perfil_url || '',
-    foto_cedula_anverso_url: o.foto_cedula_anverso_url || '',
-    foto_cedula_reverso_url: o.foto_cedula_reverso_url || '',
-    foto_perfil_id:          o.foto_perfil_id || '',
-    foto_cedula_anverso_id:  o.foto_cedula_anverso_id || '',
-    foto_cedula_reverso_id:  o.foto_cedula_reverso_id || '',
-    carpeta_id:              o.carpeta_id || '',
-  };
-}
-
-// — Asoc_Ambiente —
-function asocAmbienteFromFS(d) {
-  return {
-    _docId: d._docId,
-    id_asociacion: d.id_asociacion || '',
-    nombre:        d.nombre || '',
-    provincia:     d.provincia || '',
-  };
-}
-
-// — Asoc_Asociativo (mínimo: solo lo necesario para la suma de recicladores) —
-function asociacionMiniFromFS(d) {
-  return {
-    id_asociacion:    d.id_asociacion || '',
-    num_recicladores: d.num_recicladores || 0,
-  };
-}
-
-// — Alianzas —
-function alianzaFromFS(d) {
-  return {
-    _docId: d._docId,
-    id_alianza:        d.id_alianza || '',
-    nombre_convenio:   d.nombre_convenio || '',
-    aliado_principal:  d.aliado_principal || '',
-    aliado_secundario: d.aliado_secundario || '',
-    asociaciones:      Array.isArray(d.asociaciones) ? d.asociaciones : [],  // ids de Asoc_Ambiente
-    provincias:        Array.isArray(d.provincias) ? d.provincias : [],
-    anio:              d.anio || '',
-    num_recicladores:  d.num_recicladores || 0,
-    etapas:            Array.isArray(d.etapas) ? d.etapas : [],              // ['Inicial','Intermedia','Final']
-    observaciones:     d.observaciones || '',
-    id_carpeta_drive:  d.id_carpeta_drive || '',
-  };
-}
-function alianzaToFS(o) {
-  return {
-    id_alianza:        o.id_alianza || '',
-    nombre_convenio:   o.nombre_convenio || '',
-    aliado_principal:  o.aliado_principal || '',
-    aliado_secundario: o.aliado_secundario || '',
-    asociaciones:      Array.isArray(o.asociaciones) ? o.asociaciones : [],
-    provincias:        Array.isArray(o.provincias) ? o.provincias : [],
-    anio:              parseFloat(o.anio) || 0,
-    num_recicladores:  parseFloat(o.num_recicladores) || 0,
-    etapas:            Array.isArray(o.etapas) ? o.etapas : [],
-    observaciones:     o.observaciones || '',
-    id_carpeta_drive:  o.id_carpeta_drive || '',
-  };
-}
-
-// — CajasAhorro —
-function cajaFromFS(d) {
-  return {
-    _docId: d._docId,
-    id_asociacion:    d.id_asociacion || '',
-    id_caja_ahorro:   d.id_caja_ahorro || '',
-    asociacion:       d.asociacion || '',
-    provincia:        d.provincia || '',
-    anio:             d.anio || '',
-    acta_miembros:    d.acta_miembros === true,
-    acta_validacion:  d.acta_validacion === true,
-    observaciones:    d.observaciones || '',
-    id_carpeta_drive: d.id_carpeta_drive || '',
-  };
-}
-function cajaToFS(o) {
-  return {
-    id_asociacion:    o.id_asociacion || '',
-    id_caja_ahorro:   o.id_caja_ahorro || '',
-    asociacion:       o.asociacion || '',
-    provincia:        o.provincia || '',
-    anio:             parseFloat(o.anio) || 0,
-    acta_miembros:    !!o.acta_miembros,
-    acta_validacion:  !!o.acta_validacion,
-    observaciones:    o.observaciones || '',
-    id_carpeta_drive: o.id_carpeta_drive || '',
-  };
-}
-
-// ============================================================
-// CRUCES (recicladores no tiene provincia: se resuelve por asociación)
-// ============================================================
-
-// Resuelve una asociación de Asoc_Ambiente aceptando tanto el doc.id de
-// Firestore como el campo id_asociacion (los recicladores del formulario
-// externo guardan el doc.id; el resto del dashboard usa id_asociacion).
-function _buscarAsoc(idOrDoc) {
-  if (!idOrDoc) return null;
-  return CAT.asocAmbiente.find(function (x) { return x._docId === idOrDoc || x.id_asociacion === idOrDoc; }) || null;
-}
-
-function provinciaDeAsociacion(idAsoc) {
-  const a = _buscarAsoc(idAsoc);
-  return a ? (a.provincia || '') : '';
-}
-function nombreDeAsociacion(idAsoc) {
-  const a = _buscarAsoc(idAsoc);
-  return a ? (a.nombre || '') : '';
-}
-function numRecicladoresDeAsociacion(idAsoc) {
-  const a = CAT.asociaciones.find(function (x) { return x.id_asociacion === idAsoc; });
-  return a ? (parseFloat(a.num_recicladores) || 0) : 0;
-}
-
-// Provincia "operativa" de un reciclador (vía su asociación).
-// Respaldo por nombre si el id no resuelve.
-function provinciaDeReciclador(r) {
+// docId canónico de la asociación de un reciclador (tolera id_asociacion o nombre)
+function _asocDocIdDeReciclador(r) {
   let a = _buscarAsoc(r.id_asociacion);
   if (!a && r.asociacion_nombre) {
     a = CAT.asocAmbiente.find(function (x) { return (x.nombre || '').trim() === (r.asociacion_nombre || '').trim(); });
   }
-  return a ? (a.provincia || '') : '';
+  return a ? a._docId : null;
 }
 
-// ============================================================
-// DRIVE API (REST) — token OAuth heredado del Hub
-// Soporta Mi unidad y Unidades compartidas (supportsAllDrives).
-// ============================================================
-
-function driveToken() {
-  const t = sessionStorage.getItem('rcr_token');
-  if (!t) return null;
-  const exp = parseInt(sessionStorage.getItem('rcr_token_exp'), 10);
-  if (exp && Date.now() > exp) return null;
-  return t;
+function _recsDeAsociacion(docId) {
+  return CAT.recicladores
+    .filter(function (r) { return _asocDocIdDeReciclador(r) === docId; })
+    .slice()
+    .sort(function (a, b) { return (a.nombres_apellidos || '').localeCompare(b.nombres_apellidos || ''); });
 }
 
-function driveDisponible() { return !!driveToken(); }
-
-function urlCarpeta(id) { return id ? ('https://drive.google.com/drive/folders/' + id) : ''; }
-
-// Convierte una URL/ID de Drive a una src embebible (miniatura).
-function driveImgSrc(urlOrId, size) {
-  if (!urlOrId) return '';
-  let id = urlOrId;
-  const m = String(urlOrId).match(/[-\w]{25,}/);
-  if (m) id = m[0];
-  return 'https://drive.google.com/thumbnail?id=' + id + '&sz=w' + (size || 600);
+function renderRecicladores() {
+  registerRecicladoresFilters();
+  RECS_VISTA = 'asociaciones';   // al entrar siempre se muestran las asociaciones
+  RECS_ASOC_SEL = null;
+  renderVistaRecs();
+  updateFilterBadge('recicladores');
 }
 
-async function driveBuscarCarpeta(nombre, parentId, token) {
-  const q = "name='" + String(nombre).replace(/'/g, "\\'") + "' and '" + parentId +
-            "' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false";
-  const url = 'https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent(q) +
-              '&fields=files(id,name)&spaces=drive&supportsAllDrives=true&includeItemsFromAllDrives=true';
-  const r = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
-  if (!r.ok) throw new Error('Drive búsqueda ' + r.status);
-  const j = await r.json();
-  return (j.files && j.files[0]) ? j.files[0].id : null;
+// Wrapper: guardar/eliminar/aplicar-filtro refrescan la vista activa.
+function cargarRecicladores() { renderVistaRecs(); }
+
+function renderVistaRecs() {
+  if (RECS_VISTA === 'lista' && RECS_ASOC_SEL) renderListaAsociacion();
+  else renderAsociacionesCards();
 }
 
-async function driveCrearCarpeta(nombre, parentId, token) {
-  const url = 'https://www.googleapis.com/drive/v3/files?fields=id&supportsAllDrives=true';
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name: nombre, mimeType: 'application/vnd.google-apps.folder', parents: [parentId] }),
+// ── Nivel 1: asociaciones agrupadas por provincia ──
+function renderAsociacionesCards() {
+  RECS_VISTA = 'asociaciones';
+  RECS_ASOC_SEL = null;
+  const add = puedeEditar();
+
+  // Conteo de recicladores por asociación
+  const conteo = {};
+  CAT.recicladores.forEach(function (r) {
+    const id = _asocDocIdDeReciclador(r);
+    if (id) conteo[id] = (conteo[id] || 0) + 1;
   });
-  if (!r.ok) throw new Error('Drive crear ' + r.status);
-  const j = await r.json();
-  return j.id;
-}
 
-async function driveBuscarOCrear(nombre, parentId, token) {
-  const found = await driveBuscarCarpeta(nombre, parentId, token);
-  return found || await driveCrearCarpeta(nombre, parentId, token);
-}
-
-// Sube un archivo (Blob) a una carpeta. Devuelve { id, webViewLink }.
-async function driveSubirArchivo(blob, filename, parentId, token) {
-  const meta = { name: filename, parents: [parentId] };
-  const form = new FormData();
-  form.append('metadata', new Blob([JSON.stringify(meta)], { type: 'application/json' }));
-  form.append('file', blob, filename);
-  const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink&supportsAllDrives=true',
-    { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: form });
-  if (!r.ok) throw new Error('Drive subida ' + r.status);
-  return await r.json();
-}
-
-// Envía a la papelera (reversible). 404 = ya no existe.
-async function driveEliminarCarpeta(folderId, token) {
-  const url = 'https://www.googleapis.com/drive/v3/files/' + folderId + '?fields=id&supportsAllDrives=true';
-  const r = await fetch(url, {
-    method: 'PATCH',
-    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ trashed: true }),
-  });
-  if (r.status === 404) return true;
-  if (!r.ok) throw new Error('Drive papelera ' + r.status);
-  return true;
-}
-
-// ============================================================
-// SESIÓN (heredada del Hub)
-// ============================================================
-
-async function establecerSesion(user) {
-  const s = sessionStorage.getItem('rcr_session');
-  if (s) {
-    try {
-      const parsed = JSON.parse(s);
-      if (parsed && parsed.rol) { SESSION = parsed; return true; }
-    } catch (e) {}
+  // Asociaciones (filtro de provincia opcional del drawer)
+  let asocs = CAT.asocAmbiente.slice();
+  const fProv = RECS_FILTROS.prov || [];
+  if (fProv.length && !fProv.includes('__ALL__')) {
+    asocs = asocs.filter(function (a) { return fProv.includes(a.provincia); });
   }
-  try {
-    const emailLower = (user.email || '').toLowerCase();
-    const esExterno = emailLower.endsWith('@' + DOMINIO_VISUALIZADOR) || emailLower.endsWith('@' + DOMINIO_PERSONAL);
 
-    const snap = await window.fb.getDocs(
-      window.fb.query(fsCol('Usuarios'), window.fb.where('email', '==', user.email))
-    );
-    if (snap.empty) {
-      // Tesalia / dominio personal: Visualizador automático aunque no esté en Usuarios
-      if (esExterno) {
-        SESSION = { nombre: user.displayName || 'Externo', email: user.email, rol: 'Visualizador', externo: true };
-        sessionStorage.setItem('rcr_session', JSON.stringify(SESSION));
-        return true;
-      }
-      return false;
-    }
-    const u = snap.docs[0].data();
-    SESSION = { nombre: u.nombre || user.displayName || 'Usuario', email: user.email, rol: u.rol || 'Visualizador' };
-    sessionStorage.setItem('rcr_session', JSON.stringify(SESSION));
-    return true;
-  } catch (e) {
-    console.error('establecerSesion:', e);
-    return false;
-  }
-}
-
-// Vuelve al Hub SIN cerrar sesión.
-function volverAlHub() { window.location.href = HUB_URL; }
-
-function puedeEditar() { return SESSION && SESSION.rol !== 'Visualizador'; }
-
-// ============================================================
-// CARGA DE DATOS
-// ============================================================
-
-async function cargarDatos() {
-  try {
-    const res = await Promise.all([
-      fsGetAll('recicladores'),
-      fsGetAll('Asoc_Ambiente'),
-      fsGetAll('Asoc_Asociativo'),
-      fsGetAll('Alianzas'),
-      fsGetAll('CajasAhorro'),
-    ]);
-    CAT.recicladores = res[0].map(recicladorFromFS);
-    CAT.asocAmbiente = res[1].map(asocAmbienteFromFS).sort(byNombre);
-    CAT.asociaciones = res[2].map(asociacionMiniFromFS);
-    CAT.alianzas     = res[3].map(alianzaFromFS);
-    CAT.cajas        = res[4].map(cajaFromFS);
-    console.log('[Social] datos:', {
-      recicladores: CAT.recicladores.length, asocAmbiente: CAT.asocAmbiente.length,
-      asociaciones: CAT.asociaciones.length, alianzas: CAT.alianzas.length, cajas: CAT.cajas.length,
-      driveToken: driveDisponible() ? 'presente' : 'ausente/expirado',
-    });
-  } catch (e) {
-    console.error('Error cargando datos:', e);
-    showToast('Error al cargar datos');
-  }
-}
-
-// Carga SheetJS bajo demanda para exportar a Excel.
-async function cargarSheetJS() {
-  if (window.XLSX) return;
-  await new Promise(function (resolve, reject) {
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
-    s.onload = resolve; s.onerror = reject;
-    document.head.appendChild(s);
-  });
-}
-
-// Carga jsPDF bajo demanda (para la ficha del reciclador en PDF).
-async function cargarJsPDF() {
-  if (window.jspdf && window.jspdf.jsPDF) return;
-  await new Promise(function (resolve, reject) {
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';
-    s.onload = resolve; s.onerror = reject;
-    document.head.appendChild(s);
-  });
-}
-
-// ============================================================
-// INICIAR APP
-// ============================================================
-
-async function iniciarApp() {
-  await cargarDatos();
-  mostrarApp();
-  pintarIconos();
-  navTo('home');
-}
-
-function pintarIconos() {
-  const dc = document.querySelector('.filter-drawer-head .modal-close');
-  if (dc && !dc.innerHTML.trim()) dc.innerHTML = icoHTML('close');
-}
-
-// ============================================================
-// NAVEGACIÓN
-// ============================================================
-
-let CURRENT_SECTION = null;
-
-function navTo(seccion) {
-  CURRENT_SECTION = seccion;
-  document.querySelectorAll('.bn-item').forEach(function (el) { el.classList.remove('active'); });
-  const navEl = document.getElementById('nav-' + seccion);
-  if (navEl) navEl.classList.add('active');
-
-  closeFilterDrawer();
-  document.getElementById('main-content').innerHTML = '';
-
-  switch (seccion) {
-    case 'home':         if (typeof renderHome === 'function')         renderHome();         break;
-    case 'recicladores': if (typeof renderRecicladores === 'function') renderRecicladores(); break;
-    case 'alianzas':     if (typeof renderAlianzas === 'function')     renderAlianzas();     break;
-    case 'financiero':   if (typeof renderFinanciero === 'function')   renderFinanciero();   break;
-  }
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-// ============================================================
-// FILTER DRAWER — compartido entre pantallas
-// ============================================================
-
-const FILTER_CONFIGS = {};
-function registerFilterConfig(scope, cfg) { FILTER_CONFIGS[scope] = cfg; }
-
-let currentFilterScope = null;
-let pendingFilters = {};
-
-function openFilterDrawer(scope) {
-  const cfg = FILTER_CONFIGS[scope];
-  if (!cfg) return;
-  currentFilterScope = scope;
-
-  pendingFilters = {};
-  cfg.sections.forEach(function (sec) {
-    const v = cfg.getValue(sec.key);
-    pendingFilters[sec.key] = Array.isArray(v) ? v.slice() : (v ? [v] : []);
-  });
-
-  const body = document.getElementById('filter-drawer-body');
-  body.innerHTML = cfg.sections.map(function (sec, i) {
-    const isOpen = i === 0;
-    return '<div class="filter-section ' + (isOpen ? 'open' : '') + '" data-key="' + sec.key + '">' +
-      '<button class="filter-section-head" onclick="toggleFilterSection(this)">' +
-        '<span>' + sec.title + '</span>' +
-        icoHTML('chevDown').replace('<svg', '<svg class="chev"') +
-      '</button>' +
-      '<div class="filter-section-body">' + renderFilterSection(sec) + '</div>' +
+  const header =
+    '<div class="page-header">' +
+      '<div><div class="page-title">Recicladores</div><div class="page-sub">Elegí una asociación</div></div>' +
+      '<div class="hdr-actions">' +
+        '<button class="hdr-circle" onclick="openFilterDrawer(\'recicladores\')" title="Filtrar por provincia">' +
+          icoHTML('filter') + '<span class="filter-badge" id="recs-filter-badge" style="display:none">0</span></button>' +
+        '<button class="hdr-circle" onclick="exportarRecicladoresExcel()" title="Descargar Excel">' + icoHTML('download') + '</button>' +
+        (add ? '<button class="hdr-circle hdr-circle-primary" onclick="abrirFormReciclador()" title="Nuevo reciclador">' + icoHTML('plus') + '</button>' : '') +
+      '</div>' +
     '</div>';
-  }).join('');
 
-  document.getElementById('filter-drawer').classList.add('open');
-}
-
-function renderFilterSection(sec) {
-  const current = pendingFilters[sec.key];
-  const arr = Array.isArray(current) ? current : (current ? [current] : []);
-  if (sec.type === 'search') {
-    const txt = arr[0] || '';
-    return '<input type="text" class="filter-search" placeholder="' + (sec.placeholder || '') + '"' +
-      ' value="' + esc(txt) + '"' +
-      ' oninput="pendingFilters[\'' + sec.key + '\'] = this.value ? [this.value] : []">';
-  }
-  if (sec.type === 'radio') {
-    const opts = sec.options || [];
-    const sel = arr[0] || sec.def || '';
-    return opts.map(function (o) {
-      const val = typeof o === 'object' ? o.val : o;
-      const lbl = typeof o === 'object' ? o.lbl : o;
-      const on = val === sel ? 'checked' : '';
-      return '<label class="filter-opt"><input type="radio" name="rad-' + sec.key + '" value="' + esc(val) + '" ' + on +
-        ' onchange="toggleFilterRadio(\'' + sec.key + '\',\'' + jsEsc(val) + '\')"><span>' + esc(lbl) + '</span></label>';
-    }).join('');
-  }
-  if (sec.type === 'options') {
-    const opts = sec.options || [];
-    if (!opts.length) return '<div style="font-size:13px;color:var(--text-dim);padding:8px 12px">Sin opciones disponibles</div>';
-    const allChecked = arr.includes('__ALL__');
-    const allOpt = '<label class="filter-opt filter-opt-all">' +
-      '<input type="checkbox" value="__ALL__" ' + (allChecked ? 'checked' : '') +
-        ' onchange="toggleFilterAll(\'' + sec.key + '\', this.checked)">' +
-      '<span><strong>Ver todos</strong></span>' +
-    '</label><div style="border-top:1px solid var(--border);margin:4px 12px;"></div>';
-    const list = opts.map(function (o) {
-      const val = typeof o === 'object' ? o.val : o;
-      const lbl = typeof o === 'object' ? o.lbl : o;
-      const checked = arr.includes(val) ? 'checked' : '';
-      return '<label class="filter-opt">' +
-        '<input type="checkbox" value="' + esc(val) + '" ' + checked +
-          ' onchange="toggleFilterValue(\'' + sec.key + '\',\'' + jsEsc(val) + '\', this.checked)">' +
-        '<span>' + esc(lbl) + '</span>' +
-      '</label>';
-    }).join('');
-    return allOpt + list;
-  }
-  return '';
-}
-
-function toggleFilterAll(key, checked) {
-  pendingFilters[key] = checked ? ['__ALL__'] : [];
-  const body = document.getElementById('filter-drawer-body');
-  const section = body ? body.querySelector('.filter-section[data-key="' + key + '"]') : null;
-  if (!section) return;
-  const cfg = FILTER_CONFIGS[currentFilterScope];
-  const sec = cfg.sections.find(function (s) { return s.key === key; });
-  section.querySelector('.filter-section-body').innerHTML = renderFilterSection(sec);
-}
-
-function toggleFilterValue(key, val, checked) {
-  if (!Array.isArray(pendingFilters[key])) pendingFilters[key] = pendingFilters[key] ? [pendingFilters[key]] : [];
-  let arr = pendingFilters[key].filter(function (v) { return v !== '__ALL__'; });
-  const idx = arr.indexOf(val);
-  if (checked && idx === -1) arr.push(val);
-  else if (!checked && idx !== -1) arr.splice(idx, 1);
-  pendingFilters[key] = arr;
-  const body = document.getElementById('filter-drawer-body');
-  const section = body ? body.querySelector('.filter-section[data-key="' + key + '"]') : null;
-  if (section) { const allCb = section.querySelector('input[value="__ALL__"]'); if (allCb) allCb.checked = false; }
-}
-
-function toggleFilterSection(btn) { btn.closest('.filter-section').classList.toggle('open'); }
-function toggleFilterRadio(key, val) { pendingFilters[key] = [val]; }
-function closeFilterDrawer() { const d = document.getElementById('filter-drawer'); if (d) d.classList.remove('open'); }
-
-function applyFilters() {
-  const cfg = FILTER_CONFIGS[currentFilterScope];
-  if (!cfg) return;
-  cfg.sections.forEach(function (sec) { cfg.setValue(sec.key, pendingFilters[sec.key] || []); });
-  updateFilterBadge(currentFilterScope);
-  if (cfg.apply) cfg.apply();
-  closeFilterDrawer();
-}
-
-function clearFilters() {
-  const cfg = FILTER_CONFIGS[currentFilterScope];
-  if (!cfg) return;
-  cfg.sections.forEach(function (sec) { pendingFilters[sec.key] = []; });
-  const body = document.getElementById('filter-drawer-body');
-  const openKeys = new Set();
-  body.querySelectorAll('.filter-section.open').forEach(function (s) { openKeys.add(s.dataset.key); });
-  body.innerHTML = cfg.sections.map(function (sec) {
-    const isOpen = openKeys.has(sec.key);
-    return '<div class="filter-section ' + (isOpen ? 'open' : '') + '" data-key="' + sec.key + '">' +
-      '<button class="filter-section-head" onclick="toggleFilterSection(this)">' +
-        '<span>' + sec.title + '</span>' +
-        icoHTML('chevDown').replace('<svg', '<svg class="chev"') +
-      '</button>' +
-      '<div class="filter-section-body">' + renderFilterSection(sec) + '</div>' +
-    '</div>';
-  }).join('');
-}
-
-function updateFilterBadge(scope) {
-  const cfg = FILTER_CONFIGS[scope];
-  if (!cfg) return;
-  const badge = document.getElementById(cfg.badgeId);
-  if (!badge) return;
-  const count = cfg.sections.filter(function (sec) {
-    if (sec.noBadge) return false;
-    const v = cfg.getValue(sec.key);
-    if (!Array.isArray(v)) return v && v.toString().trim() !== '' && v !== '__ALL__';
-    return v.length > 0 && !v.includes('__ALL__');
-  }).length;
-  if (count > 0) { badge.textContent = count; badge.style.display = 'inline-flex'; }
-  else { badge.style.display = 'none'; }
-}
-
-function pasaFiltro(arr, val) {
-  if (!Array.isArray(arr) || !arr.length) return true;
-  if (arr.includes('__ALL__')) return true;
-  return arr.includes(val);
-}
-
-// Igual que pasaFiltro pero el dato es una LISTA (ej. alianza con varias provincias/etapas):
-// pasa si alguno de los valores del registro está entre los seleccionados.
-function pasaFiltroLista(arr, vals) {
-  if (!Array.isArray(arr) || !arr.length) return true;
-  if (arr.includes('__ALL__')) return true;
-  if (!Array.isArray(vals)) vals = [vals];
-  return vals.some(function (v) { return arr.includes(v); });
-}
-
-// ============================================================
-// UI HELPERS
-// ============================================================
-
-function mostrarLoading() {
-  const l = document.getElementById('screen-loading'); if (l) l.classList.remove('hidden');
-  const a = document.getElementById('screen-app');     if (a) a.classList.add('hidden');
-}
-function mostrarApp() {
-  const l = document.getElementById('screen-loading'); if (l) l.classList.add('hidden');
-  const a = document.getElementById('screen-app');     if (a) a.classList.remove('hidden');
-}
-
-function showToast(msg, dur) {
-  dur = dur || 3500;
-  const t = document.getElementById('toast');
-  if (!t) return;
-  t.textContent = msg;
-  t.classList.add('show');
-  if (showToast._tid) clearTimeout(showToast._tid);
-  showToast._tid = setTimeout(function () { t.classList.remove('show'); }, dur);
-}
-
-function abrirModal(html) {
-  cerrarModal(true);
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  overlay.id = 'modal-overlay';
-  overlay.innerHTML = html;
-  overlay.addEventListener('click', function (e) { if (e.target === overlay) cerrarModal(); });
-  document.body.appendChild(overlay);
-  overlay.querySelectorAll('.modal-close').forEach(function (el) {
-    if (!el.innerHTML.trim()) el.innerHTML = icoHTML('close');
-  });
-  setTimeout(function () {
-    const first = overlay.querySelector('input:not([readonly]):not([type="file"]), select, textarea');
-    if (first) { try { first.focus({ preventScroll: true }); } catch (e) {} }
-  }, 60);
-}
-
-function cerrarModal(immediate) {
-  const m = document.getElementById('modal-overlay');
-  if (!m) return;
-  if (immediate) { m.remove(); return; }
-  m.classList.add('closing');
-  setTimeout(function () { m.remove(); }, 200);
-}
-
-document.addEventListener('keydown', function (e) {
-  if (e.key === 'Escape') {
-    if (document.getElementById('modal-overlay')) cerrarModal();
-    else if (document.querySelector('.filter-drawer.open')) closeFilterDrawer();
-  }
-});
-
-// ============================================================
-// FORMATEO
-// ============================================================
-
-function fmtNum(n, dec) {
-  if (dec === undefined) dec = 0;
-  if (n == null || isNaN(n)) return '—';
-  return parseFloat(n).toLocaleString('es-EC', { minimumFractionDigits: dec, maximumFractionDigits: dec });
-}
-
-function fmtPct(n, dec) {
-  if (dec === undefined) dec = 0;
-  if (n == null || isNaN(n)) return '0%';
-  return parseFloat(n).toLocaleString('es-EC', { minimumFractionDigits: dec, maximumFractionDigits: dec }) + '%';
-}
-
-// Acepta dd/mm/aaaa (formato de la app de Fichas) y aaaa-mm-dd.
-function fmtFecha(f) {
-  if (!f) return '—';
-  if (typeof f === 'string' && /^\d{2}\/\d{2}\/\d{4}/.test(f)) {
-    const p = f.substring(0, 10).split('/').map(Number);
-    const dt = new Date(p[2], p[1] - 1, p[0]);
-    if (!isNaN(dt)) return dt.toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' });
-  }
-  if (typeof f === 'string' && /^\d{4}-\d{2}-\d{2}/.test(f)) {
-    const p = f.substring(0, 10).split('-').map(Number);
-    const dt = new Date(p[0], p[1] - 1, p[2]);
-    if (!isNaN(dt)) return dt.toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' });
-  }
-  const d = new Date(f);
-  return isNaN(d) ? f : d.toLocaleDateString('es-EC', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-
-function fmtFechaLarga(f) {
-  if (!f) f = new Date();
-  const d = typeof f === 'string' ? new Date(f) : f;
-  if (isNaN(d)) return '';
-  const s = d.toLocaleDateString('es-EC', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-function esc(s) {
-  if (s === null || s === undefined) return '';
-  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
-function jsEsc(s) {
-  if (s == null) return '';
-  return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\r?\n/g, '\\n');
-}
-
-function gradFromName(name) {
-  const grads = [
-    'linear-gradient(135deg,#33A8DE,#506CFF)',
-    'linear-gradient(135deg,#18AE97,#0BC3FF)',
-    'linear-gradient(135deg,#F5AD21,#9FDA60)',
-    'linear-gradient(135deg,#F82D72,#FF85FF)',
-    'linear-gradient(135deg,#FF751F,#FF376F)',
-  ];
-  const s = (name || '').trim().toLowerCase();
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
-  return grads[h % grads.length];
-}
-
-// ============================================================
-// INICIO — autenticación heredada + carga
-// ============================================================
-
-let APP_INICIADA = false;
-
-window.addEventListener('load', async function () {
-  if (!window.fb) {
-    document.body.innerHTML = '<div style="padding:40px;font-family:sans-serif;color:#555">No se pudo cargar Firebase. Revisá tu conexión e intentá de nuevo.</div>';
+  if (!asocs.length) {
+    document.getElementById('main-content').innerHTML = header +
+      '<div class="empty-state">' + icoHTML('users').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"') +
+      '<p>No hay asociaciones</p></div>';
     return;
   }
-  await window.fbReady;
 
-  window.fb.onAuthStateChanged(window.fb.auth, async function (user) {
-    var emailLower = (user && user.email) ? user.email.toLowerCase() : '';
-    var dominioOk = emailLower.endsWith('@' + DOMAIN)
-      || emailLower.endsWith('@' + DOMINIO_VISUALIZADOR)
-      || emailLower.endsWith('@' + DOMINIO_PERSONAL);
-    if (!user || !dominioOk) {
-      window.location.href = HUB_URL;
-      return;
-    }
-    if (APP_INICIADA) return;
-    const ok = await establecerSesion(user);
-    if (!ok) { window.location.href = HUB_URL; return; }
-    APP_INICIADA = true;
-    mostrarLoading();
-    await iniciarApp();
+  // Agrupar por provincia
+  const grupos = {};
+  asocs.forEach(function (a) {
+    const prov = a.provincia || 'Sin provincia';
+    (grupos[prov] = grupos[prov] || []).push(a);
   });
-});
+  const provsOrden = Object.keys(grupos).sort(function (a, b) { return a.localeCompare(b, 'es'); });
+
+  const CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
+
+  const cuerpo = provsOrden.map(function (prov) {
+    const lista = grupos[prov].slice().sort(function (a, b) { return (a.nombre || '').localeCompare(b.nombre || '', 'es'); });
+    const filas = lista.map(function (a) {
+      const n = conteo[a._docId] || 0;
+      const vacia = n === 0;
+      const pill = vacia
+        ? '<span class="asoc-pill asoc-pill-0">0</span>'
+        : '<span class="asoc-pill">' + n + '</span>';
+      return '<button class="asoc-row' + (vacia ? ' asoc-row-vacia' : '') + '" onclick="abrirAsociacionRecs(\'' + jsEsc(a._docId) + '\')">' +
+        '<span class="asoc-row-nombre">' + esc(a.nombre || '—') + '</span>' +
+        '<span class="asoc-row-right">' + pill + '<span class="asoc-row-chev">' + CHEV + '</span></span>' +
+      '</button>';
+    }).join('');
+    return '<div class="asoc-grupo">' +
+      '<div class="asoc-grupo-titulo">' + esc(prov) + '</div>' +
+      '<div class="asoc-grupo-lista">' + filas + '</div>' +
+    '</div>';
+  }).join('');
+
+  document.getElementById('main-content').innerHTML = header + '<div class="asoc-provs">' + cuerpo + '</div>';
+}
+
+function abrirAsociacionRecs(docId) {
+  RECS_ASOC_SEL = docId;
+  RECS_VISTA = 'lista';
+  renderVistaRecs();
+}
+
+function volverAAsociaciones() {
+  RECS_ASOC_SEL = null;
+  RECS_VISTA = 'asociaciones';
+  renderVistaRecs();
+}
+
+// ── Nivel 2: lista de recicladores de la asociación ──
+function renderListaAsociacion() {
+  const asoc = _buscarAsoc(RECS_ASOC_SEL);
+  const nombre = asoc ? (asoc.nombre || '—') : '—';
+  const add = puedeEditar();
+  RECS_DATA = _recsDeAsociacion(RECS_ASOC_SEL);
+
+  const BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>';
+
+  const header =
+    '<div class="page-header">' +
+      '<div>' +
+        '<div class="rec-title-row">' +
+          '<button class="rec-back" onclick="volverAAsociaciones()" title="Volver a asociaciones">' + BACK + '</button>' +
+          '<div class="rec-asoc-info">' +
+            '<div class="rec-asoc-nombre">' + esc(nombre) + '</div>' +
+            '<div class="rec-asoc-conteo">' + RECS_DATA.length + ' reciclador' + (RECS_DATA.length !== 1 ? 'es' : '') + '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="hdr-actions">' +
+        '<button class="hdr-circle" onclick="exportarRecicladoresExcel()" title="Descargar Excel">' + icoHTML('download') + '</button>' +
+        (add ? '<button class="hdr-circle hdr-circle-primary" onclick="abrirFormReciclador(null,\'' + jsEsc(RECS_ASOC_SEL) + '\')" title="Nuevo reciclador">' + icoHTML('plus') + '</button>' : '') +
+      '</div>' +
+    '</div>' +
+    '<div id="recs-wrap"></div>';
+
+  document.getElementById('main-content').innerHTML = header;
+  renderTablaRecicladores();
+}
+
+function renderTablaRecicladores() {
+  const wrap = document.getElementById('recs-wrap');
+  if (!wrap) return;
+  if (!RECS_DATA.length) {
+    wrap.innerHTML = '<div class="empty-state">' +
+      icoHTML('users').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"') +
+      '<p>No hay recicladores con estos filtros</p></div>';
+    return;
+  }
+  const edit = puedeEditar();
+  const acciones = function (r) {
+    const docId = jsEsc(r._docId || '');
+    const carpeta = jsEsc(r.carpeta_id || '');
+    return (carpeta ? '<button class="icon-btn" onclick="window.open(\'https://drive.google.com/drive/folders/' + carpeta + '\',\'_blank\')" title="Carpeta">' + icoHTML('folder') + '</button>' : '') +
+      '<button class="icon-btn" onclick="verReciclador(\'' + docId + '\')" title="Ver ficha">' + icoHTML('view') + '</button>' +
+      (edit ? '<button class="icon-btn primary" onclick="editarReciclador(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' +
+        '<button class="icon-btn del" onclick="confirmarEliminarReciclador(\'' + docId + '\',\'' + carpeta + '\')" title="Eliminar">' + icoHTML('trash') + '</button>' : '');
+  };
+
+  // Tabla (desktop)
+  const filas = RECS_DATA.map(function (r) {
+    const docId = jsEsc(r._docId || '');
+    return '<tr>' +
+      '<td><a class="rec-nombre" onclick="verReciclador(\'' + docId + '\')">' + esc(r.nombres_apellidos || '—') + '</a></td>' +
+      '<td>' + fmtFecha(r.fecha_nacimiento) + '</td>' +
+      '<td>' + esc(r.celular || '—') + '</td>' +
+      '<td data-actions-row><div class="td-actions">' + acciones(r) + '</div></td>' +
+    '</tr>';
+  }).join('');
+  const tabla = '<div class="table-wrap rec-desk"><table>' +
+    '<thead><tr><th>Nombre y apellidos</th><th>Fecha de nacimiento</th><th>Celular</th><th></th></tr></thead>' +
+    '<tbody>' + filas + '</tbody></table></div>';
+
+  // Tarjetas (móvil)
+  const cards = RECS_DATA.map(function (r) {
+    const docId = jsEsc(r._docId || '');
+    return '<div class="rec-card">' +
+      '<a class="rec-card-nombre" onclick="verReciclador(\'' + docId + '\')">' + esc(r.nombres_apellidos || '—') + '</a>' +
+      '<div class="rec-card-grid">' +
+        '<div class="rec-cell"><span class="rec-mini">Nacimiento</span><b>' + fmtFecha(r.fecha_nacimiento) + '</b></div>' +
+        '<div class="rec-cell"><span class="rec-mini">Celular</span><b>' + esc(r.celular || '—') + '</b></div>' +
+      '</div>' +
+      '<div class="rec-foot"><div class="td-actions">' + acciones(r) + '</div></div>' +
+    '</div>';
+  }).join('');
+  const cardsWrap = '<div class="rec-mob">' + cards + '</div>';
+
+  wrap.innerHTML = tabla + cardsWrap +
+    '<div style="font-size:12px;color:var(--text-dim);text-align:right;margin-top:10px">' + RECS_DATA.length + ' registro' + (RECS_DATA.length !== 1 ? 's' : '') + '</div>';
+}
+
+// ── Ver ficha (clic en el nombre) ──
+function verReciclador(docId) {
+  const r = CAT.recicladores.find(function (x) { return x._docId === docId; });
+  if (!r) { showToast('Ficha no encontrada'); return; }
+  const prov = provinciaDeReciclador(r);
+  const dato = function (lbl, val) {
+    return '<div class="rf-row"><span class="rf-lbl">' + esc(lbl) + '</span><span class="rf-val">' + (val ? esc(val) : '—') + '</span></div>';
+  };
+  const sino = function (b) { return b ? 'Sí' : 'No'; };
+  const foto = function (urlOrId, titulo) {
+    const src = driveImgSrc(urlOrId, 600);
+    const inner = src
+      ? '<img src="' + src + '" alt="' + esc(titulo) + '" loading="lazy" onerror="this.parentNode.classList.add(\'rf-foto-fail\');this.remove();">'
+      : '';
+    return '<div class="rf-foto">' + inner + '<span class="rf-foto-cap">' + esc(titulo) + '</span></div>';
+  };
+
+  abrirModal(
+    '<div class="modal modal-lg">' +
+      '<div class="modal-head"><div><div class="modal-title">' + esc(r.nombres_apellidos || 'Reciclador') + '</div>' +
+        '<div class="modal-sub">' + esc(r.asociacion_nombre || nombreDeAsociacion(r.id_asociacion) || '—') + (prov ? ' · ' + esc(prov) : '') + '</div></div>' +
+        '<button class="modal-close" onclick="cerrarModal()"></button></div>' +
+      '<div class="modal-body">' +
+        '<div class="rf-grid">' +
+          dato('Sexo', r.sexo) +
+          dato('Cédula', r.cedula) +
+          dato('Fecha de nacimiento', fmtFecha(r.fecha_nacimiento)) +
+          dato('Asociación', r.asociacion_nombre || nombreDeAsociacion(r.id_asociacion)) +
+          dato('Fecha de afiliación', fmtFecha(r.fecha_afiliacion)) +
+          dato('Provincia', prov) +
+          dato('Domicilio', r.domicilio) +
+          dato('Celular', r.celular) +
+          dato('Cargas familiares', fmtNum(r.cargas_familiares)) +
+          dato('RUC', sino(r.ruc)) +
+          dato('Cuenta bancaria', sino(r.cuenta_bancaria)) +
+          dato('Certificación SECAP', sino(r.certificacion_secap)) +
+        '</div>' +
+        '<div class="rf-fotos">' +
+          foto(r.foto_perfil_id || r.foto_perfil_url, 'Foto de perfil') +
+          foto(r.foto_cedula_anverso_id || r.foto_cedula_anverso_url, 'Cédula (anverso)') +
+          foto(r.foto_cedula_reverso_id || r.foto_cedula_reverso_url, 'Cédula (reverso)') +
+        '</div>' +
+      '</div>' +
+      '<div class="modal-foot">' +
+        (r.carpeta_id ? '<a class="btn btn-glass" href="' + urlCarpeta(r.carpeta_id) + '" target="_blank" rel="noopener">Carpeta de Drive ↗</a>' : '') +
+        '<button class="btn btn-primary" id="rec-pdf-btn" onclick="descargarRecicladorPDF(\'' + jsEsc(docId) + '\')">' + icoHTML('download') + ' Descargar PDF</button>' +
+      '</div>' +
+    '</div>'
+  );
+}
+
+// ── Formulario (crear / editar) ──
+function editarReciclador(docId) { abrirFormReciclador(docId); }
+
+function abrirFormReciclador(docId, presetAsoc) {
+  docId = docId || null;
+  const r = docId ? CAT.recicladores.find(function (x) { return x._docId === docId; }) : null;
+  const editing = !!r;
+
+  const asocSel = r ? r.id_asociacion : (presetAsoc || '');
+  const asocOpts = '<option value="">Seleccioná una asociación…</option>' + CAT.asocAmbiente.map(function (a) {
+    return '<option value="' + esc(a._docId) + '"' + (asocSel === a._docId ? ' selected' : '') + '>' + esc(a.nombre) + '</option>';
+  }).join('');
+  const sexoOpts = '<option value="">—</option>' + SEXOS.map(function (s) {
+    return '<option value="' + s + '"' + (r && r.sexo === s ? ' selected' : '') + '>' + s + '</option>';
+  }).join('');
+
+  const fotoInput = function (campo, label, urlActual) {
+    const prev = urlActual ? '<a href="' + urlCarpeta(0) + '" onclick="return false" class="rec-foto-actual"><img src="' + driveImgSrc(urlActual, 200) + '" onerror="this.remove()"> foto actual</a>' : '<span class="rec-foto-none">sin foto</span>';
+    return '<div class="form-group"><label class="form-label">' + esc(label) + '</label>' +
+      '<input type="file" accept="image/*" class="form-input rec-file" id="' + campo + '">' +
+      '<div class="rec-foto-hint">' + (editing ? prev + ' · dejá vacío para conservarla' : 'Opcional') + '</div></div>';
+  };
+
+  abrirModal(
+    '<div class="modal modal-lg">' +
+      '<div class="modal-head"><div><div class="modal-title">' + (editing ? 'Editar' : 'Nuevo') + ' reciclador</div>' +
+        '<div class="modal-sub">Ficha de registro</div></div>' +
+        '<button class="modal-close" onclick="cerrarModal()"></button></div>' +
+      '<div class="modal-body">' +
+        '<div class="form-grid-2">' +
+          '<div class="form-group" style="grid-column:1/-1"><label class="form-label">Nombres y apellidos *</label>' +
+            '<input type="text" class="form-input" id="rec-nombre" value="' + esc(r ? r.nombres_apellidos : '') + '" placeholder="Nombre completo"></div>' +
+          '<div class="form-group"><label class="form-label">Asociación</label><select class="form-select" id="rec-asoc">' + asocOpts + '</select></div>' +
+          '<div class="form-group"><label class="form-label">Sexo</label><select class="form-select" id="rec-sexo">' + sexoOpts + '</select></div>' +
+          '<div class="form-group"><label class="form-label">Cédula</label><input type="text" class="form-input" id="rec-cedula" maxlength="10" value="' + esc(r ? r.cedula : '') + '"></div>' +
+          '<div class="form-group"><label class="form-label">Celular</label><input type="text" class="form-input" id="rec-celular" maxlength="10" value="' + esc(r ? r.celular : '') + '"></div>' +
+          '<div class="form-group"><label class="form-label">Fecha de nacimiento</label><input type="date" class="form-input" id="rec-nac" value="' + _dmyToIso(r ? r.fecha_nacimiento : '') + '"></div>' +
+          '<div class="form-group"><label class="form-label">Fecha de afiliación</label><input type="date" class="form-input" id="rec-afi" value="' + _dmyToIso(r ? r.fecha_afiliacion : '') + '"></div>' +
+          '<div class="form-group" style="grid-column:1/-1"><label class="form-label">Domicilio</label><input type="text" class="form-input" id="rec-domicilio" value="' + esc(r ? r.domicilio : '') + '"></div>' +
+          '<div class="form-group"><label class="form-label">Cargas familiares</label><input type="number" class="form-input" id="rec-cargas" min="0" step="1" value="' + (r ? r.cargas_familiares : '') + '"></div>' +
+        '</div>' +
+        '<div style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap">' +
+          _sinoRec('rec-ruc', 'Tiene RUC', r ? r.ruc : false) +
+          _sinoRec('rec-cuenta', 'Cuenta bancaria', r ? r.cuenta_bancaria : false) +
+          _sinoRec('rec-secap', '¿Tiene certificación del SECAP?', r ? r.certificacion_secap : false) +
+        '</div>' +
+        '<div class="form-label" style="margin:18px 0 8px">Fotografías</div>' +
+        '<div class="form-grid-2">' +
+          fotoInput('rec-foto-perfil', 'Foto de perfil', r ? (r.foto_perfil_id || r.foto_perfil_url) : '') +
+          fotoInput('rec-foto-anverso', 'Cédula (anverso)', r ? (r.foto_cedula_anverso_id || r.foto_cedula_anverso_url) : '') +
+          fotoInput('rec-foto-reverso', 'Cédula (reverso)', r ? (r.foto_cedula_reverso_id || r.foto_cedula_reverso_url) : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="modal-foot">' +
+        '<button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>' +
+        '<button class="btn btn-primary" id="rec-save-btn" onclick="guardarReciclador(' + (docId ? '\'' + jsEsc(docId) + '\'' : 'null') + ')">Guardar</button>' +
+      '</div>' +
+    '</div>'
+  );
+}
+
+function _sinoRec(id, label, checked) {
+  return '<label class="sino-row" style="flex:1"><span>' + esc(label) + '</span>' +
+    '<span class="sino-switch"><input type="checkbox" id="' + id + '"' + (checked ? ' checked' : '') + '><span class="sino-slider"></span></span></label>';
+}
+
+// dd/mm/aaaa  ⇄  aaaa-mm-dd
+function _dmyToIso(dmy) {
+  if (!dmy) return '';
+  const m = String(dmy).match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  if (m) return m[3] + '-' + m[2] + '-' + m[1];
+  if (/^\d{4}-\d{2}-\d{2}/.test(dmy)) return String(dmy).substring(0, 10);
+  return '';
+}
+function _isoToDmy(iso) {
+  if (!iso) return '';
+  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? (m[3] + '/' + m[2] + '/' + m[1]) : String(iso);
+}
+
+// ── Guardar (escribe directo a Firestore; fotos a Drive) ──
+async function guardarReciclador(docId) {
+  const nombre = ((document.getElementById('rec-nombre') || {}).value || '').trim();
+  if (!nombre) { showToast('El nombre es obligatorio'); return; }
+  const idAsoc = (document.getElementById('rec-asoc') || {}).value || '';
+
+  const actual = docId ? CAT.recicladores.find(function (x) { return x._docId === docId; }) : null;
+  const asocNombre = idAsoc ? nombreDeAsociacion(idAsoc) : (actual ? actual.asociacion_nombre : '');
+
+  const o = {
+    id_asociacion:           idAsoc || (actual ? actual.id_asociacion : ''),
+    asociacion_nombre:       asocNombre,
+    nombres_apellidos:       nombre,
+    sexo:                    (document.getElementById('rec-sexo') || {}).value || '',
+    cedula:                  ((document.getElementById('rec-cedula') || {}).value || '').trim(),
+    fecha_nacimiento:        _isoToDmy((document.getElementById('rec-nac') || {}).value || ''),
+    fecha_afiliacion:        _isoToDmy((document.getElementById('rec-afi') || {}).value || ''),
+    domicilio:               ((document.getElementById('rec-domicilio') || {}).value || '').trim(),
+    celular:                 ((document.getElementById('rec-celular') || {}).value || '').trim(),
+    cargas_familiares:       (document.getElementById('rec-cargas') || {}).value || 0,
+    ruc:                     !!(document.getElementById('rec-ruc') || {}).checked,
+    cuenta_bancaria:         !!(document.getElementById('rec-cuenta') || {}).checked,
+    certificacion_secap:     !!(document.getElementById('rec-secap') || {}).checked,
+    foto_perfil_url:         actual ? actual.foto_perfil_url : '',
+    foto_cedula_anverso_url: actual ? actual.foto_cedula_anverso_url : '',
+    foto_cedula_reverso_url: actual ? actual.foto_cedula_reverso_url : '',
+    foto_perfil_id:          actual ? actual.foto_perfil_id : '',
+    foto_cedula_anverso_id:  actual ? actual.foto_cedula_anverso_id : '',
+    foto_cedula_reverso_id:  actual ? actual.foto_cedula_reverso_id : '',
+    carpeta_id:              actual ? actual.carpeta_id : '',
+  };
+
+  if (r_cedulaInvalida(o.cedula)) { showToast('La cédula debe tener 10 dígitos'); return; }
+
+  const btn = document.getElementById('rec-save-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
+
+  // Fotos nuevas seleccionadas
+  const fPerfil = _archivo('rec-foto-perfil');
+  const fAnverso = _archivo('rec-foto-anverso');
+  const fReverso = _archivo('rec-foto-reverso');
+  const hayFotosNuevas = !!(fPerfil || fAnverso || fReverso);
+
+  // Drive: carpeta + subida (si hay token)
+  const tok = driveToken();
+  if (tok) {
+    try {
+      if (!o.carpeta_id) {
+        const carpAsoc = await driveBuscarOCrear(asocNombre || 'Sin asociación', DRIVE_PARENTS.recicladores, tok);
+        o.carpeta_id = await driveBuscarOCrear(nombre, carpAsoc, tok);
+      }
+      if (hayFotosNuevas) {
+        const ts = Date.now();
+        if (fPerfil)  { const up = await driveSubirArchivo(await comprimirImagen(fPerfil),  'perfil_' + ts + '.jpg',         o.carpeta_id, tok); o.foto_perfil_url = up.webViewLink; o.foto_perfil_id = up.id; }
+        if (fAnverso) { const up = await driveSubirArchivo(await comprimirImagen(fAnverso), 'cedula_anverso_' + ts + '.jpg', o.carpeta_id, tok); o.foto_cedula_anverso_url = up.webViewLink; o.foto_cedula_anverso_id = up.id; }
+        if (fReverso) { const up = await driveSubirArchivo(await comprimirImagen(fReverso), 'cedula_reverso_' + ts + '.jpg', o.carpeta_id, tok); o.foto_cedula_reverso_url = up.webViewLink; o.foto_cedula_reverso_id = up.id; }
+      }
+    } catch (e) {
+      console.warn('Drive reciclador:', e);
+      showToast('No se pudieron subir las fotos (se guarda el resto)');
+    }
+  } else if (hayFotosNuevas || !o.carpeta_id) {
+    showToast('Sesión de Drive expirada: se guarda sin carpeta/fotos');
+  }
+
+  const fs = recicladorToFS(o);
+  fs.actualizado_en = new Date();
+  let r;
+  if (docId) {
+    r = await fsWrite(function () { return window.fb.setDoc(fsDoc('recicladores', docId), fs, { merge: true }); });
+    if (r.ok) { const i = CAT.recicladores.findIndex(function (x) { return x._docId === docId; }); if (i >= 0) CAT.recicladores[i] = recicladorFromFS(Object.assign({ _docId: docId }, fs)); }
+  } else {
+    fs.creado_en = new Date();
+    fs.creado_por = SESSION ? SESSION.email : '';
+    const ref = window.fb.doc(fsCol('recicladores'));
+    r = await fsWrite(function () { return window.fb.setDoc(ref, fs); });
+    if (r.ok) CAT.recicladores.push(recicladorFromFS(Object.assign({ _docId: ref.id }, fs)));
+  }
+
+  if (!r.ok) { showToast('Error al guardar: ' + (r.error || '')); if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; } return; }
+  showToast(r.offline ? 'Guardado (se sincronizará) ✓' : 'Guardado ✓');
+  cerrarModal();
+  cargarRecicladores();
+}
+
+function _archivo(id) { const el = document.getElementById(id); return (el && el.files && el.files[0]) ? el.files[0] : null; }
+function r_cedulaInvalida(c) { return !!c && !/^\d{10}$/.test(c); }
+
+// Comprime y reescala una imagen a JPEG (máx ~1280px). Devuelve Blob.
+function comprimirImagen(file, maxLado, calidad) {
+  maxLado = maxLado || 1280; calidad = calidad || 0.82;
+  return new Promise(function (resolve) {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = function () {
+      let w = img.width, h = img.height;
+      if (w > h && w > maxLado) { h = Math.round(h * maxLado / w); w = maxLado; }
+      else if (h >= w && h > maxLado) { w = Math.round(w * maxLado / h); h = maxLado; }
+      const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+      cv.getContext('2d').drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      cv.toBlob(function (b) { resolve(b || file); }, 'image/jpeg', calidad);
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+
+// ── Eliminar (registro + papelera de la carpeta de Drive) ──
+function confirmarEliminarReciclador(docId, carpetaId) {
+  abrirModal(
+    '<div class="modal" style="max-width:440px">' +
+      '<div class="modal-head"><div class="modal-title">Eliminar reciclador</div>' +
+        '<button class="modal-close" onclick="cerrarModal()"></button></div>' +
+      '<div class="modal-body"><p style="color:var(--text-muted);font-size:14px;line-height:1.6">' +
+        'Se eliminará el registro y su carpeta de Drive (con las fotos) se enviará a la papelera. Esto afecta también a la app de Fichas. ¿Continuar?' +
+      '</p></div>' +
+      '<div class="modal-foot">' +
+        '<button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>' +
+        '<button class="btn btn-danger" onclick="eliminarReciclador(\'' + jsEsc(docId) + '\',\'' + jsEsc(carpetaId) + '\')">Eliminar</button>' +
+      '</div>' +
+    '</div>'
+  );
+}
+
+async function eliminarReciclador(docId, carpetaId) {
+  if (!docId) { showToast('No se encontró la ficha'); return; }
+  if (carpetaId) {
+    const tok = driveToken();
+    if (tok) { try { await driveEliminarCarpeta(carpetaId, tok); } catch (e) { console.warn('Drive papelera reciclador:', e); } }
+  }
+  const r = await fsWrite(function () { return window.fb.deleteDoc(fsDoc('recicladores', docId)); });
+  if (!r.ok) { showToast('Error al eliminar: ' + (r.error || '')); return; }
+  CAT.recicladores = CAT.recicladores.filter(function (x) { return x._docId !== docId; });
+  showToast(r.offline ? 'Eliminado (se sincronizará) ✓' : 'Reciclador eliminado ✓');
+  cerrarModal();
+  cargarRecicladores();
+}
+
+// ── PDF de la ficha (con fotos) ──
+async function descargarRecicladorPDF(docId) {
+  const r = CAT.recicladores.find(function (x) { return x._docId === docId; });
+  if (!r) { showToast('Ficha no encontrada'); return; }
+  const btn = document.getElementById('rec-pdf-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Generando…'; }
+  try {
+    await cargarJsPDF();
+    const tok = driveToken();
+    // Descarga las imágenes como dataURL (vía Drive API con token).
+    const imgs = {};
+    if (tok) {
+      const pares = [['perfil', r.foto_perfil_id || r.foto_perfil_url], ['anverso', r.foto_cedula_anverso_id || r.foto_cedula_anverso_url], ['reverso', r.foto_cedula_reverso_id || r.foto_cedula_reverso_url]];
+      for (let i = 0; i < pares.length; i++) {
+        try { imgs[pares[i][0]] = await _imagenDataURL(pares[i][1], tok); } catch (e) { imgs[pares[i][0]] = null; }
+      }
+    }
+    _construirPDF(r, imgs);
+    showToast('PDF generado ✓');
+  } catch (e) {
+    console.error('PDF:', e);
+    showToast('No se pudo generar el PDF');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = icoHTML('download') + ' Descargar PDF'; }
+  }
+}
+
+async function _imagenDataURL(urlOrId, token) {
+  const m = String(urlOrId || '').match(/[-\w]{25,}/);
+  if (!m) return null;
+  const r = await fetch('https://www.googleapis.com/drive/v3/files/' + m[0] + '?alt=media&supportsAllDrives=true', { headers: { Authorization: 'Bearer ' + token } });
+  if (!r.ok) return null;
+  const blob = await r.blob();
+  return await new Promise(function (res) { const fr = new FileReader(); fr.onload = function () { res(fr.result); }; fr.onerror = function () { res(null); }; fr.readAsDataURL(blob); });
+}
+
+function _construirPDF(r, imgs) {
+  const jsPDF = window.jspdf.jsPDF;
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const W = doc.internal.pageSize.getWidth();
+  const M = 40;
+  let y = M;
+
+  // Encabezado
+  doc.setFillColor(0, 35, 67); doc.rect(0, 0, W, 70, 'F');
+  doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(16);
+  doc.text('Ficha de Reciclador', M, 34);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
+  doc.text('ReCircula 360 · Redes Con Rostro', M, 52);
+  y = 96;
+
+  doc.setTextColor(20, 20, 20); doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
+  doc.text(r.nombres_apellidos || 'Reciclador', M, y); y += 22;
+
+  const prov = provinciaDeReciclador(r);
+  const sino = function (b) { return b ? 'Sí' : 'No'; };
+  const filas = [
+    ['Sexo', r.sexo || '—'],
+    ['Cédula', r.cedula || '—'],
+    ['Fecha de nacimiento', fmtFecha(r.fecha_nacimiento)],
+    ['Asociación', r.asociacion_nombre || nombreDeAsociacion(r.id_asociacion) || '—'],
+    ['Provincia', prov || '—'],
+    ['Fecha de afiliación', fmtFecha(r.fecha_afiliacion)],
+    ['Domicilio', r.domicilio || '—'],
+    ['Celular', r.celular || '—'],
+    ['Cargas familiares', String(r.cargas_familiares != null ? r.cargas_familiares : '—')],
+    ['RUC', sino(r.ruc)],
+    ['Cuenta bancaria', sino(r.cuenta_bancaria)],
+  ];
+  doc.setFontSize(11);
+  filas.forEach(function (f) {
+    doc.setFont('helvetica', 'bold'); doc.setTextColor(90, 90, 90);
+    doc.text(f[0], M, y);
+    doc.setFont('helvetica', 'normal'); doc.setTextColor(20, 20, 20);
+    doc.text(String(f[1]), M + 150, y);
+    y += 20;
+  });
+
+  // Fotos
+  y += 10;
+  doc.setFont('helvetica', 'bold'); doc.setTextColor(90, 90, 90); doc.setFontSize(11);
+  doc.text('Fotografías', M, y); y += 12;
+
+  const cellW = (W - M * 2 - 20) / 3;
+  const cellH = cellW * 0.75;
+  const pies = ['Perfil', 'Cédula (anverso)', 'Cédula (reverso)'];
+  const claves = ['perfil', 'anverso', 'reverso'];
+  claves.forEach(function (k, i) {
+    const x = M + i * (cellW + 10);
+    doc.setDrawColor(220, 220, 228); doc.setFillColor(245, 245, 249);
+    doc.rect(x, y, cellW, cellH, 'FD');
+    if (imgs && imgs[k]) {
+      try { doc.addImage(imgs[k], 'JPEG', x + 4, y + 4, cellW - 8, cellH - 8, undefined, 'FAST'); }
+      catch (e) {}
+    } else {
+      doc.setTextColor(150, 150, 150); doc.setFont('helvetica', 'normal'); doc.setFontSize(9);
+      doc.text('Sin imagen', x + cellW / 2, y + cellH / 2, { align: 'center' });
+    }
+    doc.setTextColor(90, 90, 90); doc.setFontSize(9);
+    doc.text(pies[i], x, y + cellH + 12);
+  });
+
+  const nomArch = (r.nombres_apellidos || 'reciclador').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_');
+  doc.save('Ficha_' + nomArch + '.pdf');
+}
+
+// ── Exportar Excel (respeta filtros) ──
+async function exportarRecicladoresExcel() {
+  if (!_hayFiltroRecs()) { showToast('Aplicá un filtro primero.'); return; }
+  if (!RECS_DATA.length) { showToast('No hay datos para exportar.'); return; }
+  try {
+    await cargarSheetJS();
+    if (!window.XLSX) { showToast('No se pudo cargar el exportador'); return; }
+    const sino = function (b) { return b ? 'Sí' : 'No'; };
+    const header = ['Nombres y Apellidos', 'Sexo', 'Cédula', 'Fecha Nacimiento', 'Asociación', 'Provincia', 'Fecha Afiliación', 'Domicilio', 'Celular', 'Cargas Familiares', 'RUC', 'Cuenta Bancaria'];
+    const filas = RECS_DATA.map(function (r) {
+      return [r.nombres_apellidos, r.sexo, r.cedula, r.fecha_nacimiento, r.asociacion_nombre || nombreDeAsociacion(r.id_asociacion),
+        provinciaDeReciclador(r), r.fecha_afiliacion, r.domicilio, r.celular, parseFloat(r.cargas_familiares) || 0, sino(r.ruc), sino(r.cuenta_bancaria)];
+    });
+    const ws = XLSX.utils.aoa_to_sheet([header].concat(filas));
+    ws['!cols'] = [{ wch: 28 }, { wch: 11 }, { wch: 13 }, { wch: 15 }, { wch: 26 }, { wch: 14 }, { wch: 15 }, { wch: 26 }, { wch: 12 }, { wch: 10 }, { wch: 7 }, { wch: 14 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Recicladores');
+    XLSX.writeFile(wb, 'Recicladores_' + new Date().toISOString().substring(0, 10) + '.xlsx');
+    showToast('Excel descargado ✓');
+  } catch (e) { console.error('export recicladores:', e); showToast('Error al exportar'); }
+}
+
+// ── Estilos propios ──
+(function () {
+  if (document.getElementById('recs-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'recs-styles';
+  s.textContent = `
+    .modal-lg { max-width:680px; }
+
+    .rec-nombre, .rec-card-nombre { color:#2f5bd0; font-weight:600; cursor:pointer; text-decoration:none; }
+    .rec-nombre:hover, .rec-card-nombre:hover { text-decoration:underline; }
+
+    .recs-hint { text-align:center; padding:60px 24px; color:var(--text-muted); }
+    .recs-hint-ico { color:var(--text-dim); opacity:.5; margin-bottom:14px; }
+    .recs-hint-txt { font-size:16px; font-weight:700; color:var(--text); }
+    .recs-hint-sub { font-size:13px; color:var(--text-dim); margin-top:6px; }
+
+    /* Ficha */
+    .rf-grid { display:grid; grid-template-columns:1fr 1fr; gap:0 24px; }
+    .rf-row { display:flex; justify-content:space-between; gap:12px; padding:9px 0; border-bottom:1px solid var(--border); font-size:13px; }
+    .rf-lbl { color:var(--text-muted); font-weight:600; }
+    .rf-val { color:var(--text); font-weight:600; text-align:right; }
+    .rf-fotos { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:18px; }
+    .rf-foto { position:relative; aspect-ratio:4/3; background:#f2f2f7; border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+    .rf-foto img { width:100%; height:100%; object-fit:cover; }
+    .rf-foto-fail::after { content:'Sin imagen'; color:var(--text-dim); font-size:11px; }
+    .rf-foto-cap { position:absolute; left:0; right:0; bottom:0; background:rgba(0,0,0,.55); color:#fff; font-size:10px; padding:3px 6px; text-align:center; }
+
+    /* Form fotos */
+    .rec-file { padding:8px; }
+    .rec-foto-hint { font-size:11px; color:var(--text-dim); margin-top:5px; display:flex; align-items:center; gap:6px; }
+    .rec-foto-actual { display:inline-flex; align-items:center; gap:5px; color:var(--text-muted); }
+    .rec-foto-actual img { width:22px; height:22px; object-fit:cover; border-radius:4px; }
+    .rec-foto-none { color:var(--text-dim); }
+
+    /* Switch Sí/No */
+    .sino-row { display:flex; align-items:center; justify-content:space-between; padding:11px 14px; border:1.5px solid var(--border); border-radius:12px; font-size:14px; color:var(--text); }
+    .sino-switch { position:relative; width:44px; height:24px; flex-shrink:0; }
+    .sino-switch input { opacity:0; width:0; height:0; position:absolute; }
+    .sino-slider { position:absolute; inset:0; background:#d7d7e0; border-radius:24px; transition:.2s; cursor:pointer; }
+    .sino-slider::before { content:""; position:absolute; width:18px; height:18px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.2s; box-shadow:0 1px 2px rgba(0,0,0,.2); }
+    .sino-switch input:checked + .sino-slider { background-image:var(--grad-c); }
+    .sino-switch input:checked + .sino-slider::before { transform:translateX(20px); }
+
+    /* Tarjetas móviles */
+    .rec-mob { display:none; flex-direction:column; gap:12px; }
+    .rec-card { background:var(--surface); border-radius:20px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.04); }
+    .rec-card-nombre { font-size:16px; display:inline-block; }
+    .rec-card-grid { display:flex; gap:10px; margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
+    .rec-cell { flex:1; display:flex; flex-direction:column; gap:5px; }
+    .rec-cell b { font-size:14px; font-weight:700; color:var(--text); }
+    .rec-mini { font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.5px; }
+    .rec-foot { display:flex; justify-content:flex-end; margin-top:14px; }
+
+    /* Nivel 1: asociaciones agrupadas por provincia */
+    .asoc-provs { display:flex; flex-direction:column; gap:18px; }
+    .asoc-grupo-titulo {
+      font-size:11px; font-weight:700; color:var(--text-dim);
+      text-transform:uppercase; letter-spacing:.6px; margin-bottom:7px; padding-left:2px;
+    }
+    .asoc-grupo-lista { background:var(--surface); border:1px solid var(--border); border-radius:14px; overflow:hidden; }
+    .asoc-row {
+      display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%;
+      background:none; border:none; border-bottom:1px solid var(--border);
+      padding:13px 16px; cursor:pointer; font-family:inherit; text-align:left;
+      transition:background .13s;
+    }
+    .asoc-row:last-child { border-bottom:none; }
+    .asoc-row:hover { background:rgba(80,108,255,.05); }
+    .asoc-row-nombre { font-size:14px; color:var(--text); line-height:1.35; }
+    .asoc-row-vacia .asoc-row-nombre { color:var(--text-muted); }
+    .asoc-row-right { display:flex; align-items:center; gap:11px; flex-shrink:0; }
+    .asoc-pill {
+      background:rgba(80,108,255,.12); color:#506CFF; font-size:12px; font-weight:700;
+      min-width:26px; height:22px; padding:0 8px; border-radius:20px;
+      display:inline-flex; align-items:center; justify-content:center;
+    }
+    .asoc-pill-0 { background:rgba(0,0,0,.05); color:var(--text-dim); font-weight:600; }
+    .asoc-row-chev { color:var(--text-dim); display:inline-flex; transition:transform .13s; }
+    .asoc-row-chev svg { width:18px; height:18px; }
+    .asoc-row:hover .asoc-row-chev { transform:translateX(3px); color:#506CFF; }
+
+    /* Nivel 2: breadcrumb + volver */
+    .rec-breadcrumb { font-size:12.5px; color:var(--text-muted); margin-bottom:6px; }
+    .rec-breadcrumb a { color:#506CFF; cursor:pointer; font-weight:600; }
+    .rec-breadcrumb a:hover { text-decoration:underline; }
+    .rec-title-row { display:flex; align-items:center; gap:12px; }
+    .rec-asoc-info { min-width:0; }
+    .rec-asoc-nombre { font-size:17px; font-weight:700; color:var(--text); line-height:1.3; }
+    .rec-asoc-conteo { font-size:12.5px; color:var(--text-muted); margin-top:2px; }
+    .rec-back {
+      width:34px; height:34px; border-radius:10px; flex-shrink:0; border:1px solid var(--border);
+      background:var(--surface); color:var(--text-muted); cursor:pointer;
+      display:flex; align-items:center; justify-content:center; transition:background .15s, color .15s;
+    }
+    .rec-back:hover { background:rgba(80,108,255,.08); color:#506CFF; }
+    .rec-back svg { width:18px; height:18px; }
+
+    @media (max-width:768px) {
+      .rec-desk { display:none; }
+      .rec-mob { display:flex; }
+      .rf-grid { grid-template-columns:1fr; }
+      .rf-fotos { grid-template-columns:1fr; }
+    }
+  `;
+  document.head.appendChild(s);
+})();
