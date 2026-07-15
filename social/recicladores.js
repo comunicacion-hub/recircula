@@ -165,7 +165,6 @@ function renderListaAsociacion() {
   const header =
     '<div class="page-header">' +
       '<div>' +
-        '<div class="rec-breadcrumb"><a onclick="volverAAsociaciones()">Asociaciones</a> / <span>' + esc(nombre) + '</span></div>' +
         '<div class="rec-title-row">' +
           '<button class="rec-back" onclick="volverAAsociaciones()" title="Volver a asociaciones">' + BACK + '</button>' +
           '<div class="page-title">' + esc(nombre) + '</div>' +
@@ -269,6 +268,7 @@ function verReciclador(docId) {
           dato('Cargas familiares', fmtNum(r.cargas_familiares)) +
           dato('RUC', sino(r.ruc)) +
           dato('Cuenta bancaria', sino(r.cuenta_bancaria)) +
+          dato('Certificación SECAP', sino(r.certificacion_secap)) +
         '</div>' +
         '<div class="rf-fotos">' +
           foto(r.foto_perfil_id || r.foto_perfil_url, 'Foto de perfil') +
@@ -325,9 +325,10 @@ function abrirFormReciclador(docId, presetAsoc) {
           '<div class="form-group" style="grid-column:1/-1"><label class="form-label">Domicilio</label><input type="text" class="form-input" id="rec-domicilio" value="' + esc(r ? r.domicilio : '') + '"></div>' +
           '<div class="form-group"><label class="form-label">Cargas familiares</label><input type="number" class="form-input" id="rec-cargas" min="0" step="1" value="' + (r ? r.cargas_familiares : '') + '"></div>' +
         '</div>' +
-        '<div style="display:flex;gap:10px;margin-top:6px">' +
+        '<div style="display:flex;gap:10px;margin-top:6px;flex-wrap:wrap">' +
           _sinoRec('rec-ruc', 'Tiene RUC', r ? r.ruc : false) +
           _sinoRec('rec-cuenta', 'Cuenta bancaria', r ? r.cuenta_bancaria : false) +
+          _sinoRec('rec-secap', '¿Tiene certificación del SECAP?', r ? r.certificacion_secap : false) +
         '</div>' +
         '<div class="form-label" style="margin:18px 0 8px">Fotografías</div>' +
         '<div class="form-grid-2">' +
@@ -385,6 +386,7 @@ async function guardarReciclador(docId) {
     cargas_familiares:       (document.getElementById('rec-cargas') || {}).value || 0,
     ruc:                     !!(document.getElementById('rec-ruc') || {}).checked,
     cuenta_bancaria:         !!(document.getElementById('rec-cuenta') || {}).checked,
+    certificacion_secap:     !!(document.getElementById('rec-secap') || {}).checked,
     foto_perfil_url:         actual ? actual.foto_perfil_url : '',
     foto_cedula_anverso_url: actual ? actual.foto_cedula_anverso_url : '',
     foto_cedula_reverso_url: actual ? actual.foto_cedula_reverso_url : '',
