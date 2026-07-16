@@ -9,8 +9,6 @@
 // ============================================================
 
 const DOMAIN  = 'redesconrostro.org';
-const DOMINIO_VISUALIZADOR = 'cbc.co';          // Tesalia (CBC): Visualizador (solo lectura)
-const DOMINIO_PERSONAL     = 'carlosandres.es'; // Dominio personal de Carlos: Visualizador
 const HUB_URL = 'https://recircula.redesconrostro.org';
 
 // Carpetas raíz de Drive (ya creadas). Las subcarpetas se crean automáticamente.
@@ -79,7 +77,6 @@ function recicladorFromFS(d) {
     cargas_familiares:       d.cargas_familiares || 0,
     ruc:                     d.ruc === true,
     cuenta_bancaria:         d.cuenta_bancaria === true,
-    certificacion_secap:     d.certificacion_secap === true,
     foto_perfil_url:         d.foto_perfil_url || '',
     foto_cedula_anverso_url: d.foto_cedula_anverso_url || '',
     foto_cedula_reverso_url: d.foto_cedula_reverso_url || '',
@@ -104,7 +101,6 @@ function recicladorToFS(o) {
     cargas_familiares:       parseFloat(o.cargas_familiares) || 0,
     ruc:                     !!o.ruc,
     cuenta_bancaria:         !!o.cuenta_bancaria,
-    certificacion_secap:     !!o.certificacion_secap,
     foto_perfil_url:         o.foto_perfil_url || '',
     foto_cedula_anverso_url: o.foto_cedula_anverso_url || '',
     foto_cedula_reverso_url: o.foto_cedula_reverso_url || '',
@@ -139,6 +135,8 @@ function alianzaFromFS(d) {
     _docId: d._docId,
     id_alianza:        d.id_alianza || '',
     nombre_convenio:   d.nombre_convenio || '',
+    tipo:              d.tipo || 'Público',
+    activo:            d.activo !== false,
     aliado_principal:  d.aliado_principal || '',
     aliado_secundario: d.aliado_secundario || '',
     asociaciones:      Array.isArray(d.asociaciones) ? d.asociaciones : [],  // ids de Asoc_Ambiente
@@ -154,6 +152,8 @@ function alianzaToFS(o) {
   return {
     id_alianza:        o.id_alianza || '',
     nombre_convenio:   o.nombre_convenio || '',
+    tipo:              o.tipo || 'Público',
+    activo:            o.activo !== false,
     aliado_principal:  o.aliado_principal || '',
     aliado_secundario: o.aliado_secundario || '',
     asociaciones:      Array.isArray(o.asociaciones) ? o.asociaciones : [],
@@ -322,21 +322,10 @@ async function establecerSesion(user) {
     } catch (e) {}
   }
   try {
-    const emailLower = (user.email || '').toLowerCase();
-    const esExterno = emailLower.endsWith('@' + DOMINIO_VISUALIZADOR) || emailLower.endsWith('@' + DOMINIO_PERSONAL);
-
     const snap = await window.fb.getDocs(
       window.fb.query(fsCol('Usuarios'), window.fb.where('email', '==', user.email))
     );
-    if (snap.empty) {
-      // Tesalia / dominio personal: Visualizador automático aunque no esté en Usuarios
-      if (esExterno) {
-        SESSION = { nombre: user.displayName || 'Externo', email: user.email, rol: 'Visualizador', externo: true };
-        sessionStorage.setItem('rcr_session', JSON.stringify(SESSION));
-        return true;
-      }
-      return false;
-    }
+    if (snap.empty) return false;
     const u = snap.docs[0].data();
     SESSION = { nombre: u.nombre || user.displayName || 'Usuario', email: user.email, rol: u.rol || 'Visualizador' };
     sessionStorage.setItem('rcr_session', JSON.stringify(SESSION));
@@ -742,11 +731,7 @@ window.addEventListener('load', async function () {
   await window.fbReady;
 
   window.fb.onAuthStateChanged(window.fb.auth, async function (user) {
-    var emailLower = (user && user.email) ? user.email.toLowerCase() : '';
-    var dominioOk = emailLower.endsWith('@' + DOMAIN)
-      || emailLower.endsWith('@' + DOMINIO_VISUALIZADOR)
-      || emailLower.endsWith('@' + DOMINIO_PERSONAL);
-    if (!user || !dominioOk) {
+    if (!user || !user.email || !user.email.toLowerCase().endsWith('@' + DOMAIN)) {
       window.location.href = HUB_URL;
       return;
     }
