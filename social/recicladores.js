@@ -361,11 +361,15 @@ function verReciclador(docId) {
   };
   const sino = function (b) { return b ? 'Sí' : 'No'; };
   const foto = function (urlOrId, titulo) {
-    const src = driveImgSrc(urlOrId, 600);
-    const inner = src
-      ? '<img src="' + src + '" alt="' + esc(titulo) + '" loading="lazy" onerror="this.parentNode.classList.add(\'rf-foto-fail\');this.remove();">'
-      : '';
-    return '<div class="rf-foto">' + inner + '<span class="rf-foto-cap">' + esc(titulo) + '</span></div>';
+    const tiene = !!urlOrId;
+    if (!tiene) {
+      return '<div class="rf-foto-item rf-foto-item-none">' +
+        '<span class="rf-foto-item-cap">' + esc(titulo) + '</span>' +
+        '<span class="rf-foto-item-sin">Sin foto</span></div>';
+    }
+    return '<button type="button" class="rf-foto-item" onclick="_fotoLightbox(\'' + jsEsc(urlOrId) + '\',\'' + jsEsc(titulo) + '\')">' +
+      '<span class="rf-foto-item-cap">' + esc(titulo) + '</span>' +
+      '<span class="rf-foto-item-ver">' + icoHTML('viewCheck') + ' Ver foto</span></button>';
   };
 
   abrirModal(
@@ -774,10 +778,14 @@ async function exportarRecicladoresExcel() {
     .rf-lbl { color:var(--text-muted); font-weight:600; }
     .rf-val { color:var(--text); font-weight:600; text-align:right; }
     .rf-fotos { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-top:18px; }
-    .rf-foto { position:relative; aspect-ratio:4/3; background:#f2f2f7; border:1px solid var(--border); border-radius:12px; overflow:hidden; display:flex; align-items:center; justify-content:center; }
-    .rf-foto img { width:100%; height:100%; object-fit:cover; }
-    .rf-foto-fail::after { content:'Sin imagen'; color:var(--text-dim); font-size:11px; }
-    .rf-foto-cap { position:absolute; left:0; right:0; bottom:0; background:rgba(0,0,0,.55); color:#fff; font-size:10px; padding:3px 6px; text-align:center; }
+    .rf-foto-item { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; aspect-ratio:4/3; background:var(--surface); border:1px solid var(--border); border-radius:12px; cursor:pointer; font-family:inherit; padding:12px; transition:box-shadow .15s,border-color .15s,transform .12s; }
+    .rf-foto-item:hover { box-shadow:0 4px 14px rgba(0,0,0,.08); border-color:#506CFF; transform:translateY(-2px); }
+    .rf-foto-item-cap { font-size:11.5px; font-weight:700; color:var(--text-muted); text-align:center; }
+    .rf-foto-item-ver { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:700; color:#506CFF; }
+    .rf-foto-item-ver svg { width:15px; height:15px; }
+    .rf-foto-item-none { cursor:default; }
+    .rf-foto-item-none:hover { box-shadow:none; border-color:var(--border); transform:none; }
+    .rf-foto-item-sin { font-size:11px; color:var(--text-dim); }
 
     /* Form fotos */
     .rec-file { padding:8px; }
