@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#506CFF">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<title>Fichas de recicladores · ReCircula 360</title>
+<title>Fichas de recicladores · ReCircula+</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -210,6 +210,13 @@ body{font-family:'Outfit',sans-serif;color:var(--text);background:var(--bg);min-
   .td-actions{justify-content:flex-end}
   .photo-grid{grid-template-columns:1fr 1fr}
 }
+
+/* Secciones por asociación */
+.asoc-sec{margin-bottom:22px}
+.asoc-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:0 4px 8px}
+.asoc-head-nom{font-size:15px;font-weight:700;color:var(--text);line-height:1.3}
+.asoc-head-count{font-size:12px;font-weight:600;color:var(--text-dim);white-space:nowrap;flex-shrink:0}
+.asoc-empty{background:var(--surface);border-radius:16px;padding:18px;text-align:center;color:var(--text-dim);font-size:13px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
 </style>
 </head>
 <body>
@@ -302,10 +309,41 @@ const DRIVE_ROOT="1eNVLmzcYuvfVY7fFZVTfvhFZbEuZHNqS"; // carpeta "Recicladores"
 const COL_FICHAS="recicladores";
 const COL_ASOC="Asoc_Ambiente";
 const DRIVE_SCOPE="https://www.googleapis.com/auth/drive";
-// Visibilidad: cada gestor ve solo las fichas que él registró.
-const SOLO_PROPIOS=true;   // pon false para que todos vean todas las fichas
-const ADMINS=[];           // correos que ven TODAS las fichas, ej: ["comunicacion@redesconrostro.org"]
-function esAdmin(email){return ADMINS.map(x=>String(x).toLowerCase()).includes(String(email||"").toLowerCase());}
+// ── Visibilidad por provincia ──
+// Cada gestor ve/registra solo las asociaciones (y fichas) de su(s) provincia(s).
+// 'TODAS' = ve todo. Un usuario que no esté aquí NO ve ni registra nada.
+const ACCESO_PROVINCIAS = {
+  "comunicacion@redesconrostro.org":            "TODAS",
+  "monserrategomez@redesconrostro.org":         "TODAS",
+  "jacintogutierrez.manabi@redesconrostro.org": ["Manabí"],
+  "rolandocamacho.eloro@redesconrostro.org":    ["El Oro", "Sucumbíos"],
+  "apoyocotopaxi@redesconrostro.org":           ["Pichincha"],
+  "pichincha@redesconrostro.org":               ["Pichincha"],
+  "josselyncondor.pichincha@redesconrostro.org":["Pichincha"],
+  "julianaduque.guayas@redesconrostro.org":     ["Guayas"],
+};
+
+// Normaliza provincia para comparar (sin tildes, minúsculas, sin espacios extra)
+function _normProv(p){
+  return String(p||"").trim().toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+}
+
+// Devuelve: "TODAS" | array de provincias normalizadas | [] (sin acceso)
+function provinciasDeUsuario(email){
+  const key=String(email||"").toLowerCase();
+  const v=ACCESO_PROVINCIAS[key];
+  if(v==="TODAS") return "TODAS";
+  if(Array.isArray(v)) return v.map(_normProv);
+  return [];
+}
+
+// ¿El usuario actual puede ver esta provincia?
+function puedeVerProvincia(prov){
+  const acc=provinciasDeUsuario(currentUser?currentUser.email:"");
+  if(acc==="TODAS") return true;
+  return acc.indexOf(_normProv(prov))>=0;
+}
 
 /* ── Init Firebase ── */
 const app=initializeApp(firebaseConfig);
@@ -518,18 +556,23 @@ async function cargarAsociaciones(){
   }
 }
 async function cargarFichas(){
-  const email=currentUser?currentUser.email:"";
-  const filtrar=SOLO_PROPIOS&&!esAdmin(email)&&!!email;
-  const ref=filtrar?query(collection(db,COL_FICHAS),where("creado_por","==",email)):collection(db,COL_FICHAS);
+  const acc=provinciasDeUsuario(currentUser?currentUser.email:"");
+  if(Array.isArray(acc)&&acc.length===0) return []; // usuario sin acceso: no ve nada
+  const ref=collection(db,COL_FICHAS);
   for(let i=0;i<2;i++){
     try{
       const qs=await getDocs(ref);
-      const arr=[];qs.forEach(d=>arr.push({id:d.id,...d.data()}));
+      let arr=[];qs.forEach(d=>arr.push({id:d.id,...d.data()}));
+      // Filtrar por provincia (salvo acceso TODAS)
+      if(acc!=="TODAS") arr=arr.filter(f=>puedeVerProvincia(f.provincia));
       arr.sort((a,b)=>{const ta=a.creado_en&&a.creado_en.seconds?a.creado_en.seconds:0;const tb=b.creado_en&&b.creado_en.seconds?b.creado_en.seconds:0;return tb-ta;});
       return arr;
     }catch(e){
       if(i===0&&navigator.onLine){await sleep(900);continue;}
-      return fichasFS||[];
+      // Offline: usar cache filtrado por provincia
+      let base=fichasFS||[];
+      if(acc!=="TODAS"&&Array.isArray(acc)) base=base.filter(f=>puedeVerProvincia(f.provincia));
+      return base;
     }
   }
 }
@@ -667,38 +710,74 @@ function construirFilas(){
   fichasFS.forEach(d=>{if(!pendUpd.has(d.id))filas.push({pending:false,key:"f:"+d.id,id:d.id,f:d,fromQueue:false});});
   return filas;
 }
+function _fichaFilaHTML(r){
+  const f=r.f;
+  const nombre=esc(f.nombres_apellidos||"(sin nombre)");
+  const ced=esc(f.cedula||"—");
+  const asoc=esc(f.asociacion_nombre||"—");
+  const cel=esc(f.celular||"—");
+  const estado=r.pending
+    ? `<span class="badge badge-pending">Sin sincronizar</span>`
+    : `<span class="badge badge-synced">Sincronizada</span>`;
+  const verCarpeta=(!r.pending&&f.carpeta_id)
+    ? `<button class="icon-btn" data-act="folder" data-folder="${esc(f.carpeta_id)}" title="Abrir carpeta en Drive">${ico("folder")}</button>`:"";
+  return `<tr data-key="${r.key}">
+    <td data-col="name"><div class="cell-name"><span class="avatar" style="background:${gradFor(nombre)}">${esc(inicial(f.nombres_apellidos))}</span><b>${nombre}</b></div></td>
+    <td><strong>Cédula</strong>${ced}</td>
+    <td><strong>Asociación</strong>${asoc}</td>
+    <td><strong>Celular</strong>${cel}</td>
+    <td><strong>Estado</strong>${estado}</td>
+    <td data-actions-row><div class="td-actions">${verCarpeta}<button class="icon-btn primary" data-act="edit" title="Editar">${ico("edit")}</button><button class="icon-btn del" data-act="del" title="Eliminar">${ico("trash")}</button></div></td>
+  </tr>`;
+}
+
+function _seccionAsoc(nombre, filasAsoc){
+  const head=`<div class="asoc-head"><span class="asoc-head-nom">${esc(nombre)}</span><span class="asoc-head-count">${filasAsoc.length} ficha${filasAsoc.length===1?"":"s"}</span></div>`;
+  if(!filasAsoc.length){
+    return `<div class="asoc-sec">${head}<div class="asoc-empty">Sin fichas</div></div>`;
+  }
+  const rows=filasAsoc.map(_fichaFilaHTML).join("");
+  return `<div class="asoc-sec">${head}<div class="table-wrap"><table>` +
+    `<thead><tr><th>Reciclador</th><th>Cédula</th><th>Asociación</th><th>Celular</th><th>Estado</th><th style="text-align:right">Acciones</th></tr></thead>` +
+    `<tbody>${rows}</tbody></table></div></div>`;
+}
+
 function renderLista(){
   const filas=construirFilas();
-  const sub=$("#listSub");
   const pend=cola.length;
-  sub.textContent=`${filas.length} ficha${filas.length===1?"":"s"}`+(pend?` · ${pend} sin sincronizar`:"");
+  $("#listSub").textContent=`${filas.length} ficha${filas.length===1?"":"s"}`+(pend?` · ${pend} sin sincronizar`:"");
   const cont=$("#listContainer");
-  if(filas.length===0){
-    cont.innerHTML=`<div class="card"><div class="empty-state"><div class="e-ico">${ico("users")}</div><div style="font-weight:600;color:var(--text)">Aún no hay fichas</div><div>Toca el botón + para registrar al primer reciclador.</div></div></div>`;
+
+  // Asociaciones visibles para este usuario (filtradas por provincia), ordenadas por nombre
+  const visibles=asociaciones
+    .filter(a=>puedeVerProvincia(a.provincia))
+    .slice()
+    .sort((a,b)=>String(a.nombre||"").localeCompare(String(b.nombre||""),"es"));
+
+  if(!visibles.length){
+    cont.innerHTML=`<div class="card"><div class="empty-state"><div class="e-ico">${ico("users")}</div><div style="font-weight:600;color:var(--text)">Sin asociaciones asignadas</div><div>No tienes provincias asignadas para ver o registrar fichas.</div></div></div>`;
     return;
   }
-  let rows="";
-  filas.forEach(r=>{
+
+  // Agrupar filas por asociación (por id, o por nombre normalizado como respaldo)
+  const norm=s=>String(s||"").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  const asignadas=new Set();
+  const grupoDe=a=>filas.filter(r=>{
     const f=r.f;
-    const nombre=esc(f.nombres_apellidos||"(sin nombre)");
-    const ced=esc(f.cedula||"—");
-    const asoc=esc(f.asociacion_nombre||"—");
-    const cel=esc(f.celular||"—");
-    const estado=r.pending
-      ? `<span class="badge badge-pending">Sin sincronizar</span>`
-      : `<span class="badge badge-synced">Sincronizada</span>`;
-    const verCarpeta=(!r.pending&&f.carpeta_id)
-      ? `<button class="icon-btn" data-act="folder" data-folder="${esc(f.carpeta_id)}" title="Abrir carpeta en Drive">${ico("folder")}</button>`:"";
-    rows+=`<tr data-key="${r.key}">
-      <td data-col="name"><div class="cell-name"><span class="avatar" style="background:${gradFor(nombre)}">${esc(inicial(f.nombres_apellidos))}</span><b>${nombre}</b></div></td>
-      <td><strong>Cédula</strong>${ced}</td>
-      <td><strong>Asociación</strong>${asoc}</td>
-      <td><strong>Celular</strong>${cel}</td>
-      <td><strong>Estado</strong>${estado}</td>
-      <td data-actions-row><div class="td-actions">${verCarpeta}<button class="icon-btn primary" data-act="edit" title="Editar">${ico("edit")}</button><button class="icon-btn del" data-act="del" title="Eliminar">${ico("trash")}</button></div></td>
-    </tr>`;
+    if(f.id_asociacion&&a.id&&f.id_asociacion===a.id){asignadas.add(r.key);return true;}
+    if(norm(f.asociacion_nombre)===norm(a.nombre)){asignadas.add(r.key);return true;}
+    return false;
   });
-  cont.innerHTML=`<div class="table-wrap"><table><thead><tr><th>Reciclador</th><th>Cédula</th><th>Asociación</th><th>Celular</th><th>Estado</th><th style="text-align:right">Acciones</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+
+  let html="";
+  visibles.forEach(a=>{ html+=_seccionAsoc(a.nombre, grupoDe(a)); });
+
+  // Fichas cuya asociación no está en el catálogo visible (no perder datos)
+  const huerfanas=filas.filter(r=>!asignadas.has(r.key));
+  if(huerfanas.length) html+=_seccionAsoc("Otras asociaciones", huerfanas);
+
+  cont.innerHTML=html;
+
   cont.querySelectorAll("[data-act]").forEach(btn=>{
     btn.addEventListener("click",e=>{
       e.stopPropagation();
@@ -710,7 +789,6 @@ function renderLista(){
       else if(act==="del")confirmarEliminar(fila);
     });
   });
-  // Toda la tarjeta/fila abre la edición
   cont.querySelectorAll("tbody tr").forEach(tr=>{
     tr.addEventListener("click",()=>{
       const key=tr.getAttribute("data-key");
@@ -732,7 +810,9 @@ const PHOTO_DEFS=[
 
 function optionsAsoc(sel){
   let o=`<option value="">Selecciona…</option>`;
-  asociaciones.forEach(a=>{o+=`<option value="${esc(a.id)}" data-nombre="${esc(a.nombre)}" data-provincia="${esc(a.provincia||"")}"${sel===a.id?" selected":""}>${esc(a.nombre)}</option>`;});
+  asociaciones
+    .filter(a=>puedeVerProvincia(a.provincia))
+    .forEach(a=>{o+=`<option value="${esc(a.id)}" data-nombre="${esc(a.nombre)}" data-provincia="${esc(a.provincia||"")}"${sel===a.id?" selected":""}>${esc(a.nombre)}</option>`;});
   return o;
 }
 
@@ -746,7 +826,10 @@ function abrirForm(fila){
   }
   const ruc=editing?(f.ruc===true||f.ruc==="Sí"||f.ruc==="Si"):false;
   const banco=editing?(f.cuenta_bancaria===true||f.cuenta_bancaria==="Sí"||f.cuenta_bancaria==="Si"):false;
-  const sexo=editing?String(f.sexo||"").toUpperCase():"";
+  const secap=editing?(f.certificacion_secap===true||f.certificacion_secap==="Sí"||f.certificacion_secap==="Si"):false;
+  // Normaliza el sexo guardado (acepta "M"/"F" viejos o "Masculino"/"Femenino")
+  const _sx=String(f.sexo||"").trim().toUpperCase();
+  const sexo=(_sx.indexOf("M")===0)?"Masculino":(_sx.indexOf("F")===0)?"Femenino":"";
   const provincia=editing?(f.provincia||""):"";
 
   const html=`
@@ -772,8 +855,8 @@ function abrirForm(fila){
         <div class="form-group">
           <label class="form-label">Sexo</label>
           <div class="segmented" id="fSexo">
-            <button type="button" class="seg-opt${sexo==="F"?" active":""}" data-val="F">Femenino</button>
-            <button type="button" class="seg-opt${sexo==="M"?" active":""}" data-val="M">Masculino</button>
+            <button type="button" class="seg-opt${sexo==="Femenino"?" active":""}" data-val="Femenino">Femenino</button>
+            <button type="button" class="seg-opt${sexo==="Masculino"?" active":""}" data-val="Masculino">Masculino</button>
           </div>
         </div>
         <div class="form-grid-2">
@@ -823,6 +906,13 @@ function abrirForm(fila){
           </div>
         </div>
         <div class="form-group">
+          <label class="form-label">¿Tiene certificación del SECAP?</label>
+          <div class="segmented" id="fSecap">
+            <button type="button" class="seg-opt${secap?" active":""}" data-val="si">Sí</button>
+            <button type="button" class="seg-opt${secap?"":" active"}" data-val="no">No</button>
+          </div>
+        </div>
+        <div class="form-group">
           <label class="form-label">Fotografías</label>
           <div class="photo-grid" id="photoGrid"></div>
           <div class="form-hint" id="photoHint">Opcional · toca cada recuadro para tomar la foto o subir un archivo.</div>
@@ -838,7 +928,7 @@ function abrirForm(fila){
 
   // Toggles Sí/No y Sexo
   const wireSeg=id=>{const g=$(id);if(!g)return;g.querySelectorAll(".seg-opt").forEach(b=>b.addEventListener("click",()=>{g.querySelectorAll(".seg-opt").forEach(x=>x.classList.remove("active"));b.classList.add("active");}));};
-  wireSeg("#fRuc");wireSeg("#fBanco");wireSeg("#fSexo");
+  wireSeg("#fRuc");wireSeg("#fBanco");wireSeg("#fSecap");wireSeg("#fSexo");
   // Al elegir asociación, autocompletar provincia
   $("#fAsoc").addEventListener("change",e=>{
     const opt=e.target.selectedOptions[0];
@@ -913,6 +1003,7 @@ async function guardarForm(fila){
   const sexo=sexoEl?sexoEl.getAttribute("data-val"):"";
   const ruc=$("#fRuc").querySelector(".seg-opt.active").getAttribute("data-val")==="si";
   const cuenta_bancaria=$("#fBanco").querySelector(".seg-opt.active").getAttribute("data-val")==="si";
+  const certificacion_secap=$("#fSecap").querySelector(".seg-opt.active").getAttribute("data-val")==="si";
   const data={
     id_asociacion,asociacion_nombre,
     provincia,
@@ -925,7 +1016,8 @@ async function guardarForm(fila){
     celular,
     cargas_familiares:cargas===""?null:parseInt(cargas,10),
     ruc,
-    cuenta_bancaria
+    cuenta_bancaria,
+    certificacion_secap
   };
   // Validaciones — solo "nombres y apellidos" es obligatorio
   let err=null;
