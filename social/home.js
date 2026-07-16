@@ -107,12 +107,20 @@ const HOME = (() => {
       { label: 'Sin cuenta', value: totR - conCta, color: '#e6e6ee' },
     ];
 
+    // 6) Certificación SECAP
+    let conSecap = 0; recs.forEach(function (r) { if (r.certificacion_secap) conSecap++; });
+    const segSecap = [
+      { label: 'Con SECAP', value: conSecap, color: '#FF751F' },
+      { label: 'Sin SECAP', value: totR - conSecap, color: '#e6e6ee' },
+    ];
+
     return '<div class="charts-grid">' +
       _chartCard('Alianzas por etapa', _barsBlock(itemsEtapa, totA)) +
       _chartCard('Recicladores por provincia', _barsBlock(itemsProv, totR)) +
       _chartCard('Recicladores por sexo', _donutBlock(segSexo, fmtNum(totR), 'recicladores')) +
       _chartCard('Recicladores con RUC', _donutBlock(segRuc, fmtPct(totR ? conRuc / totR * 100 : 0), 'con RUC')) +
       _chartCard('Recicladores con cuenta bancaria', _donutBlock(segCta, fmtPct(totR ? conCta / totR * 100 : 0), 'con cuenta')) +
+      _chartCard('Recicladores con certificación SECAP', _donutBlock(segSecap, fmtPct(totR ? conSecap / totR * 100 : 0), 'con SECAP')) +
     '</div>';
   }
 
