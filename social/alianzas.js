@@ -55,6 +55,7 @@ function renderAlianzas() {
 }
 
 function cargarAlianzas() {
+  ALI_PAGINA = 1;
   ALIANZAS_DATA = CAT.alianzas.filter(function (a) {
     return pasaFiltroLista(ALI_FILTROS.prov, a.provincias) && pasaFiltroLista(ALI_FILTROS.etapa, a.etapas);
   }).slice().sort(function (a, b) {
@@ -73,56 +74,145 @@ function _etapasMini(etapas) {
 }
 function _etapaClase(e) { return e === 'Inicial' ? 'badge-warn' : e === 'Intermedia' ? 'badge-blue' : 'badge-green'; }
 
+// Info de etapa: cuenta marcadas y última marcada (por orden Inicial<Intermedia<Final)
+function _etapaInfo(etapas) {
+  etapas = etapas || [];
+  let lastIdx = -1, count = 0;
+  ETAPAS_ALI.forEach(function (e, i) { if (etapas.indexOf(e) !== -1) { lastIdx = i; count++; } });
+  return { count: count, total: ETAPAS_ALI.length, label: lastIdx >= 0 ? ETAPAS_ALI[lastIdx] : 'Sin etapa', lastIdx: lastIdx };
+}
+
+// Barra de progreso compacta para la tabla ("● Intermedia" + slider + "2/3")
+function _etapaBarraMini(etapas) {
+  const info = _etapaInfo(etapas);
+  const colorEtapa = info.lastIdx === 0 ? '#F5AD21' : info.lastIdx === 1 ? '#33A8DE' : info.lastIdx === 2 ? '#18AE97' : 'var(--text-dim)';
+  const pct = info.total > 1 ? (Math.max(info.lastIdx, 0) / (info.total - 1)) * 100 : 0;
+  const dots = ETAPAS_ALI.map(function (e, i) {
+    const on = i <= info.lastIdx && info.lastIdx >= 0;
+    return '<span class="ali-dot' + (on ? ' on' : '') + '" style="' + (on ? 'background:' + colorEtapa + ';border-color:' + colorEtapa : '') + '"></span>';
+  }).join('');
+  return '<div class="ali-etapa-barra">' +
+    '<div class="ali-etapa-lbl"><span class="ali-etapa-punto" style="background:' + colorEtapa + '"></span>' + esc(info.label) + '</div>' +
+    '<div class="ali-etapa-track">' +
+      '<div class="ali-etapa-fill" style="width:' + pct + '%;background:' + colorEtapa + '"></div>' + dots +
+    '</div>' +
+    '<div class="ali-etapa-frac">' + info.count + ' / ' + info.total + '</div>' +
+  '</div>';
+}
+
+function _statCardAli(icono, color, valor, titulo, sub) {
+  return '<div class="ali-stat">' +
+    '<span class="ali-stat-ico" style="background:' + _rgbaAli(color, 0.12) + ';color:' + color + '">' + icoHTML(icono) + '</span>' +
+    '<div class="ali-stat-txt"><span class="ali-stat-tit">' + esc(titulo) + '</span><b>' + valor + '</b><span class="ali-stat-sub">' + esc(sub) + '</span></div>' +
+  '</div>';
+}
+function _rgbaAli(hex, a) {
+  let h = String(hex || '').replace('#', ''); if (h.length === 3) h = h.split('').map(function (c) { return c + c; }).join('');
+  const n = parseInt(h, 16) || 0;
+  return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+}
+
+let ALI_PAGINA = 1;
+const ALI_POR_PAGINA = 8;
+function irPaginaAlianzas(p) { ALI_PAGINA = p; renderTablaAlianzas(); }
+
 function renderTablaAlianzas() {
   const wrap = document.getElementById('ali-wrap');
   if (!wrap) return;
+
+  // ── Tarjetas-resumen ──
+  const total = ALIANZAS_DATA.length;
+  const activas = ALIANZAS_DATA.filter(function (a) { return a.activo !== false; }).length;
+  const pctAct = total ? Math.round(activas / total * 100) : 0;
+  const benef = ALIANZAS_DATA.reduce(function (acc, a) { return acc + (parseFloat(a.num_recicladores) || 0); }, 0);
+  const anio = new Date().getFullYear();
+  const stats = '<div class="ali-stats">' +
+    _statCardAli('handshake', '#506CFF', total, 'Total alianzas', 'Registradas') +
+    _statCardAli('check', '#18AE97', activas, 'Alianzas activas', pctAct + '% del total') +
+    _statCardAli('users', '#7B5CFF', fmtNum(benef), 'Beneficiarios', 'Recicladores') +
+    _statCardAli('calendar', '#F5AD21', anio, 'Este año', 'Período actual') +
+  '</div>';
+
   if (!ALIANZAS_DATA.length) {
-    wrap.innerHTML = '<div class="empty-state">' +
+    wrap.innerHTML = stats + '<div class="empty-state">' +
       icoHTML('handshake').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"') +
       '<p>No hay alianzas con estos filtros</p></div>';
     return;
   }
+
   const edit = puedeEditar();
   const acciones = function (a) {
     const docId = jsEsc(a._docId || '');
     const carpeta = jsEsc(a.id_carpeta_drive || '');
-    return (carpeta ? '<button class="icon-btn" onclick="window.open(\'https://drive.google.com/drive/folders/' + carpeta + '\',\'_blank\')" title="Carpeta">' + icoHTML('folder') + '</button>' : '') +
-      '<button class="icon-btn" onclick="verAlianza(\'' + docId + '\')" title="Ver">' + icoHTML('view') + '</button>' +
-      (edit ? '<button class="icon-btn primary" onclick="editarAlianza(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' +
-        '<button class="icon-btn del" onclick="confirmarEliminarAlianza(\'' + docId + '\',\'' + carpeta + '\')" title="Eliminar">' + icoHTML('trash') + '</button>' : '');
+    return (carpeta ? '<button class="icon-btn" onclick="event.stopPropagation();window.open(\'https://drive.google.com/drive/folders/' + carpeta + '\',\'_blank\')" title="Carpeta">' + icoHTML('folder') + '</button>' : '') +
+      '<button class="icon-btn" onclick="event.stopPropagation();verAlianza(\'' + docId + '\')" title="Ver">' + icoHTML('view') + '</button>' +
+      (edit ? '<button class="icon-btn primary" onclick="event.stopPropagation();editarAlianza(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' +
+        '<button class="icon-btn del" onclick="event.stopPropagation();confirmarEliminarAlianza(\'' + docId + '\',\'' + carpeta + '\')" title="Eliminar">' + icoHTML('trash') + '</button>' : '');
+  };
+  const tipoBadge = function (a) {
+    const act = a.activo !== false;
+    return '<span class="ali-tipo">' + esc(a.tipo || 'Público') + '</span>' +
+      '<span class="ali-estado ' + (act ? 'ali-estado-on' : 'ali-estado-off') + '">' + (act ? 'Activo' : 'Inactivo') + '</span>';
+  };
+  const benefCel = function (a) {
+    return '<span class="ali-benef"><span class="ali-benef-ico">' + icoHTML('users') + '</span>' +
+      '<span class="ali-benef-txt"><b>' + fmtNum(a.num_recicladores || 0) + '</b><small>recicladores</small></span></span>';
   };
 
+  // ── Paginación ──
+  const nPag = Math.max(1, Math.ceil(ALIANZAS_DATA.length / ALI_POR_PAGINA));
+  if (ALI_PAGINA > nPag) ALI_PAGINA = nPag;
+  const ini = (ALI_PAGINA - 1) * ALI_POR_PAGINA;
+  const pagina = ALIANZAS_DATA.slice(ini, ini + ALI_POR_PAGINA);
+
   // Tabla (desktop)
-  const filas = ALIANZAS_DATA.map(function (a) {
-    return '<tr>' +
-      '<td style="font-weight:600">' + esc(a.nombre_convenio || '—') + '</td>' +
-      '<td>' + (a.provincias && a.provincias.length ? esc(a.provincias.join(', ')) : '—') + '</td>' +
+  const filas = pagina.map(function (a) {
+    const docId = jsEsc(a._docId || '');
+    return '<tr onclick="verAlianza(\'' + docId + '\')">' +
+      '<td><div class="ali-conv-nombre">' + esc(a.nombre_convenio || '—') + '</div>' +
+        '<div class="ali-conv-meta">' + tipoBadge(a) + '</div></td>' +
       '<td>' + esc(a.anio || '—') + '</td>' +
-      '<td>' + _etapasMini(a.etapas) + '</td>' +
+      '<td style="min-width:190px">' + _etapaBarraMini(a.etapas) + '</td>' +
+      '<td>' + benefCel(a) + '</td>' +
       '<td data-actions-row><div class="td-actions">' + acciones(a) + '</div></td>' +
     '</tr>';
   }).join('');
   const tabla = '<div class="table-wrap ali-desk"><table>' +
-    '<thead><tr><th>Convenio</th><th>Provincia</th><th>Año</th><th>Etapa</th><th></th></tr></thead>' +
+    '<thead><tr><th>Convenio</th><th>Año</th><th>Etapa</th><th>Beneficiarios</th><th style="text-align:right">Acciones</th></tr></thead>' +
     '<tbody>' + filas + '</tbody></table></div>';
 
   // Tarjetas (móvil)
-  const cards = ALIANZAS_DATA.map(function (a) {
-    return '<div class="ali-card">' +
-      '<div class="ali-top"><div class="ali-id"><div class="ali-label">Convenio</div>' +
-        '<div class="ali-nombre">' + esc(a.nombre_convenio || '—') + '</div></div></div>' +
-      '<div class="ali-etapas">' + _etapasMini(a.etapas) + '</div>' +
+  const cards = pagina.map(function (a) {
+    const docId = jsEsc(a._docId || '');
+    return '<div class="ali-card" onclick="verAlianza(\'' + docId + '\')">' +
+      '<div class="ali-card-top">' +
+        '<div class="ali-id"><div class="ali-nombre">' + esc(a.nombre_convenio || '—') + '</div>' +
+          '<div class="ali-conv-meta">' + tipoBadge(a) + '</div></div>' +
+      '</div>' +
+      '<div class="ali-card-mid">' + _etapaBarraMini(a.etapas) + '</div>' +
       '<div class="ali-grid">' +
-        '<div class="ali-cell"><span class="ali-mini">Provincia</span><b>' + (a.provincias && a.provincias.length ? esc(a.provincias.join(', ')) : '—') + '</b></div>' +
         '<div class="ali-cell"><span class="ali-mini">Año</span><b>' + esc(a.anio || '—') + '</b></div>' +
+        '<div class="ali-cell"><span class="ali-mini">Beneficiarios</span><b>' + fmtNum(a.num_recicladores || 0) + '</b></div>' +
       '</div>' +
       '<div class="ali-foot"><div class="td-actions">' + acciones(a) + '</div></div>' +
     '</div>';
   }).join('');
   const cardsWrap = '<div class="ali-mob">' + cards + '</div>';
 
-  wrap.innerHTML = tabla + cardsWrap +
-    '<div style="font-size:12px;color:var(--text-dim);text-align:right;margin-top:10px">' + ALIANZAS_DATA.length + ' registro' + (ALIANZAS_DATA.length !== 1 ? 's' : '') + '</div>';
+  // Pie con paginación
+  let pager = '';
+  const btnPrev = '<button class="ali-pg-btn"' + (ALI_PAGINA <= 1 ? ' disabled' : ' onclick="irPaginaAlianzas(' + (ALI_PAGINA - 1) + ')"') + '>‹</button>';
+  const btnNext = '<button class="ali-pg-btn"' + (ALI_PAGINA >= nPag ? ' disabled' : ' onclick="irPaginaAlianzas(' + (ALI_PAGINA + 1) + ')"') + '>›</button>';
+  let nums = '';
+  for (let p = 1; p <= nPag; p++) {
+    nums += '<button class="ali-pg-num' + (p === ALI_PAGINA ? ' on' : '') + '" onclick="irPaginaAlianzas(' + p + ')">' + p + '</button>';
+  }
+  pager = '<div class="ali-pager">' +
+    '<span class="ali-pager-info">' + ALIANZAS_DATA.length + ' registro' + (ALIANZAS_DATA.length !== 1 ? 's' : '') + '</span>' +
+    '<div class="ali-pager-ctrls">' + btnPrev + nums + btnNext + '</div>' +
+  '</div>';
+
+  wrap.innerHTML = stats + tabla + cardsWrap + pager;
 }
 
 // ── Ver ficha (con barra de progreso tipo tracking) ──
@@ -144,6 +234,8 @@ function verAlianza(docId) {
         '<div class="rf-grid" style="margin-top:20px">' +
           dato('Aliado principal', a.aliado_principal) +
           dato('Aliado secundario', a.aliado_secundario) +
+          dato('Tipo', a.tipo || 'Público') +
+          dato('Estado', a.activo !== false ? 'Activo' : 'Inactivo') +
           dato('Año', a.anio) +
           dato('N° recicladores beneficiarios', fmtNum(a.num_recicladores)) +
         '</div>' +
@@ -206,6 +298,14 @@ function abrirFormAlianza(docId) {
           '<div class="form-group"><label class="form-label">Aliado principal</label><input type="text" class="form-input" id="ali-principal" value="' + esc(a ? a.aliado_principal : '') + '"></div>' +
           '<div class="form-group"><label class="form-label">Aliado secundario</label><input type="text" class="form-input" id="ali-secundario" value="' + esc(a ? a.aliado_secundario : '') + '"></div>' +
           '<div class="form-group"><label class="form-label">Año</label><input type="number" class="form-input" id="ali-anio" min="2000" max="2100" step="1" value="' + (a ? a.anio : new Date().getFullYear()) + '"></div>' +
+          '<div class="form-group"><label class="form-label">Tipo</label><select class="form-select" id="ali-tipo">' +
+            '<option value="Público"' + (!a || a.tipo !== 'Privado' ? ' selected' : '') + '>Público</option>' +
+            '<option value="Privado"' + (a && a.tipo === 'Privado' ? ' selected' : '') + '>Privado</option>' +
+          '</select></div>' +
+          '<div class="form-group"><label class="form-label">Estado</label><select class="form-select" id="ali-estado">' +
+            '<option value="activo"' + (!a || a.activo !== false ? ' selected' : '') + '>Activo</option>' +
+            '<option value="inactivo"' + (a && a.activo === false ? ' selected' : '') + '>Inactivo</option>' +
+          '</select></div>' +
         '</div>' +
         '<div class="form-label" style="margin:16px 0 8px">Asociaciones beneficiarias</div>' +
         '<div class="ms-box" id="ali-asocs">' + (asocChecks || '<div style="padding:10px;color:var(--text-dim);font-size:13px">No hay asociaciones en el catálogo</div>') + '</div>' +
@@ -262,6 +362,8 @@ async function guardarAlianza(docId) {
   const o = {
     id_alianza:        actual ? actual.id_alianza : nuevoId('ALI'),
     nombre_convenio:   convenio,
+    tipo:              ((document.getElementById('ali-tipo') || {}).value) || 'Público',
+    activo:            ((document.getElementById('ali-estado') || {}).value) !== 'inactivo',
     aliado_principal:  ((document.getElementById('ali-principal') || {}).value || '').trim(),
     aliado_secundario: ((document.getElementById('ali-secundario') || {}).value || '').trim(),
     asociaciones:      ids,
@@ -341,15 +443,15 @@ async function exportarAlianzasExcel() {
   try {
     await cargarSheetJS();
     if (!window.XLSX) { showToast('No se pudo cargar el exportador'); return; }
-    const header = ['Convenio', 'Aliado Principal', 'Aliado Secundario', 'Provincias', 'Año', 'N° Recicladores', 'Etapas', 'Asociaciones', 'Observaciones', 'URL Carpeta'];
+    const header = ['Convenio', 'Tipo', 'Estado', 'Aliado Principal', 'Aliado Secundario', 'Provincias', 'Año', 'N° Recicladores', 'Etapas', 'Asociaciones', 'Observaciones', 'URL Carpeta'];
     const filas = ALIANZAS_DATA.map(function (a) {
       const nombres = (a.asociaciones || []).map(function (id) { return nombreDeAsociacion(id) || id; });
-      return [a.nombre_convenio, a.aliado_principal, a.aliado_secundario, (a.provincias || []).join(', '),
+      return [a.nombre_convenio, a.tipo || 'Público', a.activo !== false ? 'Activo' : 'Inactivo', a.aliado_principal, a.aliado_secundario, (a.provincias || []).join(', '),
         parseFloat(a.anio) || 0, parseFloat(a.num_recicladores) || 0, (a.etapas || []).join(', '),
         nombres.join(', '), a.observaciones || '', urlCarpeta(a.id_carpeta_drive)];
     });
     const ws = XLSX.utils.aoa_to_sheet([header].concat(filas));
-    ws['!cols'] = [{ wch: 28 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 7 }, { wch: 14 }, { wch: 22 }, { wch: 36 }, { wch: 30 }, { wch: 40 }];
+    ws['!cols'] = [{ wch: 28 }, { wch: 10 }, { wch: 9 }, { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 7 }, { wch: 14 }, { wch: 22 }, { wch: 36 }, { wch: 30 }, { wch: 40 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Alianzas');
     XLSX.writeFile(wb, 'Alianzas_' + new Date().toISOString().substring(0, 10) + '.xlsx');
@@ -398,21 +500,69 @@ async function exportarAlianzasExcel() {
 
     /* Tarjetas móviles */
     .ali-mob { display:none; flex-direction:column; gap:12px; }
-    .ali-card { background:var(--surface); border-radius:20px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.04); }
-    .ali-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
-    .ali-label { font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.7px; }
-    .ali-nombre { font-size:16px; font-weight:700; color:var(--text); margin-top:2px; line-height:1.3; }
-    .ali-etapas { margin-top:10px; }
+    .ali-card { background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px; cursor:pointer; transition:box-shadow .15s,transform .12s,border-color .15s; }
+    .ali-card:hover { box-shadow:0 6px 20px rgba(0,0,0,.08); transform:translateY(-2px); border-color:transparent; }
+    .ali-card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+    .ali-nombre { font-size:16px; font-weight:700; color:var(--text); line-height:1.3; }
+    .ali-card-mid { margin-top:12px; }
     .ali-grid { display:flex; gap:10px; margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
     .ali-cell { flex:1; display:flex; flex-direction:column; gap:5px; min-width:0; }
     .ali-cell b { font-size:14px; font-weight:700; color:var(--text); }
     .ali-mini { font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.5px; }
     .ali-foot { display:flex; justify-content:flex-end; margin-top:14px; }
 
+    /* Tarjetas-resumen */
+    .ali-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px; }
+    .ali-stat { display:flex; align-items:center; gap:12px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:15px 16px; }
+    .ali-stat-ico { width:44px; height:44px; border-radius:12px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+    .ali-stat-ico svg { width:22px; height:22px; }
+    .ali-stat-txt { display:flex; flex-direction:column; min-width:0; }
+    .ali-stat-tit { font-size:11.5px; color:var(--text-muted); font-weight:600; }
+    .ali-stat-txt b { font-size:24px; font-weight:800; color:var(--text); line-height:1.15; }
+    .ali-stat-sub { font-size:11px; color:var(--text-dim); }
+
+    /* Convenio: tipo + estado */
+    .ali-conv-nombre { font-weight:700; color:var(--text); font-size:14px; }
+    .ali-conv-meta { display:flex; align-items:center; gap:8px; margin-top:5px; }
+    .ali-tipo { font-size:12px; color:var(--text-muted); }
+    .ali-estado { font-size:10.5px; font-weight:700; padding:3px 9px; border-radius:20px; }
+    .ali-estado-on { background:rgba(24,174,151,.14); color:#0f9b84; }
+    .ali-estado-off { background:rgba(0,0,0,.06); color:var(--text-dim); }
+
+    /* Barra de etapa (tabla) */
+    .ali-etapa-barra { display:flex; flex-direction:column; gap:6px; }
+    .ali-etapa-lbl { display:flex; align-items:center; gap:6px; font-size:12.5px; font-weight:700; color:var(--text); }
+    .ali-etapa-punto { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .ali-etapa-track { position:relative; height:8px; background:#eef0f4; border-radius:20px; display:flex; align-items:center; justify-content:space-between; padding:0 1px; }
+    .ali-etapa-fill { position:absolute; left:0; top:0; bottom:0; border-radius:20px; }
+    .ali-dot { position:relative; width:10px; height:10px; border-radius:50%; background:#fff; border:2px solid #d7d7e0; z-index:1; }
+    .ali-etapa-frac { font-size:11px; font-weight:600; color:var(--text-muted); }
+
+    /* Beneficiarios (celda) */
+    .ali-benef { display:inline-flex; align-items:center; gap:9px; }
+    .ali-benef-ico { width:34px; height:34px; border-radius:10px; background:rgba(80,108,255,.1); color:#506CFF; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .ali-benef-ico svg { width:18px; height:18px; }
+    .ali-benef-txt { display:flex; flex-direction:column; line-height:1.15; }
+    .ali-benef-txt b { font-size:15px; font-weight:800; color:var(--text); }
+    .ali-benef-txt small { font-size:11px; color:var(--text-dim); }
+
+    .ali-desk table tbody tr { cursor:pointer; }
+
+    /* Paginación */
+    .ali-pager { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:14px; flex-wrap:wrap; }
+    .ali-pager-info { font-size:12px; color:var(--text-dim); }
+    .ali-pager-ctrls { display:flex; align-items:center; gap:6px; }
+    .ali-pg-btn, .ali-pg-num { min-width:32px; height:32px; border:1px solid var(--border); background:var(--surface); border-radius:9px; font-family:inherit; font-size:13px; font-weight:600; color:var(--text-muted); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; transition:.13s; }
+    .ali-pg-btn:hover:not(:disabled), .ali-pg-num:hover { background:rgba(80,108,255,.08); color:#506CFF; }
+    .ali-pg-btn:disabled { opacity:.4; cursor:default; }
+    .ali-pg-num.on { background:#506CFF; color:#fff; border-color:#506CFF; }
+
     @media (max-width:768px) {
       .ali-desk { display:none; }
       .ali-mob { display:flex; }
       .ali-derivados { flex-direction:column; }
+      .ali-stats { grid-template-columns:1fr 1fr; }
+      .form-grid-2 { grid-template-columns:1fr 1fr; }
     }
   `;
   document.head.appendChild(s);
