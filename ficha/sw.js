@@ -5,7 +5,7 @@
    - APIs (Firestore / Drive / googleapis): NUNCA se cachean
    Sube la versión (CACHE) cuando publiques cambios.
    ============================================================ */
-const CACHE = "ficha-rec-v1";
+const CACHE = "ficha-rec-v2";
 
 self.addEventListener("install", e => {
   self.skipWaiting();
