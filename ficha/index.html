@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#506CFF">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<title>Fichas de recicladores · ReCircula+</title>
+<title>Fichas de recicladores · ReCircula 360</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -555,23 +555,36 @@ async function cargarAsociaciones(){
     }
   }
 }
+// Nombres de provincia EXACTOS del usuario (para la consulta a Firestore).
+// 'TODAS' = sin filtro; [] = sin acceso; array = provincias tal cual configuradas.
+function provinciasRawDeUsuario(email){
+  const v=ACCESO_PROVINCIAS[String(email||"").toLowerCase()];
+  if(v==="TODAS") return "TODAS";
+  return Array.isArray(v)?v.slice():[];
+}
+
 async function cargarFichas(){
-  const acc=provinciasDeUsuario(currentUser?currentUser.email:"");
-  if(Array.isArray(acc)&&acc.length===0) return []; // usuario sin acceso: no ve nada
-  const ref=collection(db,COL_FICHAS);
+  const email=currentUser?currentUser.email:"";
+  const raw=provinciasRawDeUsuario(email);        // "TODAS" | [nombres exactos] | []
+  if(Array.isArray(raw)&&raw.length===0) return [];// usuario sin acceso: no ve nada
+
+  // Filtro por provincia en el SERVIDOR (descarga solo lo permitido).
+  // 'in' admite hasta 10 valores; los gestores tienen 1–2 provincias.
+  const ref=(raw==="TODAS")
+    ? collection(db,COL_FICHAS)
+    : query(collection(db,COL_FICHAS),where("provincia","in",raw));
+
   for(let i=0;i<2;i++){
     try{
       const qs=await getDocs(ref);
       let arr=[];qs.forEach(d=>arr.push({id:d.id,...d.data()}));
-      // Filtrar por provincia (salvo acceso TODAS)
-      if(acc!=="TODAS") arr=arr.filter(f=>puedeVerProvincia(f.provincia));
       arr.sort((a,b)=>{const ta=a.creado_en&&a.creado_en.seconds?a.creado_en.seconds:0;const tb=b.creado_en&&b.creado_en.seconds?b.creado_en.seconds:0;return tb-ta;});
       return arr;
     }catch(e){
       if(i===0&&navigator.onLine){await sleep(900);continue;}
-      // Offline: usar cache filtrado por provincia
+      // Offline: usar cache filtrado por provincia (tolerante a tildes/mayúsculas)
       let base=fichasFS||[];
-      if(acc!=="TODAS"&&Array.isArray(acc)) base=base.filter(f=>puedeVerProvincia(f.provincia));
+      if(raw!=="TODAS") base=base.filter(f=>puedeVerProvincia(f.provincia));
       return base;
     }
   }
