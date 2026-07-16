@@ -40,6 +40,73 @@ function _pasaBool(sel, valor) {
   return true;
 }
 
+// ── Estilo por provincia (ícono + color) ──
+const PROV_PALETA = ['#506CFF', '#18AE97', '#F5AD21', '#F82D72', '#FF751F', '#33A8DE', '#9FDA60', '#7B5CFF'];
+const PROV_ESTILO = {
+  'el oro':     { ico: 'trophy',   color: '#F5AD21' },
+  'guayas':     { ico: 'mapPin',   color: '#18AE97' },
+  'manabi':     { ico: 'waves',    color: '#33A8DE' },
+  'pichincha':  { ico: 'mountain', color: '#506CFF' },
+  'sucumbios':  { ico: 'leaf',     color: '#9FDA60' },
+  'los rios':   { ico: 'waves',    color: '#0BC3FF' },
+  'chimborazo': { ico: 'mountain', color: '#F82D72' },
+};
+function _normTxt(s) {
+  return String(s || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+function _provEstilo(prov) {
+  const k = _normTxt(prov);
+  if (PROV_ESTILO[k]) return PROV_ESTILO[k];
+  let h = 0; for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) >>> 0;
+  return { ico: 'mapPin', color: PROV_PALETA[h % PROV_PALETA.length] };
+}
+function _rgba(hex, a) {
+  let h = String(hex || '').replace('#', '');
+  if (h.length === 3) h = h.split('').map(function (c) { return c + c; }).join('');
+  const n = parseInt(h, 16) || 0;
+  return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+}
+
+// Avatar con iniciales (color determinista por nombre)
+function _inicialRec(nombre) {
+  const parts = String(nombre || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  return (parts[0][0] + (parts[1] ? parts[1][0] : '')).toUpperCase();
+}
+function _avatarColor(nombre) {
+  const k = _normTxt(nombre);
+  let h = 0; for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) >>> 0;
+  return PROV_PALETA[h % PROV_PALETA.length];
+}
+
+// ¿La ficha tiene los datos clave completos?
+function _datosCompletos(r) {
+  return !!(String(r.nombres_apellidos || '').trim() &&
+    String(r.cedula || '').trim() &&
+    String(r.fecha_nacimiento || '').trim() &&
+    String(r.celular || '').trim());
+}
+
+// Visor de foto (overlay sobre el formulario; se cierra al tocar)
+function _fotoLightbox(urlOrId, titulo) {
+  const src = driveImgSrc(urlOrId, 1200);
+  if (!src) { showToast('No hay imagen disponible'); return; }
+  const ov = document.createElement('div');
+  ov.className = 'rec-lightbox';
+  ov.innerHTML =
+    '<div class="rec-lightbox-inner" onclick="event.stopPropagation()">' +
+      '<button class="rec-lightbox-x" title="Cerrar">&times;</button>' +
+      '<img src="' + src + '" alt="' + esc(titulo || '') + '" onerror="this.style.display=\'none\'">' +
+      (titulo ? '<div class="rec-lightbox-cap">' + esc(titulo) + '</div>' : '') +
+    '</div>';
+  const cerrar = function () { ov.remove(); document.removeEventListener('keydown', onEsc); };
+  const onEsc = function (e) { if (e.key === 'Escape') cerrar(); };
+  ov.addEventListener('click', cerrar);
+  ov.querySelector('.rec-lightbox-x').addEventListener('click', cerrar);
+  document.addEventListener('keydown', onEsc);
+  document.body.appendChild(ov);
+}
+
 // ── Render principal ──
 // ── Estado de navegación (dos niveles) ──
 let RECS_VISTA = 'asociaciones';  // 'asociaciones' | 'lista'
@@ -119,20 +186,26 @@ function renderAsociacionesCards() {
   const CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>';
 
   const cuerpo = provsOrden.map(function (prov) {
+    const est = _provEstilo(prov);
     const lista = grupos[prov].slice().sort(function (a, b) { return (a.nombre || '').localeCompare(b.nombre || '', 'es'); });
     const filas = lista.map(function (a) {
       const n = conteo[a._docId] || 0;
       const vacia = n === 0;
       const pill = vacia
         ? '<span class="asoc-pill asoc-pill-0">0</span>'
-        : '<span class="asoc-pill">' + n + '</span>';
+        : '<span class="asoc-pill" style="background:' + _rgba(est.color, 0.13) + ';color:' + est.color + '">' + n + '</span>';
       return '<button class="asoc-row' + (vacia ? ' asoc-row-vacia' : '') + '" onclick="abrirAsociacionRecs(\'' + jsEsc(a._docId) + '\')">' +
+        '<span class="asoc-row-ico" style="background:' + _rgba(est.color, 0.12) + ';color:' + est.color + '">' + icoHTML('users') + '</span>' +
         '<span class="asoc-row-nombre">' + esc(a.nombre || '—') + '</span>' +
         '<span class="asoc-row-right">' + pill + '<span class="asoc-row-chev">' + CHEV + '</span></span>' +
       '</button>';
     }).join('');
     return '<div class="asoc-grupo">' +
-      '<div class="asoc-grupo-titulo">' + esc(prov) + '</div>' +
+      '<div class="asoc-grupo-titulo">' +
+        '<span class="asoc-prov-ico" style="background:' + _rgba(est.color, 0.14) + ';color:' + est.color + '">' + icoHTML(est.ico) + '</span>' +
+        '<span class="asoc-prov-nom">' + esc(prov) + '</span>' +
+        '<span class="asoc-prov-count">' + lista.length + ' asociaci' + (lista.length !== 1 ? 'ones' : 'ón') + '</span>' +
+      '</div>' +
       '<div class="asoc-grupo-lista">' + filas + '</div>' +
     '</div>';
   }).join('');
@@ -153,16 +226,24 @@ function volverAAsociaciones() {
 }
 
 // ── Nivel 2: lista de recicladores de la asociación ──
+let RECS_BUSQUEDA = '';
+
 function renderListaAsociacion() {
   const add = puedeEditar();
 
   // Recicladores de la asociación, con los filtros del drawer aplicados
-  RECS_DATA = _recsDeAsociacion(RECS_ASOC_SEL).filter(function (r) {
+  const base = _recsDeAsociacion(RECS_ASOC_SEL).filter(function (r) {
     return pasaFiltro(RECS_FILTROS.sexo, r.sexo) &&
       _pasaBool(RECS_FILTROS.ruc, r.ruc === true) &&
       _pasaBool(RECS_FILTROS.secap, r.certificacion_secap === true) &&
       _pasaBool(RECS_FILTROS.cuenta, r.cuenta_bancaria === true);
   });
+
+  // Métricas (sobre el conjunto filtrado, antes de la búsqueda de texto)
+  const total = base.length;
+  const completos = base.filter(_datosCompletos).length;
+  const conCel = base.filter(function (r) { return String(r.celular || '').trim(); }).length;
+  RECS_DATA = base; // la búsqueda de texto se aplica sobre esto en renderTablaRecicladores
 
   const BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>';
 
@@ -173,7 +254,7 @@ function renderListaAsociacion() {
           '<button class="rec-back" onclick="volverAAsociaciones()" title="Volver a asociaciones">' + BACK + '</button>' +
           '<div class="rec-asoc-info">' +
             '<div class="page-title">Recicladores</div>' +
-            '<div class="rec-asoc-conteo">' + RECS_DATA.length + ' reciclador' + (RECS_DATA.length !== 1 ? 'es' : '') + '</div>' +
+            '<div class="rec-asoc-conteo">' + total + ' reciclador' + (total !== 1 ? 'es' : '') + '</div>' +
           '</div>' +
         '</div>' +
       '</div>' +
@@ -183,63 +264,91 @@ function renderListaAsociacion() {
         '<button class="hdr-circle" onclick="exportarRecicladoresExcel()" title="Descargar Excel">' + icoHTML('download') + '</button>' +
         (add ? '<button class="hdr-circle hdr-circle-primary" onclick="abrirFormReciclador(null,\'' + jsEsc(RECS_ASOC_SEL) + '\')" title="Nuevo reciclador">' + icoHTML('plus') + '</button>' : '') +
       '</div>' +
-    '</div>' +
-    '<div id="recs-wrap"></div>';
+    '</div>';
 
-  document.getElementById('main-content').innerHTML = header;
+  const barra =
+    '<div class="rec-toolbar">' +
+      '<div class="rec-search">' + icoHTML('search') +
+        '<input type="text" id="rec-buscar" placeholder="Buscar por nombre o celular…" ' +
+        'oninput="filtrarRecicladoresBusqueda(this.value)" value="' + esc(RECS_BUSQUEDA) + '">' +
+      '</div>' +
+      '<div class="rec-stats">' +
+        _statCard('users', '#506CFF', total, 'Total recicladores') +
+        _statCard('calendar', '#18AE97', completos, 'Con datos completos') +
+        _statCard('phone', '#7B5CFF', conCel, 'Con celular registrado') +
+      '</div>' +
+    '</div>';
+
+  document.getElementById('main-content').innerHTML = header + barra + '<div id="recs-wrap"></div>';
   updateFilterBadge('recicladores');
+  renderTablaRecicladores();
+}
+
+function _statCard(icono, color, valor, etiqueta) {
+  return '<div class="rec-stat">' +
+    '<span class="rec-stat-ico" style="background:' + _rgba(color, 0.12) + ';color:' + color + '">' + icoHTML(icono) + '</span>' +
+    '<div class="rec-stat-txt"><b>' + valor + '</b><span>' + esc(etiqueta) + '</span></div>' +
+  '</div>';
+}
+
+function filtrarRecicladoresBusqueda(q) {
+  RECS_BUSQUEDA = q || '';
   renderTablaRecicladores();
 }
 
 function renderTablaRecicladores() {
   const wrap = document.getElementById('recs-wrap');
   if (!wrap) return;
-  if (!RECS_DATA.length) {
+
+  // Búsqueda de texto (nombre o celular) sobre el conjunto ya filtrado
+  const q = _normTxt(RECS_BUSQUEDA);
+  const lista = !q ? RECS_DATA : RECS_DATA.filter(function (r) {
+    return _normTxt(r.nombres_apellidos).indexOf(q) >= 0 || _normTxt(r.celular).indexOf(q) >= 0;
+  });
+
+  if (!lista.length) {
     wrap.innerHTML = '<div class="empty-state">' +
       icoHTML('users').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"') +
-      '<p>No hay recicladores con estos filtros</p></div>';
+      '<p>' + (RECS_BUSQUEDA ? 'Sin resultados para “' + esc(RECS_BUSQUEDA) + '”' : 'No hay recicladores con estos filtros') + '</p></div>';
     return;
   }
+
   const edit = puedeEditar();
   const acciones = function (r) {
     const docId = jsEsc(r._docId || '');
     const carpeta = jsEsc(r.carpeta_id || '');
-    return (carpeta ? '<button class="icon-btn" onclick="window.open(\'https://drive.google.com/drive/folders/' + carpeta + '\',\'_blank\')" title="Carpeta">' + icoHTML('folder') + '</button>' : '') +
-      '<button class="icon-btn" onclick="verReciclador(\'' + docId + '\')" title="Ver ficha">' + icoHTML('view') + '</button>' +
-      (edit ? '<button class="icon-btn primary" onclick="editarReciclador(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' +
-        '<button class="icon-btn del" onclick="confirmarEliminarReciclador(\'' + docId + '\',\'' + carpeta + '\')" title="Eliminar">' + icoHTML('trash') + '</button>' : '');
+    return (carpeta ? '<button class="icon-btn" onclick="event.stopPropagation();window.open(\'https://drive.google.com/drive/folders/' + carpeta + '\',\'_blank\')" title="Carpeta">' + icoHTML('folder') + '</button>' : '') +
+      '<button class="icon-btn" onclick="event.stopPropagation();verReciclador(\'' + docId + '\')" title="Ver ficha">' + icoHTML('view') + '</button>' +
+      (edit ? '<button class="icon-btn primary" onclick="event.stopPropagation();editarReciclador(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' +
+        '<button class="icon-btn del" onclick="event.stopPropagation();confirmarEliminarReciclador(\'' + docId + '\',\'' + carpeta + '\')" title="Eliminar">' + icoHTML('trash') + '</button>' : '');
   };
 
-  // Tabla (desktop)
-  const filas = RECS_DATA.map(function (r) {
+  const cards = lista.map(function (r) {
     const docId = jsEsc(r._docId || '');
-    return '<tr>' +
-      '<td><a class="rec-nombre" onclick="verReciclador(\'' + docId + '\')">' + esc(r.nombres_apellidos || '—') + '</a></td>' +
-      '<td>' + fmtFecha(r.fecha_nacimiento) + '</td>' +
-      '<td>' + esc(r.celular || '—') + '</td>' +
-      '<td data-actions-row><div class="td-actions">' + acciones(r) + '</div></td>' +
-    '</tr>';
-  }).join('');
-  const tabla = '<div class="table-wrap rec-desk"><table>' +
-    '<thead><tr><th>Nombre y apellidos</th><th>Fecha de nacimiento</th><th>Celular</th><th></th></tr></thead>' +
-    '<tbody>' + filas + '</tbody></table></div>';
-
-  // Tarjetas (móvil)
-  const cards = RECS_DATA.map(function (r) {
-    const docId = jsEsc(r._docId || '');
-    return '<div class="rec-card">' +
-      '<a class="rec-card-nombre" onclick="verReciclador(\'' + docId + '\')">' + esc(r.nombres_apellidos || '—') + '</a>' +
-      '<div class="rec-card-grid">' +
-        '<div class="rec-cell"><span class="rec-mini">Nacimiento</span><b>' + fmtFecha(r.fecha_nacimiento) + '</b></div>' +
-        '<div class="rec-cell"><span class="rec-mini">Celular</span><b>' + esc(r.celular || '—') + '</b></div>' +
+    const completo = _datosCompletos(r);
+    const badge = completo
+      ? '<span class="rec-badge rec-badge-ok">Completo</span>'
+      : '<span class="rec-badge rec-badge-warn">Datos incompletos</span>';
+    const nac = fmtFecha(r.fecha_nacimiento);
+    const cel = esc(r.celular || '—');
+    return '<div class="rec-card2" onclick="verReciclador(\'' + docId + '\')">' +
+      '<div class="rec-card2-top">' +
+        '<span class="rec-avatar" style="background:' + _avatarColor(r.nombres_apellidos) + '">' + esc(_inicialRec(r.nombres_apellidos)) + '</span>' +
+        '<div class="rec-card2-id">' +
+          '<div class="rec-card2-nombre">' + esc(r.nombres_apellidos || '—') + '</div>' +
+          '<div class="rec-card2-meta">' +
+            '<span class="rec-card2-dato">' + icoHTML('calendar') + ' ' + nac + '</span>' +
+            '<span class="rec-card2-dato">' + icoHTML('phone') + ' ' + cel + '</span>' +
+          '</div>' +
+        '</div>' +
+        badge +
       '</div>' +
-      '<div class="rec-foot"><div class="td-actions">' + acciones(r) + '</div></div>' +
+      '<div class="rec-card2-foot"><div class="td-actions">' + acciones(r) + '</div></div>' +
     '</div>';
   }).join('');
-  const cardsWrap = '<div class="rec-mob">' + cards + '</div>';
 
-  wrap.innerHTML = tabla + cardsWrap +
-    '<div style="font-size:12px;color:var(--text-dim);text-align:right;margin-top:10px">' + RECS_DATA.length + ' registro' + (RECS_DATA.length !== 1 ? 's' : '') + '</div>';
+  wrap.innerHTML = '<div class="rec-cards2">' + cards + '</div>' +
+    '<div style="font-size:12px;color:var(--text-dim);text-align:right;margin-top:10px">' + lista.length + ' registro' + (lista.length !== 1 ? 's' : '') + '</div>';
 }
 
 // ── Ver ficha (clic en el nombre) ──
@@ -310,10 +419,12 @@ function abrirFormReciclador(docId, presetAsoc) {
   }).join('');
 
   const fotoInput = function (campo, label, urlActual) {
-    const prev = urlActual ? '<a href="' + urlCarpeta(0) + '" onclick="return false" class="rec-foto-actual"><img src="' + driveImgSrc(urlActual, 200) + '" onerror="this.remove()"> foto actual</a>' : '<span class="rec-foto-none">sin foto</span>';
+    const verBtn = urlActual
+      ? '<button type="button" class="rec-foto-ver" onclick="_fotoLightbox(\'' + jsEsc(urlActual) + '\',\'' + jsEsc(label) + '\')">' + icoHTML('viewCheck') + ' Ver foto actual</button>'
+      : '<span class="rec-foto-none">sin foto</span>';
     return '<div class="form-group"><label class="form-label">' + esc(label) + '</label>' +
       '<input type="file" accept="image/*" class="form-input rec-file" id="' + campo + '">' +
-      '<div class="rec-foto-hint">' + (editing ? prev + ' · dejá vacío para conservarla' : 'Opcional') + '</div></div>';
+      '<div class="rec-foto-hint">' + (editing ? verBtn + ' · dejá vacío para conservarla' : 'Opcional') + '</div></div>';
   };
 
   abrirModal(
@@ -684,65 +795,88 @@ async function exportarRecicladoresExcel() {
     .sino-switch input:checked + .sino-slider { background-image:var(--grad-c); }
     .sino-switch input:checked + .sino-slider::before { transform:translateX(20px); }
 
-    /* Tarjetas móviles */
-    .rec-mob { display:none; flex-direction:column; gap:12px; }
-    .rec-card { background:var(--surface); border-radius:20px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.04); }
-    .rec-card-nombre { font-size:16px; display:inline-block; }
-    .rec-card-grid { display:flex; gap:10px; margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
-    .rec-cell { flex:1; display:flex; flex-direction:column; gap:5px; }
-    .rec-cell b { font-size:14px; font-weight:700; color:var(--text); }
-    .rec-mini { font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.5px; }
-    .rec-foot { display:flex; justify-content:flex-end; margin-top:14px; }
+    /* Form: botón ver foto */
+    .rec-foto-ver { display:inline-flex; align-items:center; gap:5px; background:rgba(80,108,255,.1); color:#506CFF; border:none; font-family:inherit; font-size:11px; font-weight:700; padding:5px 10px; border-radius:8px; cursor:pointer; }
+    .rec-foto-ver svg { width:14px; height:14px; }
+    .rec-foto-ver:hover { background:rgba(80,108,255,.18); }
+    .rec-foto-none { color:var(--text-dim); }
+
+    /* Visor de foto (lightbox) */
+    .rec-lightbox { position:fixed; inset:0; z-index:9999; background:rgba(15,18,30,.82); display:flex; align-items:center; justify-content:center; padding:24px; backdrop-filter:blur(2px); }
+    .rec-lightbox-inner { position:relative; max-width:520px; width:100%; }
+    .rec-lightbox-inner img { width:100%; max-height:80vh; object-fit:contain; border-radius:14px; display:block; background:#fff; }
+    .rec-lightbox-cap { text-align:center; color:#fff; font-size:13px; font-weight:600; margin-top:10px; }
+    .rec-lightbox-x { position:absolute; top:-14px; right:-14px; width:34px; height:34px; border-radius:50%; border:none; background:#fff; color:#333; font-size:22px; line-height:1; cursor:pointer; box-shadow:0 2px 10px rgba(0,0,0,.3); }
 
     /* Nivel 1: asociaciones agrupadas por provincia */
-    .asoc-provs { display:flex; flex-direction:column; gap:18px; }
-    .asoc-grupo-titulo {
-      font-size:11px; font-weight:700; color:var(--text-dim);
-      text-transform:uppercase; letter-spacing:.6px; margin-bottom:7px; padding-left:2px;
-    }
+    .asoc-provs { display:flex; flex-direction:column; gap:20px; }
+    .asoc-grupo-titulo { display:flex; align-items:center; gap:9px; margin-bottom:9px; padding-left:2px; }
+    .asoc-prov-ico { width:30px; height:30px; border-radius:9px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+    .asoc-prov-ico svg { width:17px; height:17px; }
+    .asoc-prov-nom { font-size:12px; font-weight:800; color:var(--text); text-transform:uppercase; letter-spacing:.7px; }
+    .asoc-prov-count { font-size:11.5px; font-weight:600; color:var(--text-dim); border-left:1.5px solid var(--border); padding-left:9px; }
     .asoc-grupo-lista { background:var(--surface); border:1px solid var(--border); border-radius:14px; overflow:hidden; }
     .asoc-row {
-      display:flex; align-items:center; justify-content:space-between; gap:12px; width:100%;
+      display:flex; align-items:center; gap:12px; width:100%;
       background:none; border:none; border-bottom:1px solid var(--border);
-      padding:13px 16px; cursor:pointer; font-family:inherit; text-align:left;
-      transition:background .13s;
+      padding:12px 16px; cursor:pointer; font-family:inherit; text-align:left; transition:background .13s;
     }
     .asoc-row:last-child { border-bottom:none; }
     .asoc-row:hover { background:rgba(80,108,255,.05); }
-    .asoc-row-nombre { font-size:14px; color:var(--text); line-height:1.35; }
-    .asoc-row-vacia .asoc-row-nombre { color:var(--text-muted); }
+    .asoc-row-ico { width:34px; height:34px; border-radius:9px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+    .asoc-row-ico svg { width:18px; height:18px; }
+    .asoc-row-nombre { font-size:14px; color:var(--text); line-height:1.35; flex:1; min-width:0; }
+    .asoc-row-vacia { opacity:.62; }
     .asoc-row-right { display:flex; align-items:center; gap:11px; flex-shrink:0; }
-    .asoc-pill {
-      background:rgba(80,108,255,.12); color:#506CFF; font-size:12px; font-weight:700;
-      min-width:26px; height:22px; padding:0 8px; border-radius:20px;
-      display:inline-flex; align-items:center; justify-content:center;
-    }
+    .asoc-pill { font-size:12px; font-weight:700; min-width:26px; height:22px; padding:0 8px; border-radius:20px; display:inline-flex; align-items:center; justify-content:center; }
     .asoc-pill-0 { background:rgba(0,0,0,.05); color:var(--text-dim); font-weight:600; }
     .asoc-row-chev { color:var(--text-dim); display:inline-flex; transition:transform .13s; }
     .asoc-row-chev svg { width:18px; height:18px; }
     .asoc-row:hover .asoc-row-chev { transform:translateX(3px); color:#506CFF; }
 
-    /* Nivel 2: breadcrumb + volver */
-    .rec-breadcrumb { font-size:12.5px; color:var(--text-muted); margin-bottom:6px; }
-    .rec-breadcrumb a { color:#506CFF; cursor:pointer; font-weight:600; }
-    .rec-breadcrumb a:hover { text-decoration:underline; }
+    /* Nivel 2: volver + título */
     .rec-title-row { display:flex; align-items:center; gap:12px; }
     .rec-asoc-info { min-width:0; }
-    .rec-asoc-nombre { font-size:17px; font-weight:700; color:var(--text); line-height:1.3; }
     .rec-asoc-conteo { font-size:12.5px; color:var(--text-muted); margin-top:2px; }
-    .rec-back {
-      width:34px; height:34px; border-radius:10px; flex-shrink:0; border:1px solid var(--border);
-      background:var(--surface); color:var(--text-muted); cursor:pointer;
-      display:flex; align-items:center; justify-content:center; transition:background .15s, color .15s;
-    }
+    .rec-back { width:34px; height:34px; border-radius:10px; flex-shrink:0; border:1px solid var(--border); background:var(--surface); color:var(--text-muted); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background .15s,color .15s; }
     .rec-back:hover { background:rgba(80,108,255,.08); color:#506CFF; }
     .rec-back svg { width:18px; height:18px; }
 
+    /* Nivel 2: barra de búsqueda + tarjetas resumen */
+    .rec-toolbar { display:flex; flex-direction:column; gap:14px; margin-bottom:18px; }
+    .rec-search { position:relative; display:flex; align-items:center; }
+    .rec-search svg { position:absolute; left:14px; width:18px; height:18px; color:var(--text-dim); pointer-events:none; }
+    .rec-search input { width:100%; padding:12px 14px 12px 42px; border:1px solid var(--border); border-radius:14px; background:var(--surface); font-family:inherit; font-size:14px; color:var(--text); }
+    .rec-search input:focus { outline:none; border-color:#506CFF; box-shadow:0 0 0 3px rgba(80,108,255,.12); }
+    .rec-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+    .rec-stat { display:flex; align-items:center; gap:11px; background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:14px 16px; }
+    .rec-stat-ico { width:40px; height:40px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+    .rec-stat-ico svg { width:20px; height:20px; }
+    .rec-stat-txt { display:flex; flex-direction:column; min-width:0; }
+    .rec-stat-txt b { font-size:20px; font-weight:800; color:var(--text); line-height:1.1; }
+    .rec-stat-txt span { font-size:11.5px; color:var(--text-muted); line-height:1.3; }
+
+    /* Nivel 2: tarjetas de reciclador (sin foto) */
+    .rec-cards2 { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:14px; }
+    .rec-card2 { background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px 18px; cursor:pointer; transition:box-shadow .16s,transform .12s,border-color .16s; }
+    .rec-card2:hover { box-shadow:0 6px 20px rgba(0,0,0,.08); transform:translateY(-2px); border-color:transparent; }
+    .rec-card2-top { display:flex; align-items:flex-start; gap:12px; }
+    .rec-avatar { width:46px; height:46px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:15px; font-weight:800; }
+    .rec-card2-id { flex:1; min-width:0; }
+    .rec-card2-nombre { font-size:15px; font-weight:700; color:var(--text); line-height:1.3; }
+    .rec-card2-meta { display:flex; flex-direction:column; gap:3px; margin-top:5px; }
+    .rec-card2-dato { display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--text-muted); }
+    .rec-card2-dato svg { width:14px; height:14px; color:var(--text-dim); flex-shrink:0; }
+    .rec-badge { font-size:10.5px; font-weight:700; padding:4px 9px; border-radius:20px; white-space:nowrap; flex-shrink:0; }
+    .rec-badge-ok { background:rgba(24,174,151,.12); color:#0f9b84; }
+    .rec-badge-warn { background:rgba(245,173,33,.15); color:#b3800f; }
+    .rec-card2-foot { display:flex; justify-content:flex-end; margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
+
     @media (max-width:768px) {
-      .rec-desk { display:none; }
-      .rec-mob { display:flex; }
       .rf-grid { grid-template-columns:1fr; }
       .rf-fotos { grid-template-columns:1fr; }
+      .rec-stats { grid-template-columns:1fr; }
+      .rec-cards2 { grid-template-columns:1fr; }
     }
   `;
   document.head.appendChild(s);
