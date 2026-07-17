@@ -50,6 +50,7 @@ function renderFinanciero() {
 }
 
 function cargarCajas() {
+  FIN_PAGINA = 1;
   CAJAS_DATA = CAT.cajas.filter(function (c) {
     return pasaFiltro(FIN_FILTROS.prov, c.provincia) && pasaFiltro(FIN_FILTROS.asoc, c.id_asociacion);
   }).slice().sort(function (a, b) {
@@ -62,62 +63,115 @@ function cargarCajas() {
   renderTablaCajas();
 }
 
-function _acta(b) {
-  return b ? '<span style="color:#0a9e83;font-weight:600">✓ Sí</span>' : '<span style="color:var(--text-dim)">No</span>';
+// Casillas de documentos (PDF) de la caja. key = campo en documentos; file = nombre en Drive.
+const CAJA_DOCS = [
+  { key: 'acta_miembros',   lbl: 'Acta de miembros',   file: 'Acta_miembros' },
+  { key: 'acta_validacion', lbl: 'Acta de validación', file: 'Acta_validacion' },
+  { key: 'evidencia',       lbl: 'Evidencia',          file: 'Evidencia' },
+];
+
+function _cajaDoc(c, key) { return (c && c.documentos && c.documentos[key]) ? c.documentos[key] : null; }
+
+// Visto para la tabla (verde si el documento existe)
+function _docVisto(doc) {
+  return (doc && doc.url)
+    ? '<span class="fin-visto"><span class="fin-visto-ic">' + icoHTML('check') + '</span>Sí</span>'
+    : '<span class="fin-visto-no">—</span>';
 }
+
+let FIN_PAGINA = 1;
+const FIN_POR_PAGINA = 8;
+function irPaginaCajas(p) { FIN_PAGINA = p; renderTablaCajas(); }
 
 function renderTablaCajas() {
   const wrap = document.getElementById('fin-wrap');
   if (!wrap) return;
+
+  // ── Tarjetas-resumen ──
+  const total = CAJAS_DATA.length;
+  const activas = CAJAS_DATA.filter(function (c) { return c.activa !== false; });
+  const provsAct = new Set(activas.map(function (c) { return c.provincia; }).filter(Boolean));
+  const asocsAct = new Set(activas.map(function (c) { return c.id_asociacion; }).filter(Boolean));
+  const anio = new Date().getFullYear();
+  const stats = '<div class="ali-stats">' +
+    _statCardAli('wallet', '#506CFF', total, 'Total cajas', 'Registradas') +
+    _statCardAli('mapPin', '#18AE97', provsAct.size, 'Provincias', 'Con cajas activas') +
+    _statCardAli('users', '#7B5CFF', asocsAct.size, 'Asociaciones', 'Con cajas activas') +
+    _statCardAli('calendar', '#F5AD21', anio, 'Año seleccionado', 'Período actual') +
+  '</div>';
+
   if (!CAJAS_DATA.length) {
-    wrap.innerHTML = '<div class="empty-state">' +
+    wrap.innerHTML = stats + '<div class="empty-state">' +
       icoHTML('wallet').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"') +
       '<p>No hay cajas de ahorro con estos filtros</p></div>';
     return;
   }
+
   const edit = puedeEditar();
   const acciones = function (c) {
     const docId = jsEsc(c._docId || '');
-    const carpeta = jsEsc(c.id_carpeta_drive || '');
-    return (carpeta ? '<button class="icon-btn" onclick="window.open(\'https://drive.google.com/drive/folders/' + carpeta + '\',\'_blank\')" title="Carpeta">' + icoHTML('folder') + '</button>' : '') +
-      '<button class="icon-btn" onclick="verCaja(\'' + docId + '\')" title="Ver">' + icoHTML('view') + '</button>' +
-      (edit ? '<button class="icon-btn primary" onclick="editarCaja(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' +
-        '<button class="icon-btn del" onclick="confirmarEliminarCaja(\'' + docId + '\')" title="Eliminar">' + icoHTML('trash') + '</button>' : '');
+    return '<button class="icon-btn" onclick="event.stopPropagation();verCaja(\'' + docId + '\')" title="Ver">' + icoHTML('view') + '</button>' +
+      (edit ? '<button class="icon-btn primary" onclick="event.stopPropagation();editarCaja(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' +
+        '<button class="icon-btn del" onclick="event.stopPropagation();confirmarEliminarCaja(\'' + docId + '\')" title="Eliminar">' + icoHTML('trash') + '</button>' : '');
+  };
+  const estadoBadge = function (c) {
+    const act = c.activa !== false;
+    return '<span class="ali-estado ' + (act ? 'ali-estado-on' : 'ali-estado-off') + '">' + (act ? 'Activa' : 'Inactiva') + '</span>';
   };
 
+  // ── Paginación ──
+  const nPag = Math.max(1, Math.ceil(CAJAS_DATA.length / FIN_POR_PAGINA));
+  if (FIN_PAGINA > nPag) FIN_PAGINA = nPag;
+  const ini = (FIN_PAGINA - 1) * FIN_POR_PAGINA;
+  const pagina = CAJAS_DATA.slice(ini, ini + FIN_POR_PAGINA);
+
   // Tabla (desktop)
-  const filas = CAJAS_DATA.map(function (c) {
-    return '<tr>' +
-      '<td style="font-weight:600">' + esc(c.asociacion || '—') + '</td>' +
+  const filas = pagina.map(function (c) {
+    const docId = jsEsc(c._docId || '');
+    return '<tr onclick="verCaja(\'' + docId + '\')">' +
+      '<td><div class="fin-conv-nombre">' + esc(c.asociacion || '—') + '</div>' +
+        '<div class="fin-conv-meta">' + estadoBadge(c) + '</div></td>' +
       '<td>' + esc(c.provincia || '—') + '</td>' +
       '<td>' + esc(c.anio || '—') + '</td>' +
-      '<td>' + _acta(c.acta_miembros) + '</td>' +
-      '<td>' + _acta(c.acta_validacion) + '</td>' +
+      '<td>' + _docVisto(_cajaDoc(c, 'acta_miembros')) + '</td>' +
+      '<td>' + _docVisto(_cajaDoc(c, 'acta_validacion')) + '</td>' +
+      '<td>' + _docVisto(_cajaDoc(c, 'evidencia')) + '</td>' +
       '<td data-actions-row><div class="td-actions">' + acciones(c) + '</div></td>' +
     '</tr>';
   }).join('');
   const tabla = '<div class="table-wrap fin-desk"><table>' +
-    '<thead><tr><th>Asociación</th><th>Provincia</th><th>Año</th><th>Acta de miembros</th><th>Acta de validación</th><th></th></tr></thead>' +
+    '<thead><tr><th>Asociación</th><th>Provincia</th><th>Año</th><th>Acta de miembros</th><th>Acta de validación</th><th>Evidencia</th><th style="text-align:right">Acciones</th></tr></thead>' +
     '<tbody>' + filas + '</tbody></table></div>';
 
   // Tarjetas (móvil)
-  const cards = CAJAS_DATA.map(function (c) {
-    return '<div class="fin-card">' +
-      '<div class="fin-top"><div class="fin-id"><div class="fin-label">Asociación</div>' +
-        '<div class="fin-nombre">' + esc(c.asociacion || '—') + '</div></div>' +
+  const cards = pagina.map(function (c) {
+    const docId = jsEsc(c._docId || '');
+    return '<div class="fin-card" onclick="verCaja(\'' + docId + '\')">' +
+      '<div class="fin-top"><div class="fin-id"><div class="fin-nombre">' + esc(c.asociacion || '—') + '</div>' +
+        '<div class="fin-conv-meta" style="margin-top:5px">' + estadoBadge(c) + '</div></div>' +
         '<span class="badge badge-blue">' + esc(c.anio || '—') + '</span></div>' +
       '<div class="fin-grid">' +
         '<div class="fin-cell"><span class="fin-mini">Provincia</span><b>' + esc(c.provincia || '—') + '</b></div>' +
-        '<div class="fin-cell"><span class="fin-mini">Acta miembros</span><b>' + _acta(c.acta_miembros) + '</b></div>' +
-        '<div class="fin-cell"><span class="fin-mini">Acta validación</span><b>' + _acta(c.acta_validacion) + '</b></div>' +
+        '<div class="fin-cell"><span class="fin-mini">Acta miembros</span><b>' + _docVisto(_cajaDoc(c, 'acta_miembros')) + '</b></div>' +
+        '<div class="fin-cell"><span class="fin-mini">Acta validación</span><b>' + _docVisto(_cajaDoc(c, 'acta_validacion')) + '</b></div>' +
+        '<div class="fin-cell"><span class="fin-mini">Evidencia</span><b>' + _docVisto(_cajaDoc(c, 'evidencia')) + '</b></div>' +
       '</div>' +
       '<div class="fin-foot"><div class="td-actions">' + acciones(c) + '</div></div>' +
     '</div>';
   }).join('');
   const cardsWrap = '<div class="fin-mob">' + cards + '</div>';
 
-  wrap.innerHTML = tabla + cardsWrap +
-    '<div style="font-size:12px;color:var(--text-dim);text-align:right;margin-top:10px">' + CAJAS_DATA.length + ' registro' + (CAJAS_DATA.length !== 1 ? 's' : '') + '</div>';
+  // Pie con paginación
+  const btnPrev = '<button class="ali-pg-btn"' + (FIN_PAGINA <= 1 ? ' disabled' : ' onclick="irPaginaCajas(' + (FIN_PAGINA - 1) + ')"') + '>‹</button>';
+  const btnNext = '<button class="ali-pg-btn"' + (FIN_PAGINA >= nPag ? ' disabled' : ' onclick="irPaginaCajas(' + (FIN_PAGINA + 1) + ')"') + '>›</button>';
+  let nums = '';
+  for (let p = 1; p <= nPag; p++) nums += '<button class="ali-pg-num' + (p === FIN_PAGINA ? ' on' : '') + '" onclick="irPaginaCajas(' + p + ')">' + p + '</button>';
+  const pager = '<div class="ali-pager">' +
+    '<span class="ali-pager-info">Mostrando ' + pagina.length + ' de ' + CAJAS_DATA.length + ' registro' + (CAJAS_DATA.length !== 1 ? 's' : '') + '</span>' +
+    '<div class="ali-pager-ctrls">' + btnPrev + nums + btnNext + '</div>' +
+  '</div>';
+
+  wrap.innerHTML = stats + tabla + cardsWrap + pager;
 }
 
 // ── Ver ficha ──
@@ -127,7 +181,12 @@ function verCaja(docId) {
   const dato = function (lbl, val) {
     return '<div class="rf-row"><span class="rf-lbl">' + esc(lbl) + '</span><span class="rf-val">' + (val ? esc(val) : '—') + '</span></div>';
   };
-  const sino = function (b) { return b ? 'Sí' : 'No'; };
+  const docsChips = CAJA_DOCS.map(function (d) {
+    const doc = _cajaDoc(c, d.key);
+    return doc && doc.url
+      ? '<a class="ali-doc-chip" href="' + esc(doc.url) + '" target="_blank" rel="noopener">' + icoHTML('file') + ' ' + esc(d.lbl) + '</a>'
+      : '<span class="ali-doc-chip ali-doc-chip-off">' + icoHTML('file') + ' ' + esc(d.lbl) + '</span>';
+  }).join('');
   abrirModal(
     '<div class="modal">' +
       '<div class="modal-head"><div><div class="modal-title">' + esc(c.asociacion || 'Caja de ahorro') + '</div>' +
@@ -135,15 +194,17 @@ function verCaja(docId) {
         '<button class="modal-close" onclick="cerrarModal()"></button></div>' +
       '<div class="modal-body">' +
         '<div class="rf-grid">' +
+          dato('Estado', c.activa !== false ? 'Activa' : 'Inactiva') +
           dato('Año', c.anio) +
           dato('Provincia', c.provincia) +
-          dato('Acta de miembros', sino(c.acta_miembros)) +
-          dato('Acta de validación', sino(c.acta_validacion)) +
+          dato('Fecha de creación', fmtFecha(c.fecha_creacion)) +
+          dato('Recicladores inscritos', fmtNum(c.num_inscritos || 0)) +
         '</div>' +
+        '<div style="margin-top:16px"><div class="form-label" style="margin-bottom:8px">Documentos</div>' +
+          '<div class="ali-docs-ver">' + docsChips + '</div></div>' +
         (c.observaciones ? '<div style="margin-top:14px"><div class="form-label">Observaciones</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px">' + esc(c.observaciones) + '</div></div>' : '') +
       '</div>' +
       '<div class="modal-foot">' +
-        (c.id_carpeta_drive ? '<a class="btn btn-glass" href="' + urlCarpeta(c.id_carpeta_drive) + '" target="_blank" rel="noopener">Carpeta de Drive ↗</a>' : '') +
         '<button class="btn btn-primary" onclick="cerrarModal()">Cerrar</button>' +
       '</div>' +
     '</div>'
@@ -176,10 +237,24 @@ function abrirFormCaja(docId) {
           '<div class="form-group"><label class="form-label">Asociación</label>' + asocField + '</div>' +
           '<div class="form-group"><label class="form-label">Provincia</label><input type="text" class="form-input" id="caja-provincia" readonly value="' + esc(c ? c.provincia : '') + '"></div>' +
           '<div class="form-group"><label class="form-label">Año</label><input type="number" class="form-input" id="caja-anio" min="2000" max="2100" step="1" value="' + (c ? c.anio : new Date().getFullYear()) + '"></div>' +
+          '<div class="form-group"><label class="form-label">Estado</label><select class="form-select" id="caja-estado">' +
+            '<option value="activa"' + (!c || c.activa !== false ? ' selected' : '') + '>Activa</option>' +
+            '<option value="inactiva"' + (c && c.activa === false ? ' selected' : '') + '>Inactiva</option>' +
+          '</select></div>' +
+          '<div class="form-group"><label class="form-label">Fecha de creación</label><input type="date" class="form-input" id="caja-fecha" value="' + esc(c ? c.fecha_creacion : '') + '"></div>' +
+          '<div class="form-group"><label class="form-label">Recicladores inscritos</label><input type="number" class="form-input" id="caja-inscritos" min="0" step="1" value="' + (c ? (c.num_inscritos || 0) : 0) + '"></div>' +
         '</div>' +
-        '<div class="form-label" style="margin:16px 0 8px">Documentos (en Drive)</div>' +
-        _sinoFin('caja-miembros', 'Acta de miembros', c ? c.acta_miembros : false) +
-        _sinoFin('caja-validacion', 'Acta de validación', c ? c.acta_validacion : false) +
+        '<div class="form-label" style="margin:16px 0 8px">Documentos (PDF)</div>' +
+        '<div class="ali-docs">' + CAJA_DOCS.map(function (d) {
+          const doc = _cajaDoc(c, d.key);
+          const ver = (doc && doc.url)
+            ? '<button type="button" class="ali-doc-ver" onclick="window.open(\'' + jsEsc(doc.url) + '\',\'_blank\')">' + icoHTML('viewCheck') + ' Ver PDF</button>'
+            : '<span class="ali-doc-sin">Sin archivo</span>';
+          return '<div class="ali-doc-item">' +
+            '<div class="ali-doc-cab"><span class="ali-doc-lbl">' + esc(d.lbl) + '</span>' + ver + '</div>' +
+            '<input type="file" accept="application/pdf,.pdf" class="form-input ali-doc-file" id="caja-doc-' + d.key + '">' +
+          '</div>';
+        }).join('') + '</div>' +
         '<div class="form-group" style="margin-top:14px"><label class="form-label">Observaciones</label>' +
           '<textarea class="form-textarea" id="caja-obs" placeholder="Notas…">' + esc(c ? c.observaciones : '') + '</textarea></div>' +
       '</div>' +
@@ -189,11 +264,6 @@ function abrirFormCaja(docId) {
       '</div>' +
     '</div>'
   );
-}
-
-function _sinoFin(id, label, checked) {
-  return '<label class="sino-row" style="margin-bottom:10px"><span>' + esc(label) + '</span>' +
-    '<span class="sino-switch"><input type="checkbox" id="' + id + '"' + (checked ? ' checked' : '') + '><span class="sino-slider"></span></span></label>';
 }
 
 function onAsocChangeCaja(idAsoc) {
@@ -223,23 +293,47 @@ async function guardarCaja(docId) {
     asociacion:       asocNombre,
     provincia:        provinciaDeAsociacion(idAsoc) || (actual ? actual.provincia : ''),
     anio:             anio,
-    acta_miembros:    !!(document.getElementById('caja-miembros') || {}).checked,
-    acta_validacion:  !!(document.getElementById('caja-validacion') || {}).checked,
+    activa:           ((document.getElementById('caja-estado') || {}).value) !== 'inactiva',
+    fecha_creacion:   (document.getElementById('caja-fecha') || {}).value || '',
+    num_inscritos:    (document.getElementById('caja-inscritos') || {}).value || 0,
     observaciones:    ((document.getElementById('caja-obs') || {}).value || '').trim(),
     id_carpeta_drive: actual ? actual.id_carpeta_drive : '',
+    documentos:       Object.assign({}, actual && actual.documentos ? actual.documentos : {}),
   };
 
   const btn = document.getElementById('caja-save-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
 
-  // Carpeta de Drive: Caja de ahorro > <Asociación> (compartida por asociación)
-  if (!o.id_carpeta_drive) {
-    const tok = driveToken();
+  // ── Drive: carpeta de la asociación (compartida) + subida de PDFs seleccionados ──
+  const nuevos = CAJA_DOCS.map(function (d) {
+    const el = document.getElementById('caja-doc-' + d.key);
+    const f = el && el.files && el.files[0] ? el.files[0] : null;
+    return f ? { key: d.key, file: d.file, archivo: f } : null;
+  }).filter(Boolean);
+
+  const noPdf = nuevos.find(function (n) {
+    return n.archivo.type !== 'application/pdf' && !/\.pdf$/i.test(n.archivo.name);
+  });
+  if (noPdf) { showToast('Solo se permiten archivos PDF'); if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; } return; }
+
+  const tok = driveToken();
+  if (!o.id_carpeta_drive || nuevos.length) {
     if (tok) {
-      try { o.id_carpeta_drive = await driveBuscarOCrear(asocNombre || idAsoc, DRIVE_PARENTS.cajas, tok); }
-      catch (e) { console.warn('Drive caja:', e); showToast('No se pudo crear la carpeta (se guarda igual)'); }
+      try {
+        if (!o.id_carpeta_drive) o.id_carpeta_drive = await driveBuscarOCrear(asocNombre || idAsoc, DRIVE_PARENTS.cajas, tok);
+        for (let i = 0; i < nuevos.length; i++) {
+          const n = nuevos[i];
+          if (btn) btn.textContent = 'Subiendo ' + (i + 1) + '/' + nuevos.length + '…';
+          // Incluye el año en el nombre (la carpeta es compartida por asociación entre años)
+          const up = await driveSubirArchivo(n.archivo, n.file + '_' + anio + '.pdf', o.id_carpeta_drive, tok);
+          o.documentos[n.key] = { id: up.id, url: up.webViewLink, nombre: n.file + '_' + anio + '.pdf' };
+        }
+      } catch (e) {
+        console.warn('Drive caja:', e);
+        showToast('No se pudieron subir algunos archivos (se guarda igual)');
+      }
     } else {
-      showToast('Sesión de Drive expirada: se guarda sin carpeta');
+      showToast(nuevos.length ? 'Sesión de Drive expirada: no se subieron los PDFs' : 'Sesión de Drive expirada: se guarda sin carpeta');
     }
   }
 
@@ -293,13 +387,15 @@ async function exportarCajasExcel() {
   try {
     await cargarSheetJS();
     if (!window.XLSX) { showToast('No se pudo cargar el exportador'); return; }
-    const sino = function (b) { return b ? 'Sí' : 'No'; };
-    const header = ['Asociación', 'Provincia', 'Año', 'Acta de Miembros', 'Acta de Validación', 'Observaciones', 'URL Carpeta'];
+    const tiene = function (c, key) { const d = _cajaDoc(c, key); return d && d.url ? 'Sí' : 'No'; };
+    const header = ['Asociación', 'Provincia', 'Año', 'Estado', 'Fecha de creación', 'Recicladores inscritos', 'Acta de Miembros', 'Acta de Validación', 'Evidencia', 'Observaciones'];
     const filas = CAJAS_DATA.map(function (c) {
-      return [c.asociacion, c.provincia, parseFloat(c.anio) || 0, sino(c.acta_miembros), sino(c.acta_validacion), c.observaciones || '', urlCarpeta(c.id_carpeta_drive)];
+      return [c.asociacion, c.provincia, parseFloat(c.anio) || 0, c.activa !== false ? 'Activa' : 'Inactiva',
+        c.fecha_creacion || '', parseFloat(c.num_inscritos) || 0,
+        tiene(c, 'acta_miembros'), tiene(c, 'acta_validacion'), tiene(c, 'evidencia'), c.observaciones || ''];
     });
     const ws = XLSX.utils.aoa_to_sheet([header].concat(filas));
-    ws['!cols'] = [{ wch: 28 }, { wch: 14 }, { wch: 7 }, { wch: 16 }, { wch: 18 }, { wch: 30 }, { wch: 40 }];
+    ws['!cols'] = [{ wch: 28 }, { wch: 14 }, { wch: 7 }, { wch: 9 }, { wch: 15 }, { wch: 20 }, { wch: 16 }, { wch: 18 }, { wch: 12 }, { wch: 30 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Cajas de Ahorro');
     XLSX.writeFile(wb, 'CajasAhorro_' + new Date().toISOString().substring(0, 10) + '.xlsx');
@@ -313,23 +409,26 @@ async function exportarCajasExcel() {
   const s = document.createElement('style');
   s.id = 'fin-styles';
   s.textContent = `
-    /* Switch Sí/No (por si financiero carga sin recicladores.js) */
-    .sino-row { display:flex; align-items:center; justify-content:space-between; padding:11px 14px; border:1.5px solid var(--border); border-radius:12px; font-size:14px; color:var(--text); }
-    .sino-switch { position:relative; width:44px; height:24px; flex-shrink:0; }
-    .sino-switch input { opacity:0; width:0; height:0; position:absolute; }
-    .sino-slider { position:absolute; inset:0; background:#d7d7e0; border-radius:24px; transition:.2s; cursor:pointer; }
-    .sino-slider::before { content:""; position:absolute; width:18px; height:18px; left:3px; top:3px; background:#fff; border-radius:50%; transition:.2s; box-shadow:0 1px 2px rgba(0,0,0,.2); }
-    .sino-switch input:checked + .sino-slider { background-image:var(--grad-c); }
-    .sino-switch input:checked + .sino-slider::before { transform:translateX(20px); }
+    /* Visto de documentos (tabla) */
+    .fin-visto { display:inline-flex; align-items:center; gap:7px; font-size:13px; font-weight:700; color:#0f9b84; }
+    .fin-visto-ic { width:22px; height:22px; border-radius:50%; background:#18AE97; color:#fff; display:inline-flex; align-items:center; justify-content:center; flex-shrink:0; }
+    .fin-visto-ic svg { width:13px; height:13px; }
+    .fin-visto-no { color:var(--text-dim); font-weight:600; }
+
+    /* Asociación (nombre + estado) */
+    .fin-conv-nombre { font-weight:700; color:var(--text); font-size:14px; }
+    .fin-conv-meta { display:flex; align-items:center; gap:8px; margin-top:5px; }
+
+    .fin-desk table tbody tr { cursor:pointer; }
 
     /* Tarjetas móviles */
     .fin-mob { display:none; flex-direction:column; gap:12px; }
-    .fin-card { background:var(--surface); border-radius:20px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,.04),0 4px 12px rgba(0,0,0,.04); }
+    .fin-card { background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px; cursor:pointer; transition:box-shadow .15s,transform .12s,border-color .15s; }
+    .fin-card:hover { box-shadow:0 6px 20px rgba(0,0,0,.08); transform:translateY(-2px); border-color:transparent; }
     .fin-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
-    .fin-label { font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.7px; }
-    .fin-nombre { font-size:16px; font-weight:700; color:var(--text); margin-top:2px; line-height:1.3; }
-    .fin-grid { display:flex; gap:10px; margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
-    .fin-cell { flex:1; display:flex; flex-direction:column; gap:5px; min-width:0; }
+    .fin-nombre { font-size:16px; font-weight:700; color:var(--text); line-height:1.3; }
+    .fin-grid { display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
+    .fin-cell { flex:1; min-width:45%; display:flex; flex-direction:column; gap:5px; }
     .fin-cell b { font-size:13px; font-weight:700; color:var(--text); }
     .fin-mini { font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.5px; }
     .fin-foot { display:flex; justify-content:flex-end; margin-top:14px; }
@@ -337,6 +436,8 @@ async function exportarCajasExcel() {
     @media (max-width:768px) {
       .fin-desk { display:none; }
       .fin-mob { display:flex; }
+      .ali-stats { grid-template-columns:1fr 1fr; }
+      .form-grid-2 { grid-template-columns:1fr 1fr; }
     }
   `;
   document.head.appendChild(s);
