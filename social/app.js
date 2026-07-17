@@ -146,6 +146,7 @@ function alianzaFromFS(d) {
     anio:              d.anio || '',
     num_recicladores:  d.num_recicladores || 0,
     etapas:            Array.isArray(d.etapas) ? d.etapas : [],              // ['Inicial','Intermedia','Final']
+    documentos:        (d.documentos && typeof d.documentos === 'object') ? d.documentos : {},
     observaciones:     d.observaciones || '',
     id_carpeta_drive:  d.id_carpeta_drive || '',
   };
@@ -163,6 +164,7 @@ function alianzaToFS(o) {
     anio:              parseFloat(o.anio) || 0,
     num_recicladores:  parseFloat(o.num_recicladores) || 0,
     etapas:            Array.isArray(o.etapas) ? o.etapas : [],
+    documentos:        (o.documentos && typeof o.documentos === 'object') ? o.documentos : {},
     observaciones:     o.observaciones || '',
     id_carpeta_drive:  o.id_carpeta_drive || '',
   };
