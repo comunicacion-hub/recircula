@@ -215,6 +215,7 @@ function hitoFromFS(d) {
     fecha:            d.fecha || '',
     anio:             d.anio || '',
     mes:              d.mes || '',
+    num_asistentes:   d.num_asistentes || 0,
     actores:          Array.isArray(d.actores) ? d.actores : [],      // opción múltiple
     resumen:          d.resumen || '',
     asociaciones:     Array.isArray(d.asociaciones) ? d.asociaciones : [], // ids beneficiadas
@@ -233,6 +234,7 @@ function hitoToFS(o) {
     fecha:            o.fecha || '',
     anio:             parseFloat(o.anio) || 0,
     mes:              o.mes || '',
+    num_asistentes:   parseFloat(o.num_asistentes) || 0,
     actores:          Array.isArray(o.actores) ? o.actores : [],
     resumen:          o.resumen || '',
     asociaciones:     Array.isArray(o.asociaciones) ? o.asociaciones : [],
