@@ -16,6 +16,7 @@ const DRIVE_PARENTS = {
   recicladores: '1eNVLmzcYuvfVY7fFZVTfvhFZbEuZHNqS', // "Recicladores"  (estructura: Recicladores > Asociación > Nombre)
   alianzas:     '1AxMaVMUP3MwkGoVvRhKnE_6Zi1_ui0_U', // "Alianzas"      (estructura: Alianzas > Convenio)
   cajas:        '1mIssgggP4j8Vn9Je71mW22q_3sMPYuj3', // "Caja de ahorro" (estructura: Caja de ahorro > Asociación)
+  hitos:        '1uSa8ZZi4ULOxqUWDr2INFtDQiCxVA1RL', // "Hitos"         (estructura: Hitos > Nombre del hito)
 };
 
 let SESSION = null;
@@ -27,6 +28,7 @@ let CAT = {
   asociaciones: [],   // Asoc_Asociativo (solo para num_recicladores → suma en Alianzas)
   alianzas:     [],   // Alianzas
   cajas:        [],   // CajasAhorro
+  hitos:        [],   // Hitos
 };
 
 // ============================================================
@@ -203,6 +205,43 @@ function cajaToFS(o) {
   };
 }
 
+function hitoFromFS(d) {
+  return {
+    _docId: d._docId,
+    id_hito:          d.id_hito || '',
+    nombre:           d.nombre || '',
+    tipos:            Array.isArray(d.tipos) ? d.tipos : [],          // opción múltiple
+    provincias:       Array.isArray(d.provincias) ? d.provincias : [],// opción múltiple
+    fecha:            d.fecha || '',
+    anio:             d.anio || '',
+    mes:              d.mes || '',
+    actores:          Array.isArray(d.actores) ? d.actores : [],      // opción múltiple
+    resumen:          d.resumen || '',
+    asociaciones:     Array.isArray(d.asociaciones) ? d.asociaciones : [], // ids beneficiadas
+    impacto:          d.impacto || '',
+    documentos:       (d.documentos && typeof d.documentos === 'object') ? d.documentos : {},
+    id_carpeta_drive: d.id_carpeta_drive || '',
+  };
+}
+
+function hitoToFS(o) {
+  return {
+    id_hito:          o.id_hito || '',
+    nombre:           o.nombre || '',
+    tipos:            Array.isArray(o.tipos) ? o.tipos : [],
+    provincias:       Array.isArray(o.provincias) ? o.provincias : [],
+    fecha:            o.fecha || '',
+    anio:             parseFloat(o.anio) || 0,
+    mes:              o.mes || '',
+    actores:          Array.isArray(o.actores) ? o.actores : [],
+    resumen:          o.resumen || '',
+    asociaciones:     Array.isArray(o.asociaciones) ? o.asociaciones : [],
+    impacto:          o.impacto || '',
+    documentos:       (o.documentos && typeof o.documentos === 'object') ? o.documentos : {},
+    id_carpeta_drive: o.id_carpeta_drive || '',
+  };
+}
+
 // ============================================================
 // CRUCES (recicladores no tiene provincia: se resuelve por asociación)
 // ============================================================
@@ -361,12 +400,14 @@ async function cargarDatos() {
       fsGetAll('Asoc_Asociativo'),
       fsGetAll('Alianzas'),
       fsGetAll('CajasAhorro'),
+      fsGetAll('Hitos'),
     ]);
     CAT.recicladores = res[0].map(recicladorFromFS);
     CAT.asocAmbiente = res[1].map(asocAmbienteFromFS).sort(byNombre);
     CAT.asociaciones = res[2].map(asociacionMiniFromFS);
     CAT.alianzas     = res[3].map(alianzaFromFS);
     CAT.cajas        = res[4].map(cajaFromFS);
+    CAT.hitos        = res[5].map(hitoFromFS);
     console.log('[Social] datos:', {
       recicladores: CAT.recicladores.length, asocAmbiente: CAT.asocAmbiente.length,
       asociaciones: CAT.asociaciones.length, alianzas: CAT.alianzas.length, cajas: CAT.cajas.length,
@@ -436,6 +477,7 @@ function navTo(seccion) {
     case 'recicladores': if (typeof renderRecicladores === 'function') renderRecicladores(); break;
     case 'alianzas':     if (typeof renderAlianzas === 'function')     renderAlianzas();     break;
     case 'financiero':   if (typeof renderFinanciero === 'function')   renderFinanciero();   break;
+    case 'hitos':        if (typeof renderHitos === 'function')        renderHitos();        break;
   }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
