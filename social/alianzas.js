@@ -152,11 +152,9 @@ function renderTablaAlianzas() {
   const edit = puedeEditar();
   const acciones = function (a) {
     const docId = jsEsc(a._docId || '');
-    const carpeta = jsEsc(a.id_carpeta_drive || '');
-    return (carpeta ? '<button class="icon-btn" onclick="event.stopPropagation();window.open(\'https://drive.google.com/drive/folders/' + carpeta + '\',\'_blank\')" title="Carpeta">' + icoHTML('folder') + '</button>' : '') +
-      '<button class="icon-btn" onclick="event.stopPropagation();verAlianza(\'' + docId + '\')" title="Ver">' + icoHTML('view') + '</button>' +
+    return '<button class="icon-btn" onclick="event.stopPropagation();verAlianza(\'' + docId + '\')" title="Ver">' + icoHTML('view') + '</button>' +
       (edit ? '<button class="icon-btn primary" onclick="event.stopPropagation();editarAlianza(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' +
-        '<button class="icon-btn del" onclick="event.stopPropagation();confirmarEliminarAlianza(\'' + docId + '\',\'' + carpeta + '\')" title="Eliminar">' + icoHTML('trash') + '</button>' : '');
+        '<button class="icon-btn del" onclick="event.stopPropagation();confirmarEliminarAlianza(\'' + docId + '\',\'' + jsEsc(a.id_carpeta_drive || '') + '\')" title="Eliminar">' + icoHTML('trash') + '</button>' : '');
   };
   const tipoBadge = function (a) {
     const act = a.activo !== false;
@@ -261,7 +259,6 @@ function verAlianza(docId) {
           }).join('') + '</div></div>' +
       '</div>' +
       '<div class="modal-foot">' +
-        (a.id_carpeta_drive ? '<a class="btn btn-glass" href="' + urlCarpeta(a.id_carpeta_drive) + '" target="_blank" rel="noopener">Carpeta de Drive ↗</a>' : '') +
         '<button class="btn btn-primary" onclick="cerrarModal()">Cerrar</button>' +
       '</div>' +
     '</div>'
