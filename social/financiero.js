@@ -90,14 +90,14 @@ function renderTablaCajas() {
   // ── Tarjetas-resumen ──
   const total = CAJAS_DATA.length;
   const activas = CAJAS_DATA.filter(function (c) { return c.activa !== false; });
+  const inscritosAct = activas.reduce(function (acc, c) { return acc + (parseFloat(c.num_inscritos) || 0); }, 0);
   const provsAct = new Set(activas.map(function (c) { return c.provincia; }).filter(Boolean));
   const asocsAct = new Set(activas.map(function (c) { return c.id_asociacion; }).filter(Boolean));
-  const anio = new Date().getFullYear();
   const stats = '<div class="ali-stats">' +
     _statCardAli('wallet', '#506CFF', total, 'Total cajas', 'Registradas') +
     _statCardAli('mapPin', '#18AE97', provsAct.size, 'Provincias', 'Con cajas activas') +
     _statCardAli('users', '#7B5CFF', asocsAct.size, 'Asociaciones', 'Con cajas activas') +
-    _statCardAli('calendar', '#F5AD21', anio, 'Año seleccionado', 'Período actual') +
+    _statCardAli('user', '#F5AD21', fmtNum(inscritosAct), 'Recicladores en cajas', 'En cajas activas') +
   '</div>';
 
   if (!CAJAS_DATA.length) {
