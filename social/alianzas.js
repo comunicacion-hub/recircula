@@ -15,6 +15,15 @@ let ALIANZAS_DATA = [];
 
 const ETAPAS_ALI = ['Inicial', 'Intermedia', 'Final'];
 
+// Casillas de documentos (PDF) de la alianza. key = campo en Firestore; file = nombre del archivo en Drive.
+const ALI_DOCS = [
+  { key: 'acta1',    lbl: 'Acta de reunión 1',            file: 'Acta_reunion_1' },
+  { key: 'acta2',    lbl: 'Acta de reunión 2 (Opcional)', file: 'Acta_reunion_2' },
+  { key: 'acta3',    lbl: 'Acta de reunión 3 (Opcional)', file: 'Acta_reunion_3' },
+  { key: 'convenio', lbl: 'Convenio',                     file: 'Convenio' },
+  { key: 'informe',  lbl: 'Informe de resultado',         file: 'Informe_resultado' },
+];
+
 function registerAlianzasFilters() {
   registerFilterConfig('alianzas', {
     badgeId: 'ali-filter-badge',
@@ -242,6 +251,14 @@ function verAlianza(docId) {
         '<div style="margin-top:16px"><div class="form-label" style="margin-bottom:8px">Asociaciones beneficiarias (' + nombres.length + ')</div>' +
           (nombres.length ? '<div class="ali-chips">' + nombres.map(function (n) { return '<span class="ali-chip">' + esc(n) + '</span>'; }).join('') + '</div>' : '<span style="color:var(--text-dim);font-size:13px">—</span>') + '</div>' +
         (a.observaciones ? '<div style="margin-top:16px"><div class="form-label">Observaciones</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px">' + esc(a.observaciones) + '</div></div>' : '') +
+        '<div style="margin-top:16px"><div class="form-label" style="margin-bottom:8px">Documentos</div>' +
+          '<div class="ali-docs-ver">' + ALI_DOCS.map(function (d) {
+            const doc = a.documentos ? a.documentos[d.key] : null;
+            const etq = d.lbl.replace(' (Opcional)', '');
+            return doc && doc.url
+              ? '<a class="ali-doc-chip" href="' + esc(doc.url) + '" target="_blank" rel="noopener">' + icoHTML('file') + ' ' + esc(etq) + '</a>'
+              : '<span class="ali-doc-chip ali-doc-chip-off">' + icoHTML('file') + ' ' + esc(etq) + '</span>';
+          }).join('') + '</div></div>' +
       '</div>' +
       '<div class="modal-foot">' +
         (a.id_carpeta_drive ? '<a class="btn btn-glass" href="' + urlCarpeta(a.id_carpeta_drive) + '" target="_blank" rel="noopener">Carpeta de Drive ↗</a>' : '') +
@@ -317,6 +334,17 @@ function abrirFormAlianza(docId) {
         '<div class="chk-pills">' + etapaChecks + '</div>' +
         '<div class="form-group" style="margin-top:16px"><label class="form-label">Observaciones</label>' +
           '<textarea class="form-textarea" id="ali-obs" placeholder="Notas del convenio…">' + esc(a ? a.observaciones : '') + '</textarea></div>' +
+        '<div class="form-label" style="margin:16px 0 8px">Documentos (PDF)</div>' +
+        '<div class="ali-docs">' + ALI_DOCS.map(function (d) {
+          const doc = a && a.documentos ? a.documentos[d.key] : null;
+          const ver = (doc && doc.url)
+            ? '<button type="button" class="ali-doc-ver" onclick="window.open(\'' + jsEsc(doc.url) + '\',\'_blank\')">' + icoHTML('viewCheck') + ' Ver PDF</button>'
+            : '<span class="ali-doc-sin">Sin archivo</span>';
+          return '<div class="ali-doc-item">' +
+            '<div class="ali-doc-cab"><span class="ali-doc-lbl">' + esc(d.lbl) + '</span>' + ver + '</div>' +
+            '<input type="file" accept="application/pdf,.pdf" class="form-input ali-doc-file" id="ali-doc-' + d.key + '">' +
+          '</div>';
+        }).join('') + '</div>' +
       '</div>' +
       '<div class="modal-foot">' +
         '<button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>' +
@@ -373,19 +401,44 @@ async function guardarAlianza(docId) {
     etapas:            _etapasMarcadas(),
     observaciones:     ((document.getElementById('ali-obs') || {}).value || '').trim(),
     id_carpeta_drive:  actual ? actual.id_carpeta_drive : '',
+    documentos:        Object.assign({}, actual && actual.documentos ? actual.documentos : {}),
   };
 
   const btn = document.getElementById('ali-save-btn');
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
 
-  // Carpeta de Drive: Alianzas > <Convenio>
-  if (!o.id_carpeta_drive) {
-    const tok = driveToken();
+  // ── Drive: subcarpeta del convenio + subida de PDFs seleccionados ──
+  // Qué casillas traen un archivo nuevo
+  const nuevos = ALI_DOCS.map(function (d) {
+    const el = document.getElementById('ali-doc-' + d.key);
+    const f = el && el.files && el.files[0] ? el.files[0] : null;
+    return f ? { key: d.key, file: d.file, archivo: f } : null;
+  }).filter(Boolean);
+
+  // Validar que sean PDF
+  const noPdf = nuevos.find(function (n) {
+    return n.archivo.type !== 'application/pdf' && !/\.pdf$/i.test(n.archivo.name);
+  });
+  if (noPdf) { showToast('Solo se permiten archivos PDF'); if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; } return; }
+
+  const tok = driveToken();
+  if (!o.id_carpeta_drive || nuevos.length) {
     if (tok) {
-      try { o.id_carpeta_drive = await driveBuscarOCrear(convenio, DRIVE_PARENTS.alianzas, tok); }
-      catch (e) { console.warn('Drive alianza:', e); showToast('No se pudo crear la carpeta (se guarda igual)'); }
+      try {
+        if (!o.id_carpeta_drive) o.id_carpeta_drive = await driveBuscarOCrear(convenio, DRIVE_PARENTS.alianzas, tok);
+        // Subir cada PDF nuevo (reemplaza la casilla correspondiente)
+        for (let i = 0; i < nuevos.length; i++) {
+          const n = nuevos[i];
+          if (btn) btn.textContent = 'Subiendo ' + (i + 1) + '/' + nuevos.length + '…';
+          const up = await driveSubirArchivo(n.archivo, n.file + '.pdf', o.id_carpeta_drive, tok);
+          o.documentos[n.key] = { id: up.id, url: up.webViewLink, nombre: n.file + '.pdf' };
+        }
+      } catch (e) {
+        console.warn('Drive alianza:', e);
+        showToast('No se pudieron subir algunos archivos (se guarda igual)');
+      }
     } else {
-      showToast('Sesión de Drive expirada: se guarda sin carpeta');
+      showToast(nuevos.length ? 'Sesión de Drive expirada: no se subieron los PDFs' : 'Sesión de Drive expirada: se guarda sin carpeta');
     }
   }
 
@@ -556,6 +609,24 @@ async function exportarAlianzasExcel() {
     .ali-pg-btn:hover:not(:disabled), .ali-pg-num:hover { background:rgba(80,108,255,.08); color:#506CFF; }
     .ali-pg-btn:disabled { opacity:.4; cursor:default; }
     .ali-pg-num.on { background:#506CFF; color:#fff; border-color:#506CFF; }
+
+    /* Documentos PDF (formulario) */
+    .ali-docs { display:flex; flex-direction:column; gap:10px; }
+    .ali-doc-item { border:1px solid var(--border); border-radius:12px; padding:12px 14px; }
+    .ali-doc-cab { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
+    .ali-doc-lbl { font-size:13px; font-weight:600; color:var(--text); }
+    .ali-doc-ver { display:inline-flex; align-items:center; gap:5px; background:rgba(80,108,255,.1); color:#506CFF; border:none; font-family:inherit; font-size:11px; font-weight:700; padding:5px 10px; border-radius:8px; cursor:pointer; }
+    .ali-doc-ver svg { width:14px; height:14px; }
+    .ali-doc-ver:hover { background:rgba(80,108,255,.18); }
+    .ali-doc-sin { font-size:11.5px; color:var(--text-dim); }
+    .ali-doc-file { font-size:12px; }
+
+    /* Documentos (ficha de detalle) */
+    .ali-docs-ver { display:flex; flex-wrap:wrap; gap:8px; }
+    .ali-doc-chip { display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border:1px solid var(--border); border-radius:10px; font-size:12.5px; font-weight:600; color:#506CFF; text-decoration:none; background:rgba(80,108,255,.06); }
+    .ali-doc-chip svg { width:15px; height:15px; }
+    .ali-doc-chip:hover { background:rgba(80,108,255,.14); }
+    .ali-doc-chip-off { color:var(--text-dim); background:transparent; cursor:default; }
 
     @media (max-width:768px) {
       .ali-desk { display:none; }
