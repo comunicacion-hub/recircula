@@ -104,13 +104,46 @@ function cargarHitos() {
 }
 
 // ── Tabla ──
+// Fecha compacta para el timeline ("14 JUL 2025")
+function _fechaCorta(h) {
+  const ABBR = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
+  if (h.fecha) {
+    const p = String(h.fecha).split('-');
+    if (p.length === 3) return p[2] + ' ' + (ABBR[(parseInt(p[1], 10) - 1)] || '') + ' ' + p[0];
+  }
+  const m3 = h.mes ? h.mes.substring(0, 3).toUpperCase() : '';
+  return ((m3 ? m3 + ' ' : '') + (h.anio || '')).trim() || '—';
+}
+
+// Caja de visto (Asistencia/Bitácora) para la tarjeta
+function _vbox(lbl, doc) {
+  const on = !!(doc && doc.url);
+  return '<div class="hito-vbox ' + (on ? 'on' : 'off') + '">' +
+    '<span class="hito-vbox-ic">' + (on ? icoHTML('check') : '—') + '</span>' +
+    '<div class="hito-vbox-tx"><small>' + esc(lbl) + '</small><b>' + (on ? 'Sí' : 'No') + '</b></div>' +
+  '</div>';
+}
+
 function renderTablaHitos() {
   const wrap = document.getElementById('hit-wrap');
   if (!wrap) return;
 
+  // ── Tarjetas-resumen ──
+  const total = HITOS_DATA.length;
+  const asistentes = HITOS_DATA.reduce(function (a, h) { return a + (parseFloat(h.num_asistentes) || 0); }, 0);
+  const conAsist = HITOS_DATA.filter(function (h) { return _hitoDoc(h, 'asistencia'); }).length;
+  const conBit = HITOS_DATA.filter(function (h) { return _hitoDoc(h, 'bitacora'); }).length;
+  const pc = function (n) { return total ? Math.round(n / total * 100) : 0; };
+  const stats = '<div class="ali-stats">' +
+    _statCardAli('flag', '#7B5CFF', total, 'Total hitos', 'Registros totales') +
+    _statCardAli('users', '#506CFF', fmtNum(asistentes), 'N° de asistentes', 'En total') +
+    _statCardAli('check', '#18AE97', conAsist, 'Con asistencia', pc(conAsist) + '% del total') +
+    _statCardAli('star', '#F5AD21', conBit, 'Con bitácora', pc(conBit) + '% del total') +
+  '</div>';
+
   if (!HITOS_DATA.length) {
-    wrap.innerHTML = '<div class="empty-state">' +
-      icoHTML('trophy').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"') +
+    wrap.innerHTML = stats + '<div class="empty-state">' +
+      icoHTML('flag').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"') +
       '<p>No hay hitos con estos filtros</p></div>';
     return;
   }
@@ -129,11 +162,7 @@ function renderTablaHitos() {
       return '<span class="hito-chip">' + esc(x) + '</span>';
     }).join('') + (t.length > 3 ? '<span class="hito-chip hito-chip-mas">+' + (t.length - 3) + '</span>' : '') + '</div>';
   };
-  const fechaCel = function (h) {
-    if (h.fecha) return esc(fmtFecha(h.fecha));
-    if (h.mes || h.anio) return esc(((h.mes || '') + ' ' + (h.anio || '')).trim());
-    return '—';
-  };
+  const provTxt = function (h) { return (h.provincias || []).length ? esc(h.provincias.join(', ')) : '—'; };
 
   // Paginación
   const nPag = Math.max(1, Math.ceil(HITOS_DATA.length / HIT_POR_PAGINA));
@@ -141,33 +170,38 @@ function renderTablaHitos() {
   const ini = (HIT_PAGINA - 1) * HIT_POR_PAGINA;
   const pagina = HITOS_DATA.slice(ini, ini + HIT_POR_PAGINA);
 
-  // Tabla (desktop)
-  const filas = pagina.map(function (h) {
+  // ── Timeline (escritorio) ──
+  const rows = pagina.map(function (h, i) {
     const docId = jsEsc(h._docId || '');
-    return '<tr onclick="verHito(\'' + docId + '\')">' +
-      '<td><div class="hito-nombre">' + esc(h.nombre || '—') + '</div>' + tiposChips(h) + '</td>' +
-      '<td>' + ((h.provincias || []).length ? esc(h.provincias.join(', ')) : '—') + '</td>' +
-      '<td>' + fechaCel(h) + '</td>' +
-      '<td>' + _docVisto(_hitoDoc(h, 'asistencia')) + '</td>' +
-      '<td>' + _docVisto(_hitoDoc(h, 'bitacora')) + '</td>' +
-      '<td data-actions-row><div class="td-actions">' + acciones(h) + '</div></td>' +
-    '</tr>';
+    return '<div class="hito-tl-row">' +
+      '<div class="hito-tl-side">' +
+        '<div class="hito-tl-dot">' + (ini + i + 1) + '</div>' +
+        '<div class="hito-tl-fecha">' + esc(_fechaCorta(h)) + '</div>' +
+      '</div>' +
+      '<div class="hito-tl-card" onclick="verHito(\'' + docId + '\')">' +
+        '<div class="hito-c-main">' +
+          '<span class="hito-c-ava">' + icoHTML('users') + '</span>' +
+          '<div class="hito-c-id"><div class="hito-nombre">' + esc(h.nombre || '—') + '</div>' + tiposChips(h) +
+            '<div class="hito-c-prov">' + icoHTML('mapPin') + ' ' + provTxt(h) + '</div></div>' +
+        '</div>' +
+        '<div class="hito-c-docs">' + _vbox('Asistencia', _hitoDoc(h, 'asistencia')) + _vbox('Bitácora', _hitoDoc(h, 'bitacora')) + '</div>' +
+        '<div class="hito-c-acts td-actions">' + acciones(h) + '</div>' +
+      '</div>' +
+    '</div>';
   }).join('');
-  const tabla = '<div class="table-wrap hito-desk"><table>' +
-    '<thead><tr><th>Hito</th><th>Provincia</th><th>Fecha</th><th>Asistencia</th><th>Bitácora</th><th style="text-align:right">Acciones</th></tr></thead>' +
-    '<tbody>' + filas + '</tbody></table></div>';
+  const timeline = '<div class="hito-tl hito-desk">' + rows + '</div>';
 
-  // Tarjetas (móvil)
+  // ── Tarjetas (móvil) ──
   const cards = pagina.map(function (h) {
     const docId = jsEsc(h._docId || '');
     return '<div class="hito-card" onclick="verHito(\'' + docId + '\')">' +
-      '<div class="hito-card-top"><div class="hito-id"><div class="hito-nombre">' + esc(h.nombre || '—') + '</div>' + tiposChips(h) + '</div></div>' +
-      '<div class="hito-grid">' +
-        '<div class="hito-cell"><span class="hito-mini">Provincia</span><b>' + ((h.provincias || []).length ? esc(h.provincias.join(', ')) : '—') + '</b></div>' +
-        '<div class="hito-cell"><span class="hito-mini">Fecha</span><b>' + fechaCel(h) + '</b></div>' +
-        '<div class="hito-cell"><span class="hito-mini">Asistencia</span><b>' + _docVisto(_hitoDoc(h, 'asistencia')) + '</b></div>' +
-        '<div class="hito-cell"><span class="hito-mini">Bitácora</span><b>' + _docVisto(_hitoDoc(h, 'bitacora')) + '</b></div>' +
+      '<div class="hito-card-top">' +
+        '<span class="hito-c-ava">' + icoHTML('users') + '</span>' +
+        '<div class="hito-id"><div class="hito-nombre">' + esc(h.nombre || '—') + '</div>' + tiposChips(h) + '</div>' +
+        '<span class="hito-fecha-chip">' + esc(_fechaCorta(h)) + '</span>' +
       '</div>' +
+      '<div class="hito-c-prov" style="margin-top:10px">' + icoHTML('mapPin') + ' ' + provTxt(h) + '</div>' +
+      '<div class="hito-docs-mob">' + _vbox('Asistencia', _hitoDoc(h, 'asistencia')) + _vbox('Bitácora', _hitoDoc(h, 'bitacora')) + '</div>' +
       '<div class="hito-foot"><div class="td-actions">' + acciones(h) + '</div></div>' +
     '</div>';
   }).join('');
@@ -183,7 +217,7 @@ function renderTablaHitos() {
     '<div class="ali-pager-ctrls">' + btnPrev + nums + btnNext + '</div>' +
   '</div>';
 
-  wrap.innerHTML = tabla + cardsWrap + pager;
+  wrap.innerHTML = stats + timeline + cardsWrap + pager;
 }
 
 // ── Ficha de detalle ──
@@ -217,6 +251,7 @@ function verHito(docId) {
           dato('Fecha', fmtFecha(h.fecha)) +
           dato('Año', h.anio) +
           dato('Mes', h.mes) +
+          dato('N° de asistentes', h.num_asistentes ? fmtNum(h.num_asistentes) : '') +
           dato('Provincias', (h.provincias || []).join(', ')) +
         '</div>' +
         (h.actores && h.actores.length ? '<div style="margin-top:14px"><div class="form-label">Actores</div><div class="hito-chips" style="margin-top:6px">' + h.actores.map(function (a) { return '<span class="hito-chip hito-chip-act">' + esc(a) + '</span>'; }).join('') + '</div></div>' : '') +
@@ -296,6 +331,7 @@ function abrirFormHito(docId) {
           '<div class="form-group"><label class="form-label">Fecha</label><input type="date" class="form-input" id="hit-fecha" value="' + esc(h ? h.fecha : '') + '"></div>' +
           '<div class="form-group"><label class="form-label">Año</label><input type="number" class="form-input" id="hit-anio" min="2000" max="2100" step="1" value="' + (h ? h.anio : new Date().getFullYear()) + '"></div>' +
           '<div class="form-group"><label class="form-label">Mes</label><select class="form-select" id="hit-mes">' + mesOpts + '</select></div>' +
+          '<div class="form-group"><label class="form-label">N° de asistentes</label><input type="number" class="form-input" id="hit-asistentes" min="0" step="1" value="' + (h ? (h.num_asistentes || 0) : 0) + '"></div>' +
         '</div>' +
         '<div class="form-label" style="margin:16px 0 8px">Actores</div>' +
         '<div class="chk-pills">' + actorChecks + '</div>' +
@@ -330,6 +366,7 @@ async function guardarHito(docId) {
     fecha:            (document.getElementById('hit-fecha') || {}).value || '',
     anio:             (document.getElementById('hit-anio') || {}).value || '',
     mes:              (document.getElementById('hit-mes') || {}).value || '',
+    num_asistentes:   (document.getElementById('hit-asistentes') || {}).value || 0,
     actores:          [],
     resumen:          ((document.getElementById('hit-resumen') || {}).value || '').trim(),
     asociaciones:     _valsCheckedHit('#hit-asocs'),
@@ -438,14 +475,14 @@ async function exportarHitosExcel() {
     await cargarSheetJS();
     if (!window.XLSX) { showToast('No se pudo cargar el exportador'); return; }
     const tiene = function (h, key) { const d = _hitoDoc(h, key); return d && d.url ? 'Sí' : 'No'; };
-    const header = ['Nombre del hito', 'Tipos', 'Provincias', 'Fecha', 'Año', 'Mes', 'Actores', 'Asociaciones beneficiadas', 'Resumen', 'Impacto a largo plazo', 'Registro de asistencia', 'Bitácora de resultado'];
+    const header = ['Nombre del hito', 'Tipos', 'Provincias', 'Fecha', 'Año', 'Mes', 'N° de asistentes', 'Actores', 'Asociaciones beneficiadas', 'Resumen', 'Impacto a largo plazo', 'Registro de asistencia', 'Bitácora de resultado'];
     const filas = HITOS_DATA.map(function (h) {
       return [h.nombre, (h.tipos || []).join(', '), (h.provincias || []).join(', '), h.fecha || '',
-        parseFloat(h.anio) || 0, h.mes || '', (h.actores || []).join(', '), _nombresAsocHit(h.asociaciones).join(', '),
+        parseFloat(h.anio) || 0, h.mes || '', parseFloat(h.num_asistentes) || 0, (h.actores || []).join(', '), _nombresAsocHit(h.asociaciones).join(', '),
         h.resumen || '', h.impacto || '', tiene(h, 'asistencia'), tiene(h, 'bitacora')];
     });
     const ws = XLSX.utils.aoa_to_sheet([header].concat(filas));
-    ws['!cols'] = [{ wch: 30 }, { wch: 26 }, { wch: 20 }, { wch: 12 }, { wch: 7 }, { wch: 12 }, { wch: 30 }, { wch: 36 }, { wch: 40 }, { wch: 40 }, { wch: 18 }, { wch: 18 }];
+    ws['!cols'] = [{ wch: 30 }, { wch: 26 }, { wch: 20 }, { wch: 12 }, { wch: 7 }, { wch: 12 }, { wch: 14 }, { wch: 30 }, { wch: 36 }, { wch: 40 }, { wch: 40 }, { wch: 18 }, { wch: 18 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Hitos');
     XLSX.writeFile(wb, 'Hitos_' + new Date().toISOString().substring(0, 10) + '.xlsx');
@@ -459,25 +496,58 @@ async function exportarHitosExcel() {
   const s = document.createElement('style');
   s.id = 'hitos-styles';
   s.textContent = `
-    .hito-nombre { font-weight:700; color:var(--text); font-size:14px; }
+    .hito-nombre { font-weight:700; color:var(--text); font-size:15px; line-height:1.3; }
     .hito-chips { display:flex; flex-wrap:wrap; gap:5px; margin-top:6px; }
     .hito-chip { font-size:10.5px; font-weight:600; color:#506CFF; background:rgba(80,108,255,.1); padding:3px 8px; border-radius:20px; }
     .hito-chip-mas { color:var(--text-dim); background:rgba(0,0,0,.05); }
     .hito-chip-act { color:#0f9b84; background:rgba(24,174,151,.12); }
 
-    .hito-desk table tbody tr { cursor:pointer; }
+    /* Avatar de la tarjeta */
+    .hito-c-ava { width:46px; height:46px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:rgba(80,108,255,.1); color:#506CFF; }
+    .hito-c-ava svg { width:22px; height:22px; }
+    .hito-c-prov { display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--text-muted); margin-top:6px; }
+    .hito-c-prov svg { width:14px; height:14px; color:var(--text-dim); flex-shrink:0; }
 
+    /* Caja de visto */
+    .hito-vbox { display:flex; align-items:center; gap:9px; padding:10px 14px; border-radius:12px; min-width:130px; }
+    .hito-vbox.on { background:rgba(24,174,151,.08); }
+    .hito-vbox.off { background:rgba(0,0,0,.03); }
+    .hito-vbox-ic { width:26px; height:26px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-weight:700; }
+    .hito-vbox.on .hito-vbox-ic { background:#18AE97; color:#fff; }
+    .hito-vbox.off .hito-vbox-ic { background:#d7d7e0; color:#fff; }
+    .hito-vbox-ic svg { width:15px; height:15px; }
+    .hito-vbox-tx { display:flex; flex-direction:column; line-height:1.2; }
+    .hito-vbox-tx small { font-size:11px; color:var(--text-muted); }
+    .hito-vbox-tx b { font-size:14px; font-weight:700; color:var(--text); }
+
+    /* ── Timeline (escritorio) ── */
+    .hito-tl { display:flex; flex-direction:column; }
+    .hito-tl-row { display:flex; gap:16px; align-items:stretch; }
+    .hito-tl-row + .hito-tl-row { margin-top:16px; }
+    .hito-tl-side { position:relative; width:58px; flex-shrink:0; display:flex; flex-direction:column; align-items:center; gap:8px; padding-top:20px; }
+    .hito-tl-side::before { content:''; position:absolute; top:54px; left:50%; transform:translateX(-50%); width:2px; height:calc(100% + 16px - 34px); background:linear-gradient(#c7cbef,#c7cbef); }
+    .hito-tl-row:last-child .hito-tl-side::before { display:none; }
+    .hito-tl-dot { position:relative; z-index:1; width:34px; height:34px; border-radius:50%; background:linear-gradient(135deg,#7B5CFF,#506CFF); color:#fff; font-size:14px; font-weight:800; display:flex; align-items:center; justify-content:center; }
+    .hito-tl-fecha { font-size:11px; font-weight:700; color:var(--text-muted); text-align:center; line-height:1.25; }
+    .hito-tl-card { flex:1; background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px 18px; display:flex; align-items:center; gap:18px; cursor:pointer; transition:box-shadow .15s,transform .12s,border-color .15s; }
+    .hito-tl-card:hover { box-shadow:0 6px 20px rgba(0,0,0,.08); transform:translateY(-2px); border-color:transparent; }
+    .hito-c-main { display:flex; align-items:center; gap:14px; flex:1; min-width:0; }
+    .hito-c-id { min-width:0; }
+    .hito-c-docs { display:flex; gap:10px; flex-shrink:0; }
+    .hito-c-acts { flex-shrink:0; }
+
+    /* ── Tarjetas (móvil) ── */
     .hito-mob { display:none; flex-direction:column; gap:12px; }
     .hito-card { background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px; cursor:pointer; transition:box-shadow .15s,transform .12s,border-color .15s; }
     .hito-card:hover { box-shadow:0 6px 20px rgba(0,0,0,.08); transform:translateY(-2px); border-color:transparent; }
-    .hito-card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
-    .hito-grid { display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
-    .hito-cell { flex:1; min-width:45%; display:flex; flex-direction:column; gap:5px; }
-    .hito-cell b { font-size:13px; font-weight:700; color:var(--text); }
-    .hito-mini { font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.5px; }
-    .hito-foot { display:flex; justify-content:flex-end; margin-top:14px; }
+    .hito-card-top { display:flex; align-items:flex-start; gap:12px; }
+    .hito-card-top .hito-id { flex:1; min-width:0; }
+    .hito-fecha-chip { font-size:11px; font-weight:700; color:#506CFF; background:rgba(80,108,255,.1); padding:4px 9px; border-radius:20px; white-space:nowrap; flex-shrink:0; }
+    .hito-docs-mob { display:flex; gap:10px; margin-top:12px; flex-wrap:wrap; }
+    .hito-docs-mob .hito-vbox { flex:1; min-width:130px; }
+    .hito-foot { display:flex; justify-content:flex-end; margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
 
-    @media (max-width:768px) {
+    @media (max-width:820px) {
       .hito-desk { display:none; }
       .hito-mob { display:flex; }
       .ali-stats { grid-template-columns:1fr 1fr; }
