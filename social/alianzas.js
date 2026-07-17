@@ -131,15 +131,16 @@ function renderTablaAlianzas() {
 
   // ── Tarjetas-resumen ──
   const total = ALIANZAS_DATA.length;
-  const activas = ALIANZAS_DATA.filter(function (a) { return a.activo !== false; }).length;
-  const pctAct = total ? Math.round(activas / total * 100) : 0;
+  const privadas = ALIANZAS_DATA.filter(function (a) { return a.tipo === 'Privado'; }).length;
+  const publicas = ALIANZAS_DATA.filter(function (a) { return a.tipo !== 'Privado'; }).length;
+  const pctPriv = total ? Math.round(privadas / total * 100) : 0;
+  const pctPub = total ? Math.round(publicas / total * 100) : 0;
   const benef = ALIANZAS_DATA.reduce(function (acc, a) { return acc + (parseFloat(a.num_recicladores) || 0); }, 0);
-  const anio = new Date().getFullYear();
   const stats = '<div class="ali-stats">' +
     _statCardAli('handshake', '#506CFF', total, 'Total alianzas', 'Registradas') +
-    _statCardAli('check', '#18AE97', activas, 'Alianzas activas', pctAct + '% del total') +
-    _statCardAli('users', '#7B5CFF', fmtNum(benef), 'Beneficiarios', 'Recicladores') +
-    _statCardAli('calendar', '#F5AD21', anio, 'Este año', 'Período actual') +
+    _statCardAli('card', '#F82D72', pctPriv + '%', 'Alianzas privadas', privadas + (privadas === 1 ? ' privada' : ' privadas')) +
+    _statCardAli('users', '#18AE97', pctPub + '%', 'Alianzas públicas', publicas + (publicas === 1 ? ' pública' : ' públicas')) +
+    _statCardAli('user', '#7B5CFF', fmtNum(benef), 'Beneficiarios', 'Recicladores') +
   '</div>';
 
   if (!ALIANZAS_DATA.length) {
