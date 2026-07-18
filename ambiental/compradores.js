@@ -59,6 +59,24 @@ function renderCompradores() {
 // TABLA
 // ============================================================
 
+// Columnas fijas por nivel (los "Transformador" y otros no estándar caen en Nivel 3)
+const CMP_NIVELES = [
+  { label: 'Nivel 1', color: '#506CFF' },
+  { label: 'Nivel 2', color: '#18AE97' },
+  { label: 'Nivel 3', color: '#7B5CFF' },
+];
+function _colDeNivel(nivel) {
+  const n = String(nivel || '').trim();
+  if (n === 'Nivel 2') return 1;
+  if (n === 'Nivel 3' || /transformador/i.test(n)) return 2;
+  return 0; // Nivel 1, vacío u otros
+}
+function _rgbaCmp(hex, a) {
+  let h = String(hex || '').replace('#', ''); if (h.length === 3) h = h.split('').map(c => c + c).join('');
+  const n = parseInt(h, 16) || 0;
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+
 function renderTablaCompradores() {
   const wrap = document.getElementById('compradores-table-wrap');
   if (!wrap) return;
@@ -71,65 +89,54 @@ function renderTablaCompradores() {
   if (filtrarPorProv)  datos = datos.filter(c => fProv.includes(c['Provincia']));
   if (filtrarPorNivel) datos = datos.filter(c => fNivel.includes(c['Nivel Intermediacion'] || c['Nivel']));
 
-  // Ordenar por provincia y, dentro de cada provincia, por nombre
-  datos.sort((a, b) => {
-    const pa = (a['Provincia'] || '').toString();
-    const pb = (b['Provincia'] || '').toString();
-    if (pa !== pb) return pa.localeCompare(pb, 'es');
-    return (a['Nombre'] || '').localeCompare(b['Nombre'] || '', 'es');
-  });
+  // Repartir en las 3 columnas
+  const cols = [[], [], []];
+  datos.forEach(c => { cols[_colDeNivel(c['Nivel Intermediacion'] || c['Nivel'])].push(c); });
+  cols.forEach(arr => arr.sort((a, b) => (a['Nombre'] || '').localeCompare(b['Nombre'] || '', 'es')));
 
-  if (!datos.length) {
-    wrap.innerHTML = `
-      <div class="empty-state">
-        ${icoHTML('cart').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"')}
-        <p>No hay compradores con estos filtros</p>
-      </div>`;
-    return;
-  }
+  const edit = puedeEditar();
 
-  const filas = datos.map(c => {
+  const tarjeta = (c, color) => {
     const id     = jsEsc(c['ID_Comprador'] || '');
-    const nivel  = c['Nivel Intermediacion'] || c['Nivel'] || '';
     const activo = c['Activo'] === true;
-    return `<tr>
-      <td><strong>Nombre</strong><br><span style="font-weight:600">${esc(c['Nombre']||'—')}</span></td>
-      <td><strong>Nivel</strong><br>${nivelBadge(nivel)}</td>
-      <td data-hide-mobile><strong>Provincia</strong><br>${esc(c['Provincia']||'—')}</td>
-      <td data-hide-mobile><strong>Destino final</strong><br><span style="font-size:12px;color:var(--text-muted)">${esc(c['Destino Final']||'—')}</span></td>
-      <td><strong>Activo</strong><br><span class="badge ${activo?'badge-on':'badge-off'}">${activo?'Sí':'No'}</span></td>
-      <td data-actions-row>
-        <div class="td-actions">
+    return `<div class="cmp-card" onclick="verComprador('${id}')">
+      <span class="cmp-ico" style="background:${_rgbaCmp(color, 0.13)};color:${color}">${icoHTML('store')}</span>
+      <div class="cmp-info">
+        <div class="cmp-nom">${esc(c['Nombre'] || '—')}</div>
+        <div class="cmp-loc">${icoHTML('mapPin')} ${esc(c['Provincia'] || 'Sin provincia')}</div>
+      </div>
+      <div class="cmp-right" onclick="event.stopPropagation()">
+        <span class="cmp-estado ${activo ? 'on' : 'off'}">${activo ? 'Activo' : 'Inactivo'}</span>
+        <div class="cmp-acts td-actions">
           <button class="icon-btn" onclick="verComprador('${id}')" title="Ver">${icoHTML('view')}</button>
-          ${puedeEditar() ? `
+          ${edit ? `
             <button class="icon-btn primary" onclick="abrirFormComprador('${id}')" title="Editar">${icoHTML('edit')}</button>
             <button class="icon-btn del" onclick="confirmarEliminarComprador('${id}')" title="Eliminar">${icoHTML('trash')}</button>
           ` : ''}
         </div>
-      </td>
-    </tr>`;
+      </div>
+    </div>`;
+  };
+
+  const columnas = CMP_NIVELES.map((niv, i) => {
+    const lista = cols[i];
+    const cuerpo = lista.length
+      ? lista.map(c => tarjeta(c, niv.color)).join('')
+      : `<div class="cmp-empty">
+           <span class="cmp-empty-ico">${icoHTML('cart')}</span>
+           <div class="cmp-empty-tit">Aún no hay compradores<br>en este nivel</div>
+           <div class="cmp-empty-sub">Agrega un nuevo comprador<br>o cambia su nivel.</div>
+         </div>`;
+    return `<div class="cmp-col">
+      <div class="cmp-col-head">
+        <span class="cmp-col-badge" style="background:${niv.color}">${niv.label}</span>
+        <span class="cmp-col-count">${lista.length} comprador${lista.length !== 1 ? 'es' : ''}</span>
+      </div>
+      <div class="cmp-col-body">${cuerpo}</div>
+    </div>`;
   }).join('');
 
-  wrap.innerHTML = `
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Nombre</th>
-            <th>Nivel</th>
-            <th>Provincia</th>
-            <th>Destino final</th>
-            <th>Activo</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>${filas}</tbody>
-      </table>
-    </div>
-    <div style="font-size:12px;color:var(--text-dim);text-align:right">
-      ${datos.length} comprador${datos.length !== 1 ? 'es' : ''}
-    </div>
-  `;
+  wrap.innerHTML = `<div class="cmp-board">${columnas}</div>`;
 }
 
 // ============================================================
@@ -353,3 +360,46 @@ async function exportarCompradoresExcel() {
     showToast('Error al exportar el Excel');
   }
 }
+
+// ============================================================
+// ESTILOS (tablero Kanban por niveles)
+// ============================================================
+(function () {
+  if (document.getElementById('compradores-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'compradores-styles';
+  s.textContent = `
+    .cmp-board { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; align-items:start; }
+    .cmp-col { background:rgba(0,0,0,.018); border:1px solid var(--border); border-radius:20px; padding:16px 14px; }
+    .cmp-col-head { display:flex; align-items:center; gap:10px; padding:2px 4px 14px; }
+    .cmp-col-badge { font-size:12px; font-weight:700; color:#fff; padding:5px 14px; border-radius:20px; }
+    .cmp-col-count { font-size:12.5px; color:var(--text-muted); font-weight:500; }
+    .cmp-col-body { display:flex; flex-direction:column; gap:11px; }
+
+    .cmp-card { display:flex; align-items:flex-start; gap:12px; background:var(--surface); border:1px solid var(--border); border-radius:15px; padding:14px; cursor:pointer; transition:box-shadow .15s,transform .12s,border-color .15s; }
+    .cmp-card:hover { box-shadow:0 6px 18px rgba(0,0,0,.08); transform:translateY(-2px); border-color:transparent; }
+    .cmp-ico { width:42px; height:42px; border-radius:12px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+    .cmp-ico svg { width:21px; height:21px; }
+    .cmp-info { flex:1; min-width:0; }
+    .cmp-nom { font-size:14px; font-weight:700; color:var(--text); line-height:1.3; }
+    .cmp-loc { display:flex; align-items:center; gap:5px; font-size:12.5px; color:var(--text-muted); margin-top:5px; }
+    .cmp-loc svg { width:14px; height:14px; color:var(--text-dim); flex-shrink:0; }
+    .cmp-right { display:flex; flex-direction:column; align-items:flex-end; gap:10px; flex-shrink:0; }
+    .cmp-estado { font-size:11px; font-weight:700; padding:3px 10px; border-radius:20px; white-space:nowrap; }
+    .cmp-estado.on { color:#0f9b84; background:rgba(24,174,151,.14); }
+    .cmp-estado.off { color:var(--text-dim); background:rgba(0,0,0,.05); }
+    .cmp-acts { display:flex; gap:5px; }
+
+    .cmp-empty { display:flex; flex-direction:column; align-items:center; text-align:center; padding:34px 10px; }
+    .cmp-empty-ico { width:56px; height:56px; border-radius:16px; display:flex; align-items:center; justify-content:center; background:rgba(123,92,255,.09); color:#7B5CFF; margin-bottom:14px; }
+    .cmp-empty-ico svg { width:26px; height:26px; opacity:.85; }
+    .cmp-empty-tit { font-size:14px; font-weight:700; color:var(--text-muted); line-height:1.4; }
+    .cmp-empty-sub { font-size:12px; color:var(--text-dim); margin-top:6px; line-height:1.5; }
+
+    @media (max-width:900px) {
+      .cmp-board { grid-template-columns:1fr; gap:16px; }
+      .cmp-empty { padding:24px 10px; }
+    }
+  `;
+  document.head.appendChild(s);
+})();
