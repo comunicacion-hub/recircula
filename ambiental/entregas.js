@@ -8,6 +8,39 @@ let ENTREGAS_FILTROS = { anio: [], mes: [], asociacion: [], provincia: [] };
 let EVIDENCIAS_LISTA = [];
 let ENTREGAS_LOADED  = false;
 
+// Casillas de documentos (PDF) de la entrega. key = campo en Documentos; file = nombre en Drive.
+const ENT_DOCS = [
+  { key: 'verificable1', lbl: 'Verificable 1', file: 'Verificable_1' },
+  { key: 'verificable2', lbl: 'Verificable 2', file: 'Verificable_2' },
+  { key: 'verificable3', lbl: 'Verificable 3', file: 'Verificable_3' },
+];
+function _entDoc(e, key) { return (e && e['Documentos'] && e['Documentos'][key]) ? e['Documentos'][key] : null; }
+
+// Visto para la tabla (verde si el documento existe)
+function _docVistoEnt(doc) {
+  return (doc && doc.url)
+    ? `<span class="ent-visto"><span class="ent-visto-ic">${icoHTML('check')}</span></span>`
+    : '<span class="ent-visto-no">—</span>';
+}
+
+// Suma de kilos de todos los materiales de una entrega
+function _kilosEntrega(e) {
+  let kg = 0;
+  (CAT.materiales || []).forEach(function (m) { kg += parseFloat(e[m['Nombre'] + ' Kilos'] || 0) || 0; });
+  return kg;
+}
+function _rgbaEnt(hex, a) {
+  let h = String(hex || '').replace('#', ''); if (h.length === 3) h = h.split('').map(function (c) { return c + c; }).join('');
+  const n = parseInt(h, 16) || 0;
+  return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+}
+function _statCardEnt(icono, color, valor, titulo, sub) {
+  return `<div class="ent-stat">
+    <span class="ent-stat-ico" style="background:${_rgbaEnt(color, 0.12)};color:${color}">${icoHTML(icono)}</span>
+    <div class="ent-stat-tx"><span class="ent-stat-tit">${esc(titulo)}</span><b>${valor}</b><span class="ent-stat-sub">${esc(sub)}</span></div>
+  </div>`;
+}
+
 // ============================================================
 // REGISTRAR DRAWER
 // ============================================================
@@ -115,8 +148,20 @@ function renderTablaEntregas() {
   const wrap = document.getElementById('entregas-table-wrap');
   if (!wrap) return;
 
+  // ── Tarjetas-resumen ──
+  const totalEnt = ENTREGAS_DATA.length;
+  const totalKg = ENTREGAS_DATA.reduce(function (a, e) { return a + _kilosEntrega(e); }, 0);
+  const totalVal = ENTREGAS_DATA.reduce(function (a, e) { return a + (parseFloat(e['Valor Total']) || 0); }, 0);
+  const nAsocs = new Set(ENTREGAS_DATA.map(function (e) { return e['ID_Asociacion']; }).filter(Boolean)).size;
+  const stats = `<div class="ent-stats">
+    ${_statCardEnt('cart', '#506CFF', fmtNum(totalEnt), 'Total entregas', 'registros')}
+    ${_statCardEnt('recycle', '#18AE97', fmtNum(totalKg) + ' kg', 'Total kilogramos', 'en todas las entregas')}
+    ${_statCardEnt('trophy', '#F5AD21', fmtMoney(totalVal), 'Valor total', 'dólares')}
+    ${_statCardEnt('link', '#7B5CFF', fmtNum(nAsocs), 'Asociaciones', 'activas')}
+  </div>`;
+
   if (!ENTREGAS_DATA.length) {
-    wrap.innerHTML = `
+    wrap.innerHTML = stats + `
       <div class="empty-state">
         ${icoHTML('recycle').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"')}
         <p>No hay entregas con estos filtros</p>
@@ -129,10 +174,9 @@ function renderTablaEntregas() {
     const suaveKg   = parseFloat(e['Plástico Suave Kilos'] || 0);
     const duroKg    = parseFloat(e['Plástico Duro Kilos'] || 0);
     const total     = parseFloat(e['Valor Total'] || 0);
-    const carpeta   = e['ID_Carpeta_Evidencia'];
     const idEnt     = jsEsc(e['ID_Entrega'] || '');
     const docId     = jsEsc(e['_docId'] || '');
-    const idCarpeta = jsEsc(carpeta || '');
+    const idCarpeta = jsEsc(e['ID_Carpeta_Evidencia'] || '');
 
     return `
       <tr>
@@ -146,9 +190,6 @@ function renderTablaEntregas() {
         <td data-hide-mobile style="text-align:right;font-weight:700;color:#0a9e83"><strong>Valor</strong><br>${fmtMoney(total)}</td>
         <td data-actions-row>
           <div class="td-actions">
-            ${carpeta
-              ? `<button class="icon-btn" onclick="window.open('https://drive.google.com/drive/folders/${idCarpeta}','_blank')" title="Carpeta de evidencias">${icoHTML('folder')}</button>`
-              : ''}
             <button class="icon-btn" onclick="verEntrega('${idEnt}')" title="Ver">${icoHTML('view')}</button>
             ${puedeEditar() ? `
               <button class="icon-btn primary" onclick="editarEntrega('${idEnt}')" title="Editar">${icoHTML('edit')}</button>
@@ -159,7 +200,7 @@ function renderTablaEntregas() {
       </tr>`;
   }).join('');
 
-  wrap.innerHTML = `
+  wrap.innerHTML = stats + `
     <div class="table-wrap">
       <table>
         <thead>
@@ -273,6 +314,16 @@ function verEntrega(id) {
           </table></div>
         </div>
         ${e['Observaciones'] ? `<div style="margin-top:14px"><div class="form-label">Observaciones</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px">${esc(e['Observaciones'])}</div></div>` : ''}
+        <div style="margin-top:16px"><div class="form-label" style="margin-bottom:8px">Verificables</div>
+          <div class="ent-docs-ver">
+            ${ENT_DOCS.map(d => {
+              const doc = _entDoc(e, d.key);
+              return doc && doc.url
+                ? `<a class="ent-doc-chip" href="${esc(doc.url)}" target="_blank" rel="noopener">${icoHTML('view')} ${esc(d.lbl)}</a>`
+                : `<span class="ent-doc-chip ent-doc-chip-off">${icoHTML('view')} ${esc(d.lbl)}</span>`;
+            }).join('')}
+          </div>
+        </div>
       </div>
       <div class="modal-foot">
         <button class="btn btn-glass" onclick="cerrarModal()">Cerrar</button>
@@ -407,6 +458,20 @@ function abrirFormEntrega(id = null) {
           <textarea class="form-textarea" id="ent-obs" placeholder="Notas adicionales...">${esc(e?.['Observaciones']||'')}</textarea>
         </div>
 
+        <div class="form-label" style="margin:16px 0 8px">Verificables (PDF)</div>
+        <div class="ent-docs">
+          ${ENT_DOCS.map(d => {
+            const doc = _entDoc(e || {}, d.key);
+            const ver = (doc && doc.url)
+              ? `<button type="button" class="ent-doc-ver" onclick="window.open('${jsEsc(doc.url)}','_blank')">${icoHTML('view')} Ver PDF</button>`
+              : '<span class="ent-doc-sin">Sin archivo</span>';
+            return `<div class="ent-doc-item">
+              <div class="ent-doc-cab"><span class="ent-doc-lbl">${esc(d.lbl)}</span>${ver}</div>
+              <input type="file" accept="application/pdf,.pdf" class="form-input ent-doc-file" id="ent-doc-${d.key}">
+            </div>`;
+          }).join('')}
+        </div>
+
       </div>
       <div class="modal-foot">
         <button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>
@@ -484,6 +549,7 @@ async function guardarEntrega(id) {
     'Actividad Fuente': actividad,
     Observaciones: obs,
     'ID_Carpeta_Evidencia': actual['ID_Carpeta_Evidencia'] || '',
+    'Documentos': Object.assign({}, actual['Documentos'] || {}),
   };
 
   let total = 0;
@@ -507,6 +573,42 @@ async function guardarEntrega(id) {
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
 
   try {
+    // ── Verificables: subir los PDFs seleccionados a la carpeta de la entrega ──
+    const nuevos = ENT_DOCS.map(d => {
+      const el = document.getElementById('ent-doc-' + d.key);
+      const f = el && el.files && el.files[0] ? el.files[0] : null;
+      return f ? { key: d.key, file: d.file, archivo: f } : null;
+    }).filter(Boolean);
+
+    const noPdf = nuevos.find(n => n.archivo.type !== 'application/pdf' && !/\.pdf$/i.test(n.archivo.name));
+    if (noPdf) { showToast('Solo se permiten archivos PDF'); if (btn) { btn.disabled = false; btn.textContent = id ? 'Actualizar' : 'Guardar entrega'; } return; }
+
+    if (nuevos.length) {
+      const tok = driveToken();
+      if (!tok) {
+        showToast('Sesión de Drive expirada: la entrega se guarda sin los PDFs');
+      } else {
+        // Asegurar la carpeta de la entrega (la crea vía Apps Script si no existe)
+        await asegurarCarpetaEntrega(data);
+        if (!data['ID_Carpeta_Evidencia']) {
+          showToast('No se pudo preparar la carpeta: la entrega se guarda sin los PDFs');
+        } else {
+          // Sufijo para distinguir archivos dentro de la carpeta compartida del mes
+          const comp = (CAT.compradores || []).find(c => c['ID_Comprador'] === idComp);
+          const suf = String((comp && comp['Nombre']) || 'entrega').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 24);
+          for (let i = 0; i < nuevos.length; i++) {
+            const n = nuevos[i];
+            if (btn) btn.textContent = `Subiendo ${i + 1}/${nuevos.length}…`;
+            try {
+              const fname = `${n.file}_${suf}_${mes}${anio}.pdf`;
+              const up = await driveSubirArchivo(n.archivo, fname, data['ID_Carpeta_Evidencia'], tok);
+              data['Documentos'][n.key] = { id: up.id, url: up.webViewLink, nombre: fname };
+            } catch (err) { console.warn('Subida verificable:', err); showToast('No se pudo subir ' + n.file); }
+          }
+        }
+      }
+    }
+
     const docId = id ? (actual._docId || null) : null;
     const res = await guardarEntregaFS(docId, data);
     if (!res.ok) { showToast('Error: ' + (res.error || 'desconocido')); return; }
@@ -573,3 +675,50 @@ async function exportarEntregasExcel() {
     showToast('Error al exportar el Excel');
   }
 }
+
+// ── Estilos propios de Entregas (tarjetas-resumen, verificables) ──
+(function () {
+  if (document.getElementById('entregas-styles')) return;
+  const s = document.createElement('style');
+  s.id = 'entregas-styles';
+  s.textContent = `
+    /* Tarjetas-resumen */
+    .ent-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px; }
+    .ent-stat { display:flex; align-items:center; gap:12px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:15px 16px; }
+    .ent-stat-ico { width:44px; height:44px; border-radius:12px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+    .ent-stat-ico svg { width:22px; height:22px; }
+    .ent-stat-tx { display:flex; flex-direction:column; min-width:0; }
+    .ent-stat-tit { font-size:11.5px; color:var(--text-muted); font-weight:600; }
+    .ent-stat-tx b { font-size:22px; font-weight:800; color:var(--text); line-height:1.15; }
+    .ent-stat-sub { font-size:11px; color:var(--text-dim); }
+
+    /* Verificables: visto en tabla (no usado en tabla actual, disponible) */
+    .ent-visto { display:inline-flex; align-items:center; gap:6px; }
+    .ent-visto-ic { width:22px; height:22px; border-radius:50%; background:#18AE97; color:#fff; display:inline-flex; align-items:center; justify-content:center; }
+    .ent-visto-ic svg { width:13px; height:13px; }
+    .ent-visto-no { color:var(--text-dim); font-weight:600; }
+
+    /* Verificables: casillas en el formulario */
+    .ent-docs { display:flex; flex-direction:column; gap:10px; }
+    .ent-doc-item { border:1px solid var(--border); border-radius:12px; padding:12px 14px; }
+    .ent-doc-cab { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
+    .ent-doc-lbl { font-size:13px; font-weight:600; color:var(--text); }
+    .ent-doc-ver { display:inline-flex; align-items:center; gap:5px; background:rgba(80,108,255,.1); color:#506CFF; border:none; font-family:inherit; font-size:11px; font-weight:700; padding:5px 10px; border-radius:8px; cursor:pointer; }
+    .ent-doc-ver svg { width:14px; height:14px; }
+    .ent-doc-ver:hover { background:rgba(80,108,255,.18); }
+    .ent-doc-sin { font-size:11.5px; color:var(--text-dim); }
+    .ent-doc-file { font-size:12px; }
+
+    /* Verificables: chips en la ficha de detalle */
+    .ent-docs-ver { display:flex; flex-wrap:wrap; gap:8px; }
+    .ent-doc-chip { display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border:1px solid var(--border); border-radius:10px; font-size:12.5px; font-weight:600; color:#506CFF; text-decoration:none; background:rgba(80,108,255,.06); }
+    .ent-doc-chip svg { width:15px; height:15px; }
+    .ent-doc-chip:hover { background:rgba(80,108,255,.14); }
+    .ent-doc-chip-off { color:var(--text-dim); background:transparent; cursor:default; }
+
+    @media (max-width:768px) {
+      .ent-stats { grid-template-columns:1fr 1fr; }
+    }
+  `;
+  document.head.appendChild(s);
+})();
