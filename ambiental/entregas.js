@@ -8,6 +8,11 @@ let ENTREGAS_FILTROS = { anio: [], mes: [], asociacion: [], provincia: [] };
 let EVIDENCIAS_LISTA = [];
 let ENTREGAS_LOADED  = false;
 
+// ── Navegación de dos niveles ──
+let ENT_VISTA = 'asociaciones';   // 'asociaciones' | 'lista'
+let ENT_ASOC_SEL = null;          // ID_Asociacion abierta
+let ENT_FILTROS_N2 = { material: [], anio: [], mes: [] };
+
 // Casillas de documentos (PDF) de la entrega. key = campo en Documentos; file = nombre en Drive.
 const ENT_DOCS = [
   { key: 'verificable1', lbl: 'Verificable 1', file: 'Verificable_1' },
@@ -46,18 +51,32 @@ function _statCardEnt(icono, color, valor, titulo, sub) {
 // ============================================================
 
 function registerEntregasFilters() {
+  const anios = Array.from(new Set((CAT.entregas || []).map(e => String(e['Año'] || '')).filter(Boolean))).sort((a, b) => b.localeCompare(a));
   registerFilterConfig('entregas', {
     badgeId: 'badge-entregas',
     sections: [
-      { key: 'mes',        title: 'Meses',        type: 'options', options: ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'], allLabel: 'Todos los meses' },
-      { key: 'anio',       title: 'Años',         type: 'options', options: ['2024','2025','2026','2027','2028'], allLabel: 'Todos los años' },
-      { key: 'provincia',  title: 'Provincias',   type: 'options', options: ['El Oro','Guayas','Manabí','Sucumbíos','Pichincha','Chimborazo'], allLabel: 'Todas las provincias' },
-      { key: 'asociacion', title: 'Asociaciones', type: 'options', options: CAT.asociaciones.map(a => ({ val: a['ID_Asociacion'], lbl: a['Nombre'] })), allLabel: 'Todas las asociaciones' },
+      { key: 'material', title: 'Material', type: 'options', options: (CAT.materiales || []).map(m => m['Nombre']), allLabel: 'Todos los materiales' },
+      { key: 'anio',     title: 'Años',     type: 'options', options: anios.length ? anios : ['2024', '2025', '2026', '2027'], allLabel: 'Todos los años' },
+      { key: 'mes',      title: 'Meses',    type: 'options', options: ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'], allLabel: 'Todos los meses' },
     ],
-    getValue: (k) => ENTREGAS_FILTROS[k] || '',
-    setValue: (k, v) => { ENTREGAS_FILTROS[k] = v; },
+    getValue: (k) => ENT_FILTROS_N2[k] || [],
+    setValue: (k, v) => { ENT_FILTROS_N2[k] = v; },
     apply: () => cargarEntregas(),
   });
+}
+
+// Total de kilos entregados por una asociación
+function _kilosAsoc(idAsoc) {
+  return (CAT.entregas || []).filter(e => e['ID_Asociacion'] === idAsoc)
+    .reduce((a, e) => a + _kilosEntrega(e), 0);
+}
+
+// Estilo por provincia (ícono + color) para el Nivel 1
+const ENT_PROV_PAL = ['#506CFF', '#18AE97', '#F5AD21', '#F82D72', '#FF751F', '#33A8DE', '#7B5CFF', '#0BC3FF'];
+function _provEstiloEnt(prov) {
+  const k = String(prov || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  let h = 0; for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) >>> 0;
+  return { ico: 'mapPin', color: ENT_PROV_PAL[h % ENT_PROV_PAL.length] };
 }
 
 // ============================================================
@@ -67,36 +86,117 @@ function registerEntregasFilters() {
 function renderEntregas() {
   registerEntregasFilters();
   ENTREGAS_LOADED = false;
+  ENT_VISTA = 'asociaciones';
+  ENT_ASOC_SEL = null;
+  renderVistaEntregas();
+}
 
+function renderVistaEntregas() {
+  if (ENT_VISTA === 'lista' && ENT_ASOC_SEL) renderNivelLista();
+  else renderNivelAsociaciones();
+}
+
+// ── Nivel 1: asociaciones agrupadas por provincia ──
+function renderNivelAsociaciones() {
+  const add = puedeEditar();
   document.getElementById('main-content').innerHTML = `
     <div class="page-header">
       <div>
         <div class="page-title">Entregas</div>
-        <div class="page-sub">Registro</div>
+        <div class="page-sub">Registro por asociación</div>
+      </div>
+      <div class="hdr-actions">
+        <button class="hdr-circle" onclick="exportarMatrizEntregas()" title="Descargar toda la matriz">${icoHTML('download')}</button>
+        ${add ? `<button class="hdr-circle hdr-circle-primary" onclick="abrirFormEntrega()" title="Nueva entrega">${icoHTML('plus')}</button>` : ''}
+      </div>
+    </div>
+    <div id="ent-n1-wrap"></div>`;
+
+  const wrap = document.getElementById('ent-n1-wrap');
+
+  // Agrupar asociaciones por provincia
+  const grupos = {};
+  (CAT.asociaciones || []).forEach(a => {
+    const prov = a['Provincia'] || 'Sin provincia';
+    (grupos[prov] = grupos[prov] || []).push(a);
+  });
+  const provs = Object.keys(grupos).sort((a, b) => a.localeCompare(b, 'es'));
+  if (!provs.length) {
+    wrap.innerHTML = `<div class="empty-state">${icoHTML('recycle').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"')}<p>No hay asociaciones</p></div>`;
+    return;
+  }
+
+  const CHEV = icoHTML('chevRight');
+  wrap.innerHTML = '<div class="ent-provs">' + provs.map(prov => {
+    const est = _provEstiloEnt(prov);
+    const lista = grupos[prov].slice().sort((a, b) => (a['Nombre'] || '').localeCompare(b['Nombre'] || '', 'es'));
+    const filas = lista.map(a => {
+      const kg = _kilosAsoc(a['ID_Asociacion']);
+      const vacia = kg <= 0;
+      const pill = vacia
+        ? '<span class="ent-asoc-pill ent-asoc-pill-0">0 kg</span>'
+        : `<span class="ent-asoc-pill" style="background:${_rgbaEnt(est.color, 0.13)};color:${est.color}">${fmtNum(kg)} kg</span>`;
+      return `<button class="ent-asoc-row${vacia ? ' ent-asoc-vacia' : ''}" onclick="abrirAsociacionEntregas('${jsEsc(a['ID_Asociacion'])}')">
+        <span class="ent-asoc-ico" style="background:${_rgbaEnt(est.color, 0.12)};color:${est.color}">${icoHTML('users')}</span>
+        <span class="ent-asoc-nom">${esc(a['Nombre'] || '—')}</span>
+        <span class="ent-asoc-right">${pill}<span class="ent-asoc-chev">${CHEV}</span></span>
+      </button>`;
+    }).join('');
+    return `<div class="ent-prov-grupo">
+      <div class="ent-prov-titulo">
+        <span class="ent-prov-ico" style="background:${_rgbaEnt(est.color, 0.14)};color:${est.color}">${icoHTML(est.ico)}</span>
+        <span class="ent-prov-nom">${esc(prov)}</span>
+        <span class="ent-prov-count">${lista.length} asociaci${lista.length !== 1 ? 'ones' : 'ón'}</span>
+      </div>
+      <div class="ent-prov-lista">${filas}</div>
+    </div>`;
+  }).join('') + '</div>';
+}
+
+function abrirAsociacionEntregas(idAsoc) {
+  ENT_ASOC_SEL = idAsoc;
+  ENT_VISTA = 'lista';
+  ENT_FILTROS_N2 = { material: [], anio: [], mes: [] };
+  renderVistaEntregas();
+}
+function volverAsociacionesEnt() {
+  ENT_VISTA = 'asociaciones';
+  ENT_ASOC_SEL = null;
+  renderVistaEntregas();
+}
+
+// ── Nivel 2: entregas de la asociación abierta ──
+function renderNivelLista() {
+  const add = puedeEditar();
+  const aso = (CAT.asociaciones || []).find(a => a['ID_Asociacion'] === ENT_ASOC_SEL);
+  const nombre = aso ? (aso['Nombre'] || '') : '';
+  const BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>';
+
+  document.getElementById('main-content').innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="ent-title-row">
+          <button class="ent-back" onclick="volverAsociacionesEnt()" title="Volver a asociaciones">${BACK}</button>
+          <div>
+            <div class="page-title">Entregas</div>
+            <div class="page-sub">${esc(nombre)}</div>
+          </div>
+        </div>
       </div>
       <div class="hdr-actions">
         <button class="hdr-circle" onclick="openFilterDrawer('entregas')" title="Filtros">
-          ${icoHTML('filter')}
-          <span class="filter-badge" id="badge-entregas" style="display:none;">0</span>
+          ${icoHTML('filter')}<span class="filter-badge" id="badge-entregas" style="display:none;">0</span>
         </button>
-        <button class="hdr-circle" onclick="exportarEntregasExcel()" title="Descargar Excel">
-          ${icoHTML('download')}
-        </button>
-        ${puedeEditar() ? `
-        <button class="hdr-circle hdr-circle-primary" onclick="abrirFormEntrega()" title="Nueva entrega">
-          ${icoHTML('plus')}
-        </button>
-        ` : ''}
+        <button class="hdr-circle" onclick="exportarEntregasExcel()" title="Descargar Excel">${icoHTML('download')}</button>
+        ${add ? `<button class="hdr-circle hdr-circle-primary" onclick="abrirFormEntrega()" title="Nueva entrega">${icoHTML('plus')}</button>` : ''}
       </div>
     </div>
+    <div id="entregas-table-wrap"></div>`;
 
-    <!-- Tabla -->
-    <div id="entregas-table-wrap"></div>
-  `;
-
-  // Firestore ya tiene los datos en CAT: mostrar todo al entrar, sin esperar filtros.
   cargarEntregas();
+  updateFilterBadge('entregas');
 }
+
 
 // ============================================================
 // CARGAR ENTREGAS (filtrado local sobre CAT.entregas)
@@ -122,18 +222,23 @@ async function cargarEntregas() {
   const wrap = document.getElementById('entregas-table-wrap');
   if (!wrap) return;
 
-  // Sin filtros aplicados → pasaFiltro deja pasar todo, así se muestran todas las entregas.
+  const fMat = ENT_FILTROS_N2.material || [];
+  const tieneMaterial = (e) => {
+    if (!fMat.length) return true;
+    return fMat.some(nombre => (parseFloat(e[nombre + ' Kilos'] || 0) || 0) > 0);
+  };
+
   ENTREGAS_DATA = (CAT.entregas || []).filter(e =>
-    pasaFiltro(ENTREGAS_FILTROS.anio,       String(e['Año'])) &&
-    pasaFiltro(ENTREGAS_FILTROS.mes,        e['Mes']) &&
-    pasaFiltro(ENTREGAS_FILTROS.provincia,  e['Provincia']) &&
-    pasaFiltro(ENTREGAS_FILTROS.asociacion, e['ID_Asociacion'])
+    e['ID_Asociacion'] === ENT_ASOC_SEL &&
+    pasaFiltro(ENT_FILTROS_N2.anio, String(e['Año'])) &&
+    pasaFiltro(ENT_FILTROS_N2.mes, e['Mes']) &&
+    tieneMaterial(e)
   ).sort((a, b) => {
-    const dif = _periodoOrden(b) - _periodoOrden(a);   // período: último mes arriba, primero al fondo
+    const dif = _periodoOrden(b) - _periodoOrden(a);
     if (dif !== 0) return dif;
     const fb = String(b['Fecha'] || ''), fa = String(a['Fecha'] || '');
-    if (fb !== fa) return fb.localeCompare(fa);          // desempate: fecha de carga más reciente
-    return String(a['_nombreAsociacion'] || '').localeCompare(String(b['_nombreAsociacion'] || ''));
+    if (fb !== fa) return fb.localeCompare(fa);
+    return String(a['_nombreComprador'] || '').localeCompare(String(b['_nombreComprador'] || ''));
   });
 
   ENTREGAS_LOADED = true;
@@ -148,20 +253,8 @@ function renderTablaEntregas() {
   const wrap = document.getElementById('entregas-table-wrap');
   if (!wrap) return;
 
-  // ── Tarjetas-resumen ──
-  const totalEnt = ENTREGAS_DATA.length;
-  const totalKg = ENTREGAS_DATA.reduce(function (a, e) { return a + _kilosEntrega(e); }, 0);
-  const totalVal = ENTREGAS_DATA.reduce(function (a, e) { return a + (parseFloat(e['Valor Total']) || 0); }, 0);
-  const nAsocs = new Set(ENTREGAS_DATA.map(function (e) { return e['ID_Asociacion']; }).filter(Boolean)).size;
-  const stats = `<div class="ent-stats">
-    ${_statCardEnt('cart', '#506CFF', fmtNum(totalEnt), 'Total entregas', 'registros')}
-    ${_statCardEnt('recycle', '#18AE97', fmtNum(totalKg) + ' kg', 'Total kilogramos', 'en todas las entregas')}
-    ${_statCardEnt('trophy', '#F5AD21', fmtMoney(totalVal), 'Valor total', 'dólares')}
-    ${_statCardEnt('link', '#7B5CFF', fmtNum(nAsocs), 'Asociaciones', 'activas')}
-  </div>`;
-
   if (!ENTREGAS_DATA.length) {
-    wrap.innerHTML = stats + `
+    wrap.innerHTML = `
       <div class="empty-state">
         ${icoHTML('recycle').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"')}
         <p>No hay entregas con estos filtros</p>
@@ -169,61 +262,79 @@ function renderTablaEntregas() {
     return;
   }
 
-  const filas = ENTREGAS_DATA.map(e => {
-    const petKg     = parseFloat(e['PET Kilos'] || 0);
-    const suaveKg   = parseFloat(e['Plástico Suave Kilos'] || 0);
-    const duroKg    = parseFloat(e['Plástico Duro Kilos'] || 0);
-    const total     = parseFloat(e['Valor Total'] || 0);
-    const idEnt     = jsEsc(e['ID_Entrega'] || '');
-    const docId     = jsEsc(e['_docId'] || '');
+  // Máximo de kilos (entre PET/Suave/Duro de todas las entregas) para escalar las barras
+  let maxKg = 0;
+  ENTREGAS_DATA.forEach(e => {
+    ['PET Kilos', 'Plástico Suave Kilos', 'Plástico Duro Kilos'].forEach(k => {
+      const v = parseFloat(e[k] || 0) || 0; if (v > maxKg) maxKg = v;
+    });
+  });
+  const barra = (kg, color) => {
+    const pct = maxKg > 0 ? Math.max((kg / maxKg) * 100, kg > 0 ? 4 : 0) : 0;
+    return `<div class="ent-bar"><div class="ent-bar-fill" style="width:${pct}%;background:${color}"></div></div>`;
+  };
+  const mat = (lbl, kg, color) => `
+    <div class="ent-mat">
+      <div class="ent-mat-lbl">${lbl}</div>
+      <div class="ent-mat-kg">${fmtNum(kg)} kg</div>
+      ${barra(kg, color)}
+    </div>`;
+
+  const cards = ENTREGAS_DATA.map(e => {
+    const petKg   = parseFloat(e['PET Kilos'] || 0);
+    const suaveKg = parseFloat(e['Plástico Suave Kilos'] || 0);
+    const duroKg  = parseFloat(e['Plástico Duro Kilos'] || 0);
+    const total   = parseFloat(e['Valor Total'] || 0);
+    const idEnt   = jsEsc(e['ID_Entrega'] || '');
+    const docId   = jsEsc(e['_docId'] || '');
     const idCarpeta = jsEsc(e['ID_Carpeta_Evidencia'] || '');
+    const col     = _mesColor(e['Mes']);
+    const niv     = e['_nivelComprador'] || e['Nivel Intermediacion'] || '';
+    const nivTxt  = niv ? (/nivel/i.test(niv) ? niv : ('Nivel ' + niv)) : '';
 
     return `
-      <tr>
-        <td style="font-size:12px;color:var(--text-muted)"><strong>Período</strong><br>${esc(e['Mes']||'')} ${esc(e['Año']||'')}</td>
-        <td style="font-weight:500"><strong>Asociación</strong><br>${esc(e['_nombreAsociacion']||'—')}</td>
-        <td data-hide-mobile><strong>Comprador</strong><br>${esc(e['_nombreComprador']||'—')}</td>
-        <td data-hide-mobile><strong>Nivel</strong><br>${nivelBadge(e['_nivelComprador']||e['Nivel Intermediacion'])}</td>
-        <td data-hide-mobile style="text-align:right;font-weight:600"><strong>PET</strong><br>${fmtNum(petKg)} kg</td>
-        <td data-hide-mobile style="text-align:right"><strong>Suave</strong><br>${fmtNum(suaveKg)} kg</td>
-        <td data-hide-mobile style="text-align:right"><strong>Duro</strong><br>${fmtNum(duroKg)} kg</td>
-        <td data-hide-mobile style="text-align:right;font-weight:700;color:#0a9e83"><strong>Valor</strong><br>${fmtMoney(total)}</td>
-        <td data-actions-row>
-          <div class="td-actions">
-            <button class="icon-btn" onclick="verEntrega('${idEnt}')" title="Ver">${icoHTML('view')}</button>
-            ${puedeEditar() ? `
-              <button class="icon-btn primary" onclick="editarEntrega('${idEnt}')" title="Editar">${icoHTML('edit')}</button>
-              <button class="icon-btn del" onclick="confirmarEliminarEntrega('${docId}','${idCarpeta}')" title="Eliminar">${icoHTML('trash')}</button>
-            ` : ''}
-          </div>
-        </td>
-      </tr>`;
+      <div class="ent-card" onclick="verEntrega('${idEnt}')">
+        <div class="ent-c-per">
+          <span class="ent-cal" style="background:${_rgbaEnt(col, 0.14)};color:${col}">${icoHTML('calendar')}</span>
+          <span class="ent-cal-txt">${esc(e['Mes'] || '')} ${esc(e['Año'] || '')}</span>
+        </div>
+        <div class="ent-c-aso">
+          <div class="ent-aso-nom">${esc(e['_nombreAsociacion'] || '—')}</div>
+          <div class="ent-aso-comp">${icoHTML('user')} ${esc(e['_nombreComprador'] || '—')}</div>
+          ${nivTxt ? `<span class="ent-nivel">● ${esc(nivTxt)}</span>` : ''}
+        </div>
+        <div class="ent-c-mats">
+          ${mat('PET', petKg, '#506CFF')}
+          ${mat('SUAVE', suaveKg, '#18AE97')}
+          ${mat('DURO', duroKg, '#F5AD21')}
+        </div>
+        <div class="ent-c-val">${fmtMoney(total)}</div>
+        <div class="ent-c-acts td-actions" onclick="event.stopPropagation()">
+          <button class="icon-btn" onclick="verEntrega('${idEnt}')" title="Ver">${icoHTML('view')}</button>
+          ${puedeEditar() ? `
+            <button class="icon-btn primary" onclick="editarEntrega('${idEnt}')" title="Editar">${icoHTML('edit')}</button>
+            <button class="icon-btn del" onclick="confirmarEliminarEntrega('${docId}','${idCarpeta}')" title="Eliminar">${icoHTML('trash')}</button>
+          ` : ''}
+        </div>
+      </div>`;
   }).join('');
 
-  wrap.innerHTML = stats + `
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Período</th>
-            <th>Asociación</th>
-            <th>Comprador</th>
-            <th>Nivel</th>
-            <th style="text-align:right">PET kg</th>
-            <th style="text-align:right">Suave kg</th>
-            <th style="text-align:right">Duro kg</th>
-            <th style="text-align:right">Valor total</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>${filas}</tbody>
-      </table>
-    </div>
-    <div style="font-size:12px;color:var(--text-dim);text-align:right">
+  wrap.innerHTML = `
+    <div class="ent-cards">${cards}</div>
+    <div style="font-size:12px;color:var(--text-dim);text-align:center;margin-top:14px">
       ${ENTREGAS_DATA.length} registro${ENTREGAS_DATA.length !== 1 ? 's' : ''}
     </div>
   `;
 }
+
+// Color por mes (para el ícono de período)
+function _mesColor(mes) {
+  const ORD = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const pal = ['#506CFF', '#18AE97', '#F5AD21', '#F82D72', '#FF751F', '#33A8DE', '#7B5CFF', '#0BC3FF', '#9FDA60', '#FF376F', '#FF85FF', '#0a9e83'];
+  const i = ORD.indexOf(String(mes || '').toLowerCase());
+  return pal[(i >= 0 ? i : 0) % pal.length];
+}
+
 
 // ============================================================
 // ELIMINAR
@@ -257,7 +368,7 @@ async function eliminarEntrega(docId) {
     if (!res.ok) { showToast('Error al eliminar: ' + (res.error || '')); return; }
     showToast(res.offline ? 'Eliminada (se sincronizará) ✓' : 'Entrega eliminada ✓');
     cerrarModal();
-    await cargarEntregas();
+    renderVistaEntregas();
   } catch (e) {
     console.error(e);
     showToast('Error al eliminar');
@@ -614,7 +725,7 @@ async function guardarEntrega(id) {
     if (!res.ok) { showToast('Error: ' + (res.error || 'desconocido')); return; }
     showToast(res.offline ? 'Guardada (se sincronizará) ✓' : (id ? 'Entrega actualizada ✓' : 'Entrega creada ✓'));
     cerrarModal();
-    if (ENTREGAS_LOADED) await cargarEntregas();
+    renderVistaEntregas();
   } catch (e) {
     console.error(e);
     showToast('Error al guardar');
@@ -627,8 +738,9 @@ async function guardarEntrega(id) {
 // EXPORTAR A EXCEL (respeta los filtros aplicados)
 // ============================================================
 
-async function exportarEntregasExcel() {
-  if (!ENTREGAS_DATA || !ENTREGAS_DATA.length) {
+async function exportarEntregasExcel(dataset) {
+  const datos = dataset || ENTREGAS_DATA;
+  if (!datos || !datos.length) {
     showToast('No hay datos para exportar.');
     return;
   }
@@ -641,7 +753,7 @@ async function exportarEntregasExcel() {
     mats.forEach(m => { header.push(m['Nombre'] + ' Kilos', m['Nombre'] + ' Precio', m['Nombre'] + ' Valor'); });
     header.push('Valor Total','Observaciones');
 
-    const filas = ENTREGAS_DATA.map(e => {
+    const filas = datos.map(e => {
       const r = [
         e['Fecha'] || '',
         e['Año'] || '',
@@ -669,11 +781,18 @@ async function exportarEntregasExcel() {
     XLSX.utils.book_append_sheet(wb, ws, 'Entregas');
     const fecha = new Date().toISOString().substring(0, 10);
     XLSX.writeFile(wb, `Entregas_${fecha}.xlsx`);
-    showToast(`${ENTREGAS_DATA.length} entrega${ENTREGAS_DATA.length !== 1 ? 's' : ''} exportada${ENTREGAS_DATA.length !== 1 ? 's' : ''} ✓`);
+    showToast(`${datos.length} entrega${datos.length !== 1 ? 's' : ''} exportada${datos.length !== 1 ? 's' : ''} ✓`);
   } catch (e) {
     console.error(e);
     showToast('Error al exportar el Excel');
   }
+}
+
+// Descargar TODA la matriz (Nivel 1)
+function exportarMatrizEntregas() {
+  const todas = (CAT.entregas || []).slice().sort((a, b) => _periodoOrden(b) - _periodoOrden(a));
+  if (!todas.length) { showToast('No hay entregas para exportar.'); return; }
+  exportarEntregasExcel(todas);
 }
 
 // ── Estilos propios de Entregas (tarjetas-resumen, verificables) ──
@@ -682,17 +801,60 @@ async function exportarEntregasExcel() {
   const s = document.createElement('style');
   s.id = 'entregas-styles';
   s.textContent = `
-    /* Tarjetas-resumen */
-    .ent-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px; }
-    .ent-stat { display:flex; align-items:center; gap:12px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:15px 16px; }
-    .ent-stat-ico { width:44px; height:44px; border-radius:12px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
-    .ent-stat-ico svg { width:22px; height:22px; }
-    .ent-stat-tx { display:flex; flex-direction:column; min-width:0; }
-    .ent-stat-tit { font-size:11.5px; color:var(--text-muted); font-weight:600; }
-    .ent-stat-tx b { font-size:22px; font-weight:800; color:var(--text); line-height:1.15; }
-    .ent-stat-sub { font-size:11px; color:var(--text-dim); }
+    /* Tarjetas-fila de entregas */
+    .ent-cards { display:flex; flex-direction:column; gap:14px; }
+    .ent-card { display:flex; align-items:center; gap:20px; background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px 20px; cursor:pointer; transition:box-shadow .15s,transform .12s,border-color .15s; }
+    .ent-card:hover { box-shadow:0 6px 20px rgba(0,0,0,.08); transform:translateY(-2px); border-color:transparent; }
 
-    /* Verificables: visto en tabla (no usado en tabla actual, disponible) */
+    .ent-c-per { display:flex; align-items:center; gap:11px; width:150px; flex-shrink:0; }
+    .ent-cal { width:40px; height:40px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+    .ent-cal svg { width:20px; height:20px; }
+    .ent-cal-txt { font-size:13px; font-weight:700; color:var(--text); line-height:1.3; }
+
+    .ent-c-aso { width:230px; flex-shrink:0; min-width:0; }
+    .ent-aso-nom { font-size:14px; font-weight:700; color:var(--text); line-height:1.3; }
+    .ent-aso-comp { display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--text-muted); margin-top:4px; }
+    .ent-aso-comp svg { width:14px; height:14px; color:var(--text-dim); flex-shrink:0; }
+    .ent-nivel { display:inline-block; margin-top:7px; font-size:11px; font-weight:700; color:#33A8DE; background:rgba(51,168,222,.12); padding:3px 10px; border-radius:20px; }
+
+    .ent-c-mats { display:flex; gap:22px; flex:1; min-width:0; }
+    .ent-mat { flex:1; min-width:0; }
+    .ent-mat-lbl { font-size:10.5px; font-weight:700; color:var(--text-dim); letter-spacing:.5px; }
+    .ent-mat-kg { font-size:13px; font-weight:700; color:var(--text); margin:3px 0 7px; }
+    .ent-bar { height:6px; background:#eef0f4; border-radius:20px; overflow:hidden; }
+    .ent-bar-fill { height:100%; border-radius:20px; transition:width .5s ease; }
+
+    .ent-c-val { width:100px; flex-shrink:0; text-align:right; font-size:15px; font-weight:800; color:#0a9e83; }
+    .ent-c-acts { flex-shrink:0; display:flex; gap:6px; }
+
+    /* ── Nivel 1: provincias + asociaciones ── */
+    .ent-provs { display:flex; flex-direction:column; gap:22px; }
+    .ent-prov-titulo { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+    .ent-prov-ico { width:36px; height:36px; border-radius:10px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+    .ent-prov-ico svg { width:19px; height:19px; }
+    .ent-prov-nom { font-size:15px; font-weight:800; color:var(--text); }
+    .ent-prov-count { font-size:11.5px; font-weight:600; color:var(--text-dim); background:rgba(0,0,0,.04); padding:3px 10px; border-radius:20px; }
+    .ent-prov-lista { display:flex; flex-direction:column; gap:10px; }
+
+    .ent-asoc-row { display:flex; align-items:center; gap:14px; width:100%; text-align:left; background:var(--surface); border:1px solid var(--border); border-radius:15px; padding:14px 18px; cursor:pointer; font-family:inherit; transition:box-shadow .15s,transform .12s,border-color .15s; }
+    .ent-asoc-row:hover { box-shadow:0 6px 18px rgba(0,0,0,.08); transform:translateY(-2px); border-color:transparent; }
+    .ent-asoc-ico { width:40px; height:40px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+    .ent-asoc-ico svg { width:20px; height:20px; }
+    .ent-asoc-nom { flex:1; min-width:0; font-size:14px; font-weight:700; color:var(--text); }
+    .ent-asoc-right { display:flex; align-items:center; gap:10px; flex-shrink:0; }
+    .ent-asoc-pill { font-size:12.5px; font-weight:700; padding:5px 12px; border-radius:20px; white-space:nowrap; }
+    .ent-asoc-pill-0 { color:var(--text-dim); background:rgba(0,0,0,.05); }
+    .ent-asoc-chev { color:var(--text-dim); display:flex; }
+    .ent-asoc-chev svg { width:18px; height:18px; }
+    .ent-asoc-vacia { opacity:.6; }
+
+    /* Título con botón volver (Nivel 2) */
+    .ent-title-row { display:flex; align-items:center; gap:12px; }
+    .ent-back { width:38px; height:38px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:var(--surface); border:1px solid var(--border); color:var(--text); cursor:pointer; transition:background .15s; }
+    .ent-back:hover { background:var(--surface-hover); }
+    .ent-back svg { width:19px; height:19px; }
+
+    /* Verificables: visto (disponible) */
     .ent-visto { display:inline-flex; align-items:center; gap:6px; }
     .ent-visto-ic { width:22px; height:22px; border-radius:50%; background:#18AE97; color:#fff; display:inline-flex; align-items:center; justify-content:center; }
     .ent-visto-ic svg { width:13px; height:13px; }
@@ -716,8 +878,13 @@ async function exportarEntregasExcel() {
     .ent-doc-chip:hover { background:rgba(80,108,255,.14); }
     .ent-doc-chip-off { color:var(--text-dim); background:transparent; cursor:default; }
 
-    @media (max-width:768px) {
-      .ent-stats { grid-template-columns:1fr 1fr; }
+    @media (max-width:820px) {
+      .ent-card { flex-wrap:wrap; gap:12px 16px; }
+      .ent-c-per { width:auto; order:1; }
+      .ent-c-val { order:2; margin-left:auto; }
+      .ent-c-aso { width:100%; order:3; }
+      .ent-c-mats { width:100%; order:4; gap:14px; }
+      .ent-c-acts { width:100%; order:5; justify-content:flex-end; border-top:1px solid var(--border); padding-top:12px; }
     }
   `;
   document.head.appendChild(s);
