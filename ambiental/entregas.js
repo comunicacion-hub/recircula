@@ -289,19 +289,12 @@ function renderTablaEntregas() {
     const docId   = jsEsc(e['_docId'] || '');
     const idCarpeta = jsEsc(e['ID_Carpeta_Evidencia'] || '');
     const col     = _mesColor(e['Mes']);
-    const niv     = e['_nivelComprador'] || e['Nivel Intermediacion'] || '';
-    const nivTxt  = niv ? (/nivel/i.test(niv) ? niv : ('Nivel ' + niv)) : '';
 
     return `
       <div class="ent-card" onclick="verEntrega('${idEnt}')">
         <div class="ent-c-per">
           <span class="ent-cal" style="background:${_rgbaEnt(col, 0.14)};color:${col}">${icoHTML('calendar')}</span>
           <span class="ent-cal-txt">${esc(e['Mes'] || '')} ${esc(e['Año'] || '')}</span>
-        </div>
-        <div class="ent-c-aso">
-          <div class="ent-aso-nom">${esc(e['_nombreAsociacion'] || '—')}</div>
-          <div class="ent-aso-comp">${icoHTML('user')} ${esc(e['_nombreComprador'] || '—')}</div>
-          ${nivTxt ? `<span class="ent-nivel">● ${esc(nivTxt)}</span>` : ''}
         </div>
         <div class="ent-c-mats">
           ${mat('PET', petKg, '#506CFF')}
@@ -811,12 +804,6 @@ function exportarMatrizEntregas() {
     .ent-cal svg { width:20px; height:20px; }
     .ent-cal-txt { font-size:13px; font-weight:700; color:var(--text); line-height:1.3; }
 
-    .ent-c-aso { width:230px; flex-shrink:0; min-width:0; }
-    .ent-aso-nom { font-size:14px; font-weight:700; color:var(--text); line-height:1.3; }
-    .ent-aso-comp { display:flex; align-items:center; gap:6px; font-size:12.5px; color:var(--text-muted); margin-top:4px; }
-    .ent-aso-comp svg { width:14px; height:14px; color:var(--text-dim); flex-shrink:0; }
-    .ent-nivel { display:inline-block; margin-top:7px; font-size:11px; font-weight:700; color:#33A8DE; background:rgba(51,168,222,.12); padding:3px 10px; border-radius:20px; }
-
     .ent-c-mats { display:flex; gap:22px; flex:1; min-width:0; }
     .ent-mat { flex:1; min-width:0; }
     .ent-mat-lbl { font-size:10.5px; font-weight:700; color:var(--text-dim); letter-spacing:.5px; }
@@ -882,7 +869,6 @@ function exportarMatrizEntregas() {
       .ent-card { flex-wrap:wrap; gap:12px 16px; }
       .ent-c-per { width:auto; order:1; }
       .ent-c-val { order:2; margin-left:auto; }
-      .ent-c-aso { width:100%; order:3; }
       .ent-c-mats { width:100%; order:4; gap:14px; }
       .ent-c-acts { width:100%; order:5; justify-content:flex-end; border-top:1px solid var(--border); padding-top:12px; }
     }
