@@ -131,6 +131,7 @@ function entregaFromFS(d) {
     'Actividad Fuente':     d.actividad_fuente || '',
     'Valor Total':          d.valor_total || 0,
     'ID_Carpeta_Evidencia': d.id_carpeta_evidencia || '',
+    'Documentos':           (d.documentos && typeof d.documentos === 'object') ? d.documentos : {},
     'Observaciones':        d.observaciones || '',
   };
   // Columnas de materiales (según catálogo)
@@ -165,6 +166,7 @@ function entregaToFS(data) {
     observaciones:        data['Observaciones'] || '',
     valor_total:          parseFloat(data['Valor Total']) || 0,
     id_carpeta_evidencia: data['ID_Carpeta_Evidencia'] || '',
+    documentos:           (data['Documentos'] && typeof data['Documentos'] === 'object') ? data['Documentos'] : {},
   };
   (CAT.materiales || []).forEach(function(m) {
     const nombre = m['Nombre'];
@@ -323,6 +325,26 @@ async function crearCarpetaMesRemote(payload) {
     body: JSON.stringify(Object.assign({ token: CARPETAS_TOKEN }, payload)),
     redirect: 'follow',
   });
+  return await r.json();
+}
+
+// ── Drive directo (token OAuth compartido por el Hub en sessionStorage) ──
+// Mismo token que usa el Dashboard Social; permite subir archivos sin Apps Script.
+function driveToken() {
+  const t = sessionStorage.getItem('rcr_token');
+  if (!t) return null;
+  const exp = parseInt(sessionStorage.getItem('rcr_token_exp'), 10);
+  if (exp && Date.now() > exp) return null;
+  return t;
+}
+async function driveSubirArchivo(blob, filename, parentId, token) {
+  const meta = { name: filename, parents: [parentId] };
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify(meta)], { type: 'application/json' }));
+  form.append('file', blob, filename);
+  const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink&supportsAllDrives=true',
+    { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: form });
+  if (!r.ok) throw new Error('Drive subida ' + r.status);
   return await r.json();
 }
 
