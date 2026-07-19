@@ -10,17 +10,65 @@ let ASOCIACIONES_DATA = [];
 const CATEGORIAS_ASOC = ['Líderes de ReCircula', 'En Fortalecimiento', 'En Acompañamiento'];
 
 // Documentos (PDF) que se suben desde la ficha. Subir un PDF = documento presente.
+// multi:true → admite varios archivos (se guarda el año actual en cada uno).
 const ASOC_DOCS = [
-  { key: 'resolucion',    lbl: 'Resolución',                file: 'Resolucion' },
-  { key: 'estatutos',     lbl: 'Reglamento/Estatuto',       file: 'Reglamento_Estatuto' },
-  { key: 'directiva',     lbl: 'Directiva',                 file: 'Directiva' },
-  { key: 'acta',          lbl: 'Acta de compromiso',        file: 'Acta_compromiso' },
-  { key: 'plan_cap',      lbl: 'Plan de capacitación',      file: 'Plan_capacitacion' },
-  { key: 'resultado_cap', lbl: 'Resultado de capacitación', file: 'Resultado_capacitacion' },
+  { key: 'resolucion',    lbl: 'Resolución/Estatuto',        file: 'Resolucion_Estatuto',    multi: false },
+  { key: 'directiva',     lbl: 'Directiva',                  file: 'Directiva',              multi: false },
+  { key: 'ruc',           lbl: 'RUC',                        file: 'RUC',                    multi: false },
+  { key: 'acta',          lbl: 'Acta de compromiso',         file: 'Acta_compromiso',        multi: false },
+  { key: 'plan_cap',      lbl: 'Plan de capacitación',       file: 'Plan_capacitacion',      multi: true },
+  { key: 'resultado_cap', lbl: 'Resultados de capacitación', file: 'Resultado_capacitacion', multi: true },
 ];
 const ASOC_DOCS_TOTAL = ASOC_DOCS.length;
-function _asocDoc(a, key) { return (a && a.documentos && a.documentos[key]) ? a.documentos[key] : null; }
-function _asocDocsCount(a) { return ASOC_DOCS.filter(function (d) { return _asocDoc(a, d.key); }).length; }
+function _asocDocDef(key) { return ASOC_DOCS.find(function (d) { return d.key === key; }); }
+// Normaliza a lista de archivos [{id,url,nombre,anio?}] (soporta el modelo viejo de 1 objeto)
+function _asocDocList(docs, key) {
+  const v = docs ? docs[key] : null;
+  if (!v) return [];
+  return Array.isArray(v) ? v.slice() : [v];
+}
+function _asocDocPresente(a, key) { return _asocDocList(a && a.documentos, key).length > 0; }
+function _asocDocsCount(a) { return ASOC_DOCS.filter(function (d) { return _asocDocPresente(a, d.key); }).length; }
+
+// Estado de trabajo del formulario: copia editable de documentos + archivos a mandar a papelera al guardar
+let _ASOC_FORM = null;
+
+function _renderAsocDocs() {
+  const cont = document.getElementById('asoc-docs-cont');
+  if (!cont || !_ASOC_FORM) return;
+  const anio = new Date().getFullYear();
+  cont.innerHTML = ASOC_DOCS.map(function (d) {
+    const lista = _asocDocList(_ASOC_FORM.documentos, d.key);
+    const files = lista.map(function (f, i) {
+      const et = (d.multi && f.anio) ? '<span class="asoc-f-anio">' + esc(String(f.anio)) + '</span>' : '';
+      return '<div class="asoc-f-row">' +
+        '<span class="asoc-f-nom">' + esc(f.nombre || d.lbl) + '</span>' + et +
+        (f.url ? '<a class="asoc-f-ver" href="' + esc(f.url) + '" target="_blank" rel="noopener" title="Ver PDF">' + icoHTML('view') + '</a>' : '') +
+        '<button type="button" class="asoc-f-del" onclick="_asocQuitarArchivo(\'' + d.key + '\',' + i + ')" title="Eliminar archivo">' + icoHTML('trash') + '</button>' +
+      '</div>';
+    }).join('');
+    const inputLbl = d.multi ? ('Agregar archivo(s) · año ' + anio) : (lista.length ? 'Reemplazar archivo' : 'Subir archivo');
+    return '<div class="asoc-doc-item">' +
+      '<div class="asoc-doc-cab"><span class="asoc-doc-lbl">' + esc(d.lbl) + (d.multi ? ' <span class="asoc-doc-tag">varios · por año</span>' : '') + '</span></div>' +
+      (files ? '<div class="asoc-f-list">' + files + '</div>' : '') +
+      '<label class="asoc-doc-add">' + icoHTML('cloudUp') + '<span>' + inputLbl + '</span>' +
+        '<input type="file" accept="application/pdf,.pdf"' + (d.multi ? ' multiple' : '') + ' class="asoc-doc-file" id="asoc-doc-' + d.key + '"></label>' +
+    '</div>';
+  }).join('');
+}
+
+// Quita un archivo de la copia de trabajo (se enviará a papelera al guardar)
+function _asocQuitarArchivo(key, idx) {
+  if (!_ASOC_FORM) return;
+  const lista = _asocDocList(_ASOC_FORM.documentos, key);
+  const f = lista[idx];
+  if (!f) return;
+  if (f.id) _ASOC_FORM.eliminar.push(f.id);
+  lista.splice(idx, 1);
+  const def = _asocDocDef(key);
+  _ASOC_FORM.documentos[key] = (def && def.multi) ? lista : (lista[0] || null);
+  _renderAsocDocs();
+}
 
 // Color por categoría (para badge y barra)
 const ASOC_CAT_COLOR = {
@@ -99,7 +147,7 @@ function _provColorAsoc(prov) {
 // 6 puntos de documentos (verde=subido, gris=falta)
 function _docChecks(a) {
   return '<div class="asoc-dots">' + ASOC_DOCS.map(function (d) {
-    const on = !!_asocDoc(a, d.key);
+    const on = _asocDocPresente(a, d.key);
     return '<span class="asoc-dot' + (on ? ' on' : '') + '" title="' + esc(d.lbl) + (on ? ': subido' : ': falta') + '">' + (on ? icoHTML('check') : '') + '</span>';
   }).join('') + '</div>';
 }
@@ -178,11 +226,16 @@ function verAsociacion(docId) {
   const a = CAT.asociaciones.find(function (x) { return x._docId === docId; });
   if (!a) { showToast('Ficha no encontrada'); return; }
   const cnt = _asocDocsCount(a);
-  const chips = ASOC_DOCS.map(function (d) {
-    const doc = _asocDoc(a, d.key);
-    return doc && doc.url
-      ? '<a class="asoc-doc-chip" href="' + esc(doc.url) + '" target="_blank" rel="noopener">' + icoHTML('view') + ' ' + esc(d.lbl) + '</a>'
-      : '<span class="asoc-doc-chip asoc-doc-chip-off">' + icoHTML('close') + ' ' + esc(d.lbl) + '</span>';
+  const bloques = ASOC_DOCS.map(function (d) {
+    const lista = _asocDocList(a.documentos, d.key);
+    const archivos = lista.length
+      ? lista.map(function (f) {
+          const et = (d.multi && f.anio) ? ' <span class="asoc-doc-anio">' + esc(String(f.anio)) + '</span>' : '';
+          return '<a class="asoc-doc-chip" href="' + esc(f.url || '#') + '" target="_blank" rel="noopener">' + icoHTML('view') + ' ' + esc(f.nombre || d.lbl) + et + '</a>';
+        }).join('')
+      : '<span class="asoc-doc-chip asoc-doc-chip-off">' + icoHTML('close') + ' Sin archivo</span>';
+    return '<div class="asoc-doc-grp"><div class="asoc-doc-grp-lbl">' + esc(d.lbl) + (lista.length > 1 ? ' <span class="asoc-doc-num">' + lista.length + '</span>' : '') + '</div>' +
+      '<div class="asoc-doc-grp-files">' + archivos + '</div></div>';
   }).join('');
   abrirModal(
     '<div class="modal">' +
@@ -195,7 +248,7 @@ function verAsociacion(docId) {
           '<div><div class="form-label">Documentación</div><div style="font-size:18px;font-weight:700">' + cnt + '/' + ASOC_DOCS_TOTAL + '</div></div>' +
         '</div>' +
         '<div class="form-label" style="margin-bottom:8px">Documentos</div>' +
-        '<div class="asoc-docs-ver">' + chips + '</div>' +
+        '<div class="asoc-docs-ver">' + bloques + '</div>' +
         (a.observaciones ? '<div style="margin-top:14px"><div class="form-label">Observaciones</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px">' + esc(a.observaciones) + '</div></div>' : '') +
       '</div>' +
       '<div class="modal-foot"><button class="btn btn-glass" onclick="cerrarModal()">Cerrar</button></div>' +
@@ -210,6 +263,13 @@ function abrirFormAsociacion(docId) {
   docId = docId || null;
   const a = docId ? CAT.asociaciones.find(function (x) { return x._docId === docId; }) : null;
   const editing = !!a;
+
+  // Copia de trabajo de documentos (para agregar/quitar antes de guardar)
+  _ASOC_FORM = {
+    docId: docId,
+    documentos: JSON.parse(JSON.stringify((a && a.documentos) ? a.documentos : {})),
+    eliminar: [],
+  };
 
   const asocField = editing
     ? '<input type="text" class="form-input" value="' + esc(a.nombre) + '" readonly>' +
@@ -231,18 +291,7 @@ function abrirFormAsociacion(docId) {
             '<input type="number" class="form-input" id="asoc-recic" min="0" step="1" value="' + (a ? a.num_recicladores : '') + '"></div>' +
         '</div>' +
         '<div class="form-label" style="margin:16px 0 8px">Documentos (PDF)</div>' +
-        '<div class="asoc-docs">' +
-          ASOC_DOCS.map(function (d) {
-            const doc = _asocDoc(a || {}, d.key);
-            const ver = (doc && doc.url)
-              ? '<button type="button" class="asoc-doc-vermini" onclick="window.open(\'' + jsEsc(doc.url) + '\',\'_blank\')">' + icoHTML('view') + ' Ver PDF</button>'
-              : '<span class="asoc-doc-sin">Sin archivo</span>';
-            return '<div class="asoc-doc-item">' +
-              '<div class="asoc-doc-cab"><span class="asoc-doc-lbl">' + esc(d.lbl) + '</span>' + ver + '</div>' +
-              '<input type="file" accept="application/pdf,.pdf" class="form-input asoc-doc-file" id="asoc-doc-' + d.key + '">' +
-            '</div>';
-          }).join('') +
-        '</div>' +
+        '<div class="asoc-docs" id="asoc-docs-cont"></div>' +
         '<div class="form-group" style="margin-top:16px"><label class="form-label">Observaciones</label>' +
           '<textarea class="form-textarea" id="asoc-obs" placeholder="Notas adicionales…">' + esc(a ? a.observaciones : '') + '</textarea></div>' +
       '</div>' +
@@ -252,6 +301,7 @@ function abrirFormAsociacion(docId) {
       '</div>' +
     '</div>'
   );
+  _renderAsocDocs();
 }
 
 function _asocOptions(selId) {
@@ -289,7 +339,7 @@ async function guardarAsociacion(docId) {
     nombre:          amb ? amb.nombre : (actual ? actual.nombre : ''),
     provincia:       amb ? amb.provincia : (actual ? actual.provincia : ((document.getElementById('asoc-provincia') || {}).value || '')),
     num_recicladores:(document.getElementById('asoc-recic') || {}).value || 0,
-    documentos:      Object.assign({}, (actual && actual.documentos) ? actual.documentos : {}),
+    documentos:      JSON.parse(JSON.stringify((_ASOC_FORM && _ASOC_FORM.documentos) ? _ASOC_FORM.documentos : {})),
     observaciones:   (document.getElementById('asoc-obs') || {}).value || '',
     id_carpeta_drive:(actual && actual.id_carpeta_drive) ? actual.id_carpeta_drive : '',
   };
@@ -308,12 +358,15 @@ async function guardarAsociacion(docId) {
     }
   }
 
-  // Subir los PDFs seleccionados → cada uno marca su documento como presente
-  const nuevos = ASOC_DOCS.map(function (d) {
+  // Recolectar archivos nuevos por documento (single = 1; multi = varios)
+  const anio = new Date().getFullYear();
+  const nuevos = [];
+  ASOC_DOCS.forEach(function (d) {
     const el = document.getElementById('asoc-doc-' + d.key);
-    const f = el && el.files && el.files[0] ? el.files[0] : null;
-    return f ? { key: d.key, file: d.file, archivo: f } : null;
-  }).filter(Boolean);
+    if (!el || !el.files || !el.files.length) return;
+    const files = Array.prototype.slice.call(el.files, 0, d.multi ? el.files.length : 1);
+    files.forEach(function (f) { nuevos.push({ key: d.key, file: d.file, multi: d.multi, archivo: f }); });
+  });
 
   const noPdf = nuevos.find(function (n) { return n.archivo.type !== 'application/pdf' && !/\.pdf$/i.test(n.archivo.name); });
   if (noPdf) { showToast('Solo se permiten archivos PDF'); if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; } return; }
@@ -328,11 +381,29 @@ async function guardarAsociacion(docId) {
         const n = nuevos[i];
         if (btn) btn.textContent = 'Subiendo ' + (i + 1) + '/' + nuevos.length + '…';
         try {
-          const fname = n.file + '.pdf';
+          const fname = n.multi ? (n.file + '_' + anio + '.pdf') : (n.file + '.pdf');
           const up = await driveSubirArchivo(n.archivo, fname, o.id_carpeta_drive, tok);
-          o.documentos[n.key] = { id: up.id, url: up.webViewLink, nombre: fname };
+          const meta = { id: up.id, url: up.webViewLink, nombre: fname };
+          if (n.multi) {
+            meta.anio = anio;
+            const arr = _asocDocList(o.documentos, n.key);
+            arr.push(meta);
+            o.documentos[n.key] = arr;
+          } else {
+            // reemplaza: si había uno anterior, mandarlo a papelera
+            const prev = o.documentos[n.key];
+            if (prev && prev.id && tok) { try { await driveEliminarCarpeta(prev.id, tok); } catch (e) {} }
+            o.documentos[n.key] = meta;
+          }
         } catch (e) { console.warn('Subida documento:', e); showToast('No se pudo subir ' + n.file); }
       }
+    }
+  }
+
+  // Aplicar eliminaciones marcadas en el formulario (mandar a papelera)
+  if (_ASOC_FORM && _ASOC_FORM.eliminar.length && tok) {
+    for (let i = 0; i < _ASOC_FORM.eliminar.length; i++) {
+      try { await driveEliminarCarpeta(_ASOC_FORM.eliminar[i], tok); } catch (e) { console.warn('Papelera archivo:', e); }
     }
   }
 
@@ -394,7 +465,7 @@ async function exportarAsociacionesExcel() {
   try {
     await cargarSheetJS();
     if (!window.XLSX) { showToast('No se pudo cargar el exportador'); return; }
-    const sino = function (a, key) { return _asocDoc(a, key) ? 'Sí' : 'No'; };
+    const sino = function (a, key) { return _asocDocPresente(a, key) ? 'Sí' : 'No'; };
     const header = ['Asociación', 'Provincia', 'N° Recicladores'].concat(ASOC_DOCS.map(function (d) { return d.lbl; })).concat(['Documentos', 'Categoría', 'Observaciones']);
     const filas = ASOCIACIONES_DATA.map(function (a) {
       return [a.nombre, a.provincia, parseFloat(a.num_recicladores) || 0]
@@ -457,20 +528,37 @@ async function exportarAsociacionesExcel() {
     /* Casillas de PDF en el formulario */
     .asoc-docs { display:flex; flex-direction:column; gap:10px; }
     .asoc-doc-item { border:1px solid var(--border); border-radius:12px; padding:12px 14px; }
-    .asoc-doc-cab { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
-    .asoc-doc-lbl { font-size:13px; font-weight:600; color:var(--text); }
-    .asoc-doc-vermini { display:inline-flex; align-items:center; gap:5px; background:rgba(80,108,255,.1); color:#506CFF; border:none; font-family:inherit; font-size:11px; font-weight:700; padding:5px 10px; border-radius:8px; cursor:pointer; }
-    .asoc-doc-vermini svg { width:14px; height:14px; }
-    .asoc-doc-vermini:hover { background:rgba(80,108,255,.18); }
-    .asoc-doc-sin { font-size:11.5px; color:var(--text-dim); }
-    .asoc-doc-file { font-size:12px; }
+    .asoc-doc-cab { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+    .asoc-doc-lbl { font-size:13px; font-weight:700; color:var(--text); }
+    .asoc-doc-tag { font-size:10px; font-weight:700; color:#7B5CFF; background:rgba(123,92,255,.12); padding:2px 8px; border-radius:20px; margin-left:6px; }
 
-    /* Chips de documentos en la ficha de detalle */
-    .asoc-docs-ver { display:flex; flex-direction:column; gap:8px; }
+    .asoc-f-list { display:flex; flex-direction:column; gap:7px; margin-bottom:10px; }
+    .asoc-f-row { display:flex; align-items:center; gap:8px; background:rgba(0,0,0,.03); border-radius:9px; padding:8px 10px; }
+    .asoc-f-nom { flex:1; min-width:0; font-size:12.5px; color:var(--text); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .asoc-f-anio { font-size:10.5px; font-weight:700; color:#0a9e83; background:rgba(24,174,151,.14); padding:2px 8px; border-radius:20px; flex-shrink:0; }
+    .asoc-f-ver, .asoc-f-del { width:28px; height:28px; border-radius:8px; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; border:none; cursor:pointer; }
+    .asoc-f-ver { background:rgba(80,108,255,.1); color:#506CFF; text-decoration:none; }
+    .asoc-f-ver:hover { background:rgba(80,108,255,.2); }
+    .asoc-f-ver svg { width:14px; height:14px; }
+    .asoc-f-del { background:rgba(201,26,68,.09); color:#c91a44; }
+    .asoc-f-del:hover { background:rgba(201,26,68,.18); }
+    .asoc-f-del svg { width:14px; height:14px; }
+
+    .asoc-doc-add { display:flex; align-items:center; gap:8px; font-size:12.5px; font-weight:600; color:#506CFF; cursor:pointer; padding:9px 12px; border:1.5px dashed var(--border); border-radius:10px; }
+    .asoc-doc-add:hover { border-color:#506CFF; background:rgba(80,108,255,.04); }
+    .asoc-doc-add svg { width:16px; height:16px; }
+    .asoc-doc-add input[type=file] { display:none; }
+
+    /* Documentos en la ficha de detalle */
+    .asoc-docs-ver { display:flex; flex-direction:column; gap:14px; }
+    .asoc-doc-grp-lbl { font-size:12px; font-weight:700; color:var(--text-muted); margin-bottom:6px; text-transform:uppercase; letter-spacing:.4px; }
+    .asoc-doc-num { font-size:10px; color:#506CFF; background:rgba(80,108,255,.12); padding:1px 7px; border-radius:20px; margin-left:4px; }
+    .asoc-doc-grp-files { display:flex; flex-wrap:wrap; gap:8px; }
     .asoc-doc-chip { display:inline-flex; align-items:center; gap:8px; padding:9px 13px; border:1px solid var(--border); border-radius:11px; font-size:13px; font-weight:600; color:#0a9e83; text-decoration:none; background:rgba(24,174,151,.06); }
     .asoc-doc-chip svg { width:15px; height:15px; }
     .asoc-doc-chip:hover { background:rgba(24,174,151,.14); }
     .asoc-doc-chip-off { color:var(--text-dim); background:transparent; }
+    .asoc-doc-anio { font-size:10.5px; font-weight:700; color:#0a9e83; background:rgba(24,174,151,.16); padding:1px 7px; border-radius:20px; }
 
     @media (max-width:768px) {
       .asoc-tabla { overflow-x:auto; }
