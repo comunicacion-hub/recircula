@@ -131,11 +131,7 @@ function asociacionFromFS(d) {
     nombre:          d.nombre || '',
     provincia:       d.provincia || '',
     num_recicladores:d.num_recicladores || 0,
-    doc_legal:       d.doc_legal === true,
-    estatutos:       d.estatutos === true,
-    directiva:       d.directiva === true,
-    acta_compromiso: d.acta_compromiso === true,
-    ficha_reciclador:d.ficha_reciclador === true,
+    documentos:      (d.documentos && typeof d.documentos === 'object') ? d.documentos : {},
     observaciones:   d.observaciones || '',
     id_carpeta_drive:d.id_carpeta_drive || '',
   };
@@ -146,11 +142,7 @@ function asociacionToFS(o) {
     nombre:          o.nombre || '',
     provincia:       o.provincia || '',
     num_recicladores:parseFloat(o.num_recicladores) || 0,
-    doc_legal:       !!o.doc_legal,
-    estatutos:       !!o.estatutos,
-    directiva:       !!o.directiva,
-    acta_compromiso: !!o.acta_compromiso,
-    ficha_reciclador:!!o.ficha_reciclador,
+    documentos:      (o.documentos && typeof o.documentos === 'object') ? o.documentos : {},
     observaciones:   o.observaciones || '',
     id_carpeta_drive:o.id_carpeta_drive || '',
   };
@@ -293,6 +285,18 @@ async function driveEliminarCarpeta(folderId, token) {
   });
   if (!r.ok) throw new Error('Drive papelera ' + r.status);
   return true;
+}
+
+// Sube un archivo (Blob) a una carpeta de Drive. Devuelve {id, webViewLink}.
+async function driveSubirArchivo(blob, filename, parentId, token) {
+  const meta = { name: filename, parents: [parentId] };
+  const form = new FormData();
+  form.append('metadata', new Blob([JSON.stringify(meta)], { type: 'application/json' }));
+  form.append('file', blob, filename);
+  const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink&supportsAllDrives=true',
+    { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: form });
+  if (!r.ok) throw new Error('Drive subida ' + r.status);
+  return await r.json();
 }
 
 // ============================================================
