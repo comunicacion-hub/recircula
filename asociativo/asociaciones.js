@@ -89,6 +89,27 @@ function cargarAsociaciones() {
   renderTablaAsociaciones();
 }
 
+// Paleta y color por provincia (encabezado de grupo)
+const ASOC_PROV_PAL = ['#506CFF', '#18AE97', '#F5AD21', '#F82D72', '#FF751F', '#33A8DE', '#7B5CFF', '#0BC3FF'];
+function _provColorAsoc(prov) {
+  const k = String(prov || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  let h = 0; for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) >>> 0;
+  return ASOC_PROV_PAL[h % ASOC_PROV_PAL.length];
+}
+// 6 puntos de documentos (verde=subido, gris=falta)
+function _docChecks(a) {
+  return '<div class="asoc-dots">' + ASOC_DOCS.map(function (d) {
+    const on = !!_asocDoc(a, d.key);
+    return '<span class="asoc-dot' + (on ? ' on' : '') + '" title="' + esc(d.lbl) + (on ? ': subido' : ': falta') + '">' + (on ? icoHTML('check') : '') + '</span>';
+  }).join('') + '</div>';
+}
+// Completitud: % + color por umbral
+function _completitud(a) {
+  const pct = Math.round(_asocDocsCount(a) / ASOC_DOCS_TOTAL * 100);
+  const color = pct >= 80 ? '#18AE97' : pct >= 40 ? '#F5AD21' : pct > 0 ? '#e5484d' : '#d7d7e0';
+  return { pct: pct, color: color };
+}
+
 function renderTablaAsociaciones() {
   const wrap = document.getElementById('asoc-table-wrap');
   if (!wrap) return;
@@ -100,40 +121,56 @@ function renderTablaAsociaciones() {
   }
 
   const edit = puedeEditar();
-  const cards = ASOCIACIONES_DATA.map(function (a) {
-    const docId = jsEsc(a._docId || '');
-    const cat   = categoriaVigente(a.id_asociacion);
-    const col   = _asocColorCat(cat);
-    const cnt   = _asocDocsCount(a);
-    const pct   = Math.round(cnt / ASOC_DOCS_TOTAL * 100);
 
-    return '<div class="asoc-g-card">' +
-      '<div class="asoc-g-head">' + _asocCatBadge(cat) + '</div>' +
-      '<div class="asoc-g-nombre">' + esc(a.nombre || '—') + '</div>' +
-      '<div class="asoc-g-body">' +
-        '<div class="asoc-g-recs">' +
-          '<span class="asoc-g-recs-ico">' + icoHTML('users') + '</span>' +
-          '<div class="asoc-g-recs-tx"><b>' + fmtNum(a.num_recicladores) + '</b><span>Recicladores</span></div>' +
-        '</div>' +
-        '<div class="asoc-g-doc">' +
-          '<div class="asoc-g-doc-lbl">Documentación</div>' +
-          '<div class="asoc-g-doc-cnt">' + cnt + '/' + ASOC_DOCS_TOTAL + ' documentos</div>' +
-          '<div class="asoc-g-bar-row">' +
-            '<div class="asoc-g-bar"><div class="asoc-g-bar-fill" style="width:' + pct + '%;background:' + col + '"></div></div>' +
-            '<span class="asoc-g-pct">' + pct + '%</span>' +
-          '</div>' +
-        '</div>' +
-      '</div>' +
-      '<div class="asoc-g-foot td-actions">' +
-        '<button class="icon-btn" onclick="verAsociacion(\'' + docId + '\')" title="Ver">' + icoHTML('view') + '</button>' +
-        (edit ? '<button class="icon-btn primary" onclick="editarAsociacion(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' +
-          '<button class="icon-btn del" onclick="confirmarEliminarAsociacion(\'' + docId + '\')" title="Eliminar">' + icoHTML('trash') + '</button>' : '') +
-      '</div>' +
-    '</div>';
+  // Agrupar por provincia
+  const grupos = {};
+  ASOCIACIONES_DATA.forEach(function (a) {
+    const p = a.provincia || 'Sin provincia';
+    (grupos[p] = grupos[p] || []).push(a);
+  });
+  const provs = Object.keys(grupos).sort(function (a, b) { return a.localeCompare(b, 'es'); });
+
+  const acciones = function (a) {
+    const docId = jsEsc(a._docId || '');
+    return '<button class="icon-btn" onclick="verAsociacion(\'' + docId + '\')" title="Ver">' + icoHTML('view') + '</button>' +
+      (edit ? '<button class="icon-btn primary" onclick="editarAsociacion(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' +
+        '<button class="icon-btn del" onclick="confirmarEliminarAsociacion(\'' + docId + '\')" title="Eliminar">' + icoHTML('trash') + '</button>' : '');
+  };
+  const filaAsoc = function (a) {
+    const cat = categoriaVigente(a.id_asociacion);
+    const acol = _asocColorCat(cat);
+    const comp = _completitud(a);
+    return '<tr class="asoc-fila" style="--acc:' + acol + '">' +
+      '<td><div class="asoc-nom-cell">' +
+        '<span class="asoc-avatar" style="background:' + _asocRgba(acol, 0.12) + ';color:' + acol + '">' + icoHTML('users') + '</span>' +
+        '<span class="asoc-nom-tx">' + esc(a.nombre || '—') + '</span></div></td>' +
+      '<td><span class="asoc-recs"><span class="asoc-recs-ico">' + icoHTML('users') + '</span><b>' + fmtNum(a.num_recicladores) + '</b></span></td>' +
+      '<td>' + _docChecks(a) + '</td>' +
+      '<td><div class="asoc-comp"><div class="asoc-comp-val">' + comp.pct + '%</div>' +
+        '<div class="asoc-comp-bar"><div class="asoc-comp-fill" style="width:' + comp.pct + '%;background:' + comp.color + '"></div></div></div></td>' +
+      '<td style="text-align:right"><div class="td-actions asoc-acts">' + acciones(a) + '</div></td>' +
+    '</tr>';
+  };
+
+  const cuerpo = provs.map(function (prov) {
+    const col = _provColorAsoc(prov);
+    const lista = grupos[prov].slice().sort(function (a, b) { return (a.nombre || '').localeCompare(b.nombre || '', 'es'); });
+    const cab = '<tr class="asoc-prov-row"><td colspan="5">' +
+      '<div class="asoc-prov-cab">' +
+        '<span class="asoc-prov-ico" style="background:' + _asocRgba(col, 0.14) + ';color:' + col + '">' + icoHTML('mapPin') + '</span>' +
+        '<span class="asoc-prov-nom">' + esc(prov) + '</span>' +
+        '<span class="asoc-prov-count">' + lista.length + ' asociaci' + (lista.length !== 1 ? 'ones' : 'ón') + '</span>' +
+      '</div></td></tr>';
+    return cab + lista.map(filaAsoc).join('');
   }).join('');
 
-  wrap.innerHTML = '<div class="asoc-grid">' + cards + '</div>' +
-    '<div style="font-size:12px;color:var(--text-dim);text-align:center;margin-top:16px">' + ASOCIACIONES_DATA.length + ' registro' + (ASOCIACIONES_DATA.length !== 1 ? 's' : '') + '</div>';
+  wrap.innerHTML = '<div class="table-wrap asoc-tabla"><table>' +
+    '<thead><tr>' +
+      '<th>Asociación</th><th>Recicladores</th><th>Documentos</th><th>Completitud</th>' +
+      '<th style="text-align:right">Acciones</th>' +
+    '</tr></thead>' +
+    '<tbody>' + cuerpo + '</tbody></table></div>' +
+    '<div style="font-size:12px;color:var(--text-dim);text-align:center;margin-top:14px">' + ASOCIACIONES_DATA.length + ' registro' + (ASOCIACIONES_DATA.length !== 1 ? 's' : '') + '</div>';
 }
 
 // ── Ver ficha (solo lectura) ──
@@ -379,31 +416,43 @@ async function exportarAsociacionesExcel() {
   const s = document.createElement('style');
   s.id = 'asoc-styles';
   s.textContent = `
-    /* Grid de tarjetas de asociación */
-    .asoc-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:18px; }
-    .asoc-g-card { background:var(--surface); border:1px solid var(--border); border-radius:20px; padding:20px; display:flex; flex-direction:column; box-shadow:0 1px 3px rgba(0,0,0,.04),0 4px 14px rgba(0,0,0,.04); transition:box-shadow .15s,transform .12s; }
-    .asoc-g-card:hover { box-shadow:0 8px 26px rgba(0,0,0,.09); transform:translateY(-2px); }
-    .asoc-g-head { margin-bottom:14px; }
-    .asoc-cat-badge { display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:700; padding:5px 13px; border-radius:20px; }
-    .asoc-cat-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
-    .asoc-g-nombre { font-size:18px; font-weight:800; color:var(--text); line-height:1.3; min-height:47px; }
+    /* Tabla fortalecida agrupada por provincia */
+    .asoc-tabla table { border-collapse:separate; border-spacing:0; }
+    .asoc-tabla thead th { font-size:11px; font-weight:700; letter-spacing:.5px; text-transform:uppercase; color:var(--text-dim); padding:10px 16px; }
 
-    .asoc-g-body { background:rgba(0,0,0,.02); border-radius:14px; padding:14px 16px; margin-top:14px; display:flex; gap:16px; }
-    .asoc-g-recs { display:flex; align-items:center; gap:10px; flex-shrink:0; }
-    .asoc-g-recs-ico { width:34px; height:34px; border-radius:10px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:rgba(24,174,151,.12); color:#18AE97; }
-    .asoc-g-recs-ico svg { width:17px; height:17px; }
-    .asoc-g-recs-tx { display:flex; flex-direction:column; line-height:1.15; }
-    .asoc-g-recs-tx b { font-size:18px; font-weight:800; color:var(--text); }
-    .asoc-g-recs-tx span { font-size:11px; color:var(--text-muted); }
-    .asoc-g-doc { flex:1; min-width:0; border-left:1px solid var(--border); padding-left:16px; }
-    .asoc-g-doc-lbl { font-size:12px; color:var(--text-muted); font-weight:600; }
-    .asoc-g-doc-cnt { font-size:11.5px; color:var(--text-dim); margin-top:2px; }
-    .asoc-g-bar-row { display:flex; align-items:center; gap:8px; margin-top:8px; }
-    .asoc-g-bar { flex:1; height:6px; background:#eef0f4; border-radius:20px; overflow:hidden; }
-    .asoc-g-bar-fill { height:100%; border-radius:20px; transition:width .5s ease; }
-    .asoc-g-pct { font-size:11px; font-weight:700; color:var(--text-muted); flex-shrink:0; }
+    .asoc-prov-row td { padding:18px 8px 8px; }
+    .asoc-prov-cab { display:flex; align-items:center; gap:10px; }
+    .asoc-prov-ico { width:32px; height:32px; border-radius:9px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+    .asoc-prov-ico svg { width:16px; height:16px; }
+    .asoc-prov-nom { font-size:14px; font-weight:800; color:var(--text); }
+    .asoc-prov-count { font-size:11px; font-weight:600; color:var(--text-dim); background:rgba(0,0,0,.04); padding:3px 10px; border-radius:20px; }
 
-    .asoc-g-foot { display:flex; justify-content:flex-end; gap:6px; margin-top:16px; }
+    .asoc-fila td { background:var(--surface); border-top:1px solid var(--border); border-bottom:1px solid var(--border); padding:13px 16px; vertical-align:middle; }
+    .asoc-fila td:first-child { border-left:3px solid var(--acc); border-top-left-radius:12px; border-bottom-left-radius:12px; }
+    .asoc-fila td:last-child { border-top-right-radius:12px; border-bottom-right-radius:12px; }
+    .asoc-fila:hover td { background:rgba(80,108,255,.03); }
+
+    .asoc-nom-cell { display:flex; align-items:center; gap:12px; }
+    .asoc-avatar { width:40px; height:40px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+    .asoc-avatar svg { width:19px; height:19px; }
+    .asoc-nom-tx { font-weight:700; color:var(--text); font-size:14px; line-height:1.3; }
+
+    .asoc-recs { display:inline-flex; align-items:center; gap:8px; }
+    .asoc-recs-ico { color:#7B5CFF; display:flex; }
+    .asoc-recs-ico svg { width:17px; height:17px; }
+    .asoc-recs b { font-size:15px; font-weight:800; color:var(--text); }
+
+    .asoc-dots { display:inline-flex; gap:6px; }
+    .asoc-dot { width:20px; height:20px; border-radius:50%; background:#e7e7ef; display:inline-flex; align-items:center; justify-content:center; color:#fff; }
+    .asoc-dot.on { background:#18AE97; }
+    .asoc-dot svg { width:12px; height:12px; }
+
+    .asoc-comp { min-width:110px; }
+    .asoc-comp-val { font-size:14px; font-weight:800; color:var(--text); }
+    .asoc-comp-bar { height:6px; background:#eef0f4; border-radius:20px; overflow:hidden; margin-top:6px; }
+    .asoc-comp-fill { height:100%; border-radius:20px; transition:width .5s ease; }
+
+    .asoc-acts { justify-content:flex-end; }
 
     /* Casillas de PDF en el formulario */
     .asoc-docs { display:flex; flex-direction:column; gap:10px; }
@@ -424,8 +473,8 @@ async function exportarAsociacionesExcel() {
     .asoc-doc-chip-off { color:var(--text-dim); background:transparent; }
 
     @media (max-width:768px) {
-      .asoc-grid { grid-template-columns:1fr; }
-      .asoc-g-nombre { min-height:0; }
+      .asoc-tabla { overflow-x:auto; }
+      .asoc-tabla table { min-width:640px; }
     }
   `;
   document.head.appendChild(s);
