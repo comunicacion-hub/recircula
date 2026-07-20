@@ -166,6 +166,7 @@ function diagnosticoFromFS(d) {
     modulo_debil:    d.modulo_debil || '',
     categoria:       d.categoria || '',
     observaciones:   d.observaciones || '',
+    documentos:      (d.documentos && typeof d.documentos === 'object') ? d.documentos : {},
     id_carpeta_drive:d.id_carpeta_drive || '',
   };
 }
@@ -190,6 +191,7 @@ function diagnosticoToFS(o) {
     modulo_debil:    c.debil,
     categoria:       c.categoria,
     observaciones:   o.observaciones || '',
+    documentos:      (o.documentos && typeof o.documentos === 'object') ? o.documentos : {},
     id_carpeta_drive:o.id_carpeta_drive || '',
   };
 }
