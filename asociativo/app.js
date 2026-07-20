@@ -205,10 +205,13 @@ function encuentroFromFS(d) {
     nombre_encuentro:d.nombre_encuentro || '',
     provincia:       d.provincia || '',
     fecha_encuentro: d.fecha_encuentro || '',
+    hora_inicio:     d.hora_inicio || '',
+    hora_fin:        d.hora_fin || '',
     tipo_encuentro:  d.tipo_encuentro || '',
     num_asistentes:  d.num_asistentes || 0,
     invitados:       d.invitados || '',
     resultados:      d.resultados || '',
+    documentos:      (d.documentos && typeof d.documentos === 'object') ? d.documentos : {},
     id_carpeta_drive:d.id_carpeta_drive || '',
   };
 }
@@ -220,10 +223,13 @@ function encuentroToFS(o) {
     nombre_encuentro:o.nombre_encuentro || '',
     provincia:       o.provincia || '',
     fecha_encuentro: o.fecha_encuentro || '',
+    hora_inicio:     o.hora_inicio || '',
+    hora_fin:        o.hora_fin || '',
     tipo_encuentro:  o.tipo_encuentro || '',
     num_asistentes:  parseFloat(o.num_asistentes) || 0,
     invitados:       o.invitados || '',
     resultados:      o.resultados || '',
+    documentos:      (o.documentos && typeof o.documentos === 'object') ? o.documentos : {},
     id_carpeta_drive:o.id_carpeta_drive || '',
   };
 }
