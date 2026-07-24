@@ -104,7 +104,7 @@
 <!-- Firebase (módulo) -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
-  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged,
            setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
   import { getFirestore, collection, getDocs, addDoc } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 
@@ -119,7 +119,7 @@
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db = getFirestore(app);
-  window.fb = { auth, db, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, collection, getDocs, addDoc };
+  window.fb = { auth, db, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, collection, getDocs, addDoc };
   window.fbReady = setPersistence(auth, browserSessionPersistence).catch(function(e){ console.warn(e); });
 </script>
 
@@ -153,10 +153,23 @@ async function esperarFb(){
   for(let i=0;i<240;i++){ if(window.fb && window.fbReady) return true; await new Promise(function(r){ setTimeout(r,25); }); }
   return false;
 }
+function manejarErrorLogin(e){
+  if(!e) return;
+  if(e.code==='auth/unauthorized-domain'){
+    alert('El dominio de esta página no está autorizado en Firebase.\n\nEntra a Firebase Console → Authentication → Settings → Authorized domains y agrega:\n'+location.hostname);
+  } else if(e.code==='auth/popup-blocked'||e.code==='auth/cancelled-popup-request'||e.code==='auth/popup-closed-by-user'){
+    alert('El navegador bloqueó la ventana de Google. Se intentará con redirección.');
+  } else {
+    alert('No se pudo iniciar sesión: '+(e.code||e.message||e));
+  }
+}
 async function initAuth(){
   const ok = await esperarFb();
   if(!ok){ alert('No se pudo cargar Firebase. Revisa tu conexión y recarga la página.'); return; }
   await window.fbReady;
+  // Si venimos de la redirección de Google, procesar el resultado (y capturar errores)
+  try { await window.fb.getRedirectResult(window.fb.auth); }
+  catch(e){ manejarErrorLogin(e); }
   window.fb.onAuthStateChanged(window.fb.auth, async function(u){
     if(u && u.email && u.email.toLowerCase().endsWith(DOMINIO)){
       USER = u;
@@ -175,18 +188,10 @@ async function initAuth(){
 }
 $('btn-login').onclick = async function(){
   if(!window.fb){ alert('Firebase aún está cargando, esperá un segundo y volvé a intentar.'); return; }
-  const p = new window.fb.GoogleAuthProvider(); p.setCustomParameters({ hd:'redesconrostro.org', prompt:'select_account' });
-  try{
-    await window.fb.signInWithPopup(window.fb.auth, p);
-  }catch(e){
-    if(e && e.code==='auth/unauthorized-domain'){
-      alert('El dominio de esta página no está autorizado en Firebase.\n\nEntra a Firebase Console → Authentication → Settings → Authorized domains y agrega:\n'+location.hostname);
-    } else if(e && (e.code==='auth/popup-blocked'||e.code==='auth/cancelled-popup-request'||e.code==='auth/popup-closed-by-user')){
-      alert('El navegador bloqueó o cerró la ventana de Google. Permití las ventanas emergentes para este sitio e intentá de nuevo.');
-    } else {
-      alert('No se pudo iniciar sesión: '+(e && (e.code||e.message) || e));
-    }
-  }
+  const p = new window.fb.GoogleAuthProvider(); p.setCustomParameters({ hd:'redesconrostro.org' });
+  // Redirect evita el problema de Cross-Origin-Opener-Policy de la ventana emergente
+  try { await window.fb.signInWithRedirect(window.fb.auth, p); }
+  catch(e){ manejarErrorLogin(e); }
 };
 $('btn-logout').onclick = function(){ if(window.fb) window.fb.signOut(window.fb.auth); };
 
