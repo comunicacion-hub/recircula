@@ -104,7 +104,7 @@
 <!-- Firebase (módulo) -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
-  import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged,
+  import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged,
            setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
   import { getFirestore, collection, getDocs, addDoc } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 
@@ -119,13 +119,14 @@
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db = getFirestore(app);
-  window.fb = { auth, db, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, collection, getDocs, addDoc };
+  window.fb = { auth, db, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, collection, getDocs, addDoc };
   window.fbReady = setPersistence(auth, browserSessionPersistence).catch(function(e){ console.warn(e); });
 </script>
 
 <!-- Lógica -->
 <script>
 const DOMINIO = '@redesconrostro.org';
+console.log('%c[Importador] versión 2 — login por REDIRECT (sin popup)', 'color:#0778bf;font-weight:bold');
 const $ = function(id){ return document.getElementById(id); };
 let USER = null, ASOC_AMB = [], CEDULAS_EXIST = new Set(), FILAS = [], MAPEO = {};
 
