@@ -9,6 +9,16 @@
 // ============================================================
 
 const DOMAIN  = 'redesconrostro.org';
+// Dominios externos con acceso de solo lectura (mismos que el Hub): Tesalia (CBC) y personal
+const DOMINIOS_VISUALIZADOR = ['cbc.co', 'carlosandres.es'];
+function _esVisualizadorExterno(email) {
+  const e = (email || '').toLowerCase();
+  return DOMINIOS_VISUALIZADOR.some(function (d) { return e.endsWith('@' + d); });
+}
+function _dominioPermitido(email) {
+  const e = (email || '').toLowerCase();
+  return e.endsWith('@' + DOMAIN) || _esVisualizadorExterno(email);
+}
 const HUB_URL = 'https://recircula.redesconrostro.org';
 
 // Carpetas raíz de Drive (ya creadas). Las subcarpetas se crean automáticamente.
@@ -374,12 +384,26 @@ async function establecerSesion(user) {
     const snap = await window.fb.getDocs(
       window.fb.query(fsCol('Usuarios'), window.fb.where('email', '==', user.email))
     );
-    if (snap.empty) return false;
+    if (snap.empty) {
+      // Visualizador externo (Tesalia/personal): acceso de solo lectura automático, como el Hub
+      if (_esVisualizadorExterno(user.email)) {
+        SESSION = { nombre: user.displayName || 'Visualizador', email: (user.email || '').toLowerCase(), rol: 'Visualizador' };
+        sessionStorage.setItem('rcr_session', JSON.stringify(SESSION));
+        return true;
+      }
+      return false;
+    }
     const u = snap.docs[0].data();
     SESSION = { nombre: u.nombre || user.displayName || 'Usuario', email: user.email, rol: u.rol || 'Visualizador' };
     sessionStorage.setItem('rcr_session', JSON.stringify(SESSION));
     return true;
   } catch (e) {
+    // Si falla la lectura pero es visualizador externo, permitir igual (solo lectura)
+    if (_esVisualizadorExterno(user.email)) {
+      SESSION = { nombre: user.displayName || 'Visualizador', email: (user.email || '').toLowerCase(), rol: 'Visualizador' };
+      sessionStorage.setItem('rcr_session', JSON.stringify(SESSION));
+      return true;
+    }
     console.error('establecerSesion:', e);
     return false;
   }
@@ -783,7 +807,7 @@ window.addEventListener('load', async function () {
   await window.fbReady;
 
   window.fb.onAuthStateChanged(window.fb.auth, async function (user) {
-    if (!user || !user.email || !user.email.toLowerCase().endsWith('@' + DOMAIN)) {
+    if (!user || !user.email || !_dominioPermitido(user.email)) {
       window.location.href = HUB_URL;
       return;
     }
