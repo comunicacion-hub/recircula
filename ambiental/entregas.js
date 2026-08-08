@@ -38,6 +38,15 @@ function _kilosEntrega(e) {
   (CAT.materiales || []).forEach(function (m) { kg += parseFloat(e[m['Nombre'] + ' Kilos'] || 0) || 0; });
   return kg;
 }
+
+// Formato de dinero propio de Entregas: hasta 4 decimales, SIN redondear.
+// kg y precio se ingresan con 2 decimales, así que kg×precio (y sus sumas) tienen
+// como máximo 4 decimales → mostrar 4 decimales representa cualquier valor/total
+// de forma exacta. Los enteros/centavos siguen viéndose con 2 decimales.
+function fmtMoneyEnt(n) {
+  if (n == null || isNaN(n)) return '—';
+  return '$' + parseFloat(n).toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+}
 function _rgbaEnt(hex, a) {
   let h = String(hex || '').replace('#', ''); if (h.length === 3) h = h.split('').map(function (c) { return c + c; }).join('');
   const n = parseInt(h, 16) || 0;
@@ -305,7 +314,7 @@ function renderTablaEntregas() {
           ${mat('SUAVE', suaveKg, '#18AE97')}
           ${mat('DURO', duroKg, '#F5AD21')}
         </div>
-        <div class="ent-c-val">${fmtMoney(total)}</div>
+        <div class="ent-c-val">${fmtMoneyEnt(total)}</div>
         <div class="ent-c-acts td-actions" onclick="event.stopPropagation()">
           <button class="icon-btn" onclick="verEntrega('${idEnt}')" title="Ver">${icoHTML('view')}</button>
           ${puedeEditar() ? `
@@ -397,7 +406,7 @@ function verEntrega(id) {
         <td style="${prio?'font-weight:600;color:#1c7aa8':''}">${esc(m)}</td>
         <td style="text-align:right">${fmtNum(kg)} kg</td>
         <td style="text-align:right">$${fmtNum(precio,2)}/kg</td>
-        <td style="text-align:right;font-weight:600;color:#0a9e83">${fmtMoney(venta)}</td>
+        <td style="text-align:right;font-weight:600;color:#0a9e83">${fmtMoneyEnt(venta)}</td>
       </tr>`;
     }).join('');
     return `
@@ -419,7 +428,7 @@ function verEntrega(id) {
         </div>
         <div class="cmp-block-foot">
           <span class="cmp-block-sub-lbl">Subtotal:</span>
-          <span class="cmp-block-sub">${fmtMoney(ent['Valor Total'])}</span>
+          <span class="cmp-block-sub">${fmtMoneyEnt(ent['Valor Total'])}</span>
         </div>
       </div>`;
   };
@@ -445,7 +454,7 @@ function verEntrega(id) {
           <div><div class="form-label">Fecha</div><div style="font-size:14px">${fmtFecha(e['Fecha'])}</div></div>
           <div><div class="form-label">Provincia</div><div style="font-size:14px">${esc(e['Provincia']||e['_provinciaAsociacion']||'—')}</div></div>
           <div><div class="form-label">Actividad fuente</div><div style="font-size:14px">${esc(e['Actividad Fuente']||'—')}</div></div>
-          <div><div class="form-label">Valor total ${esGrupo?'(grupo)':''}</div><div style="font-size:18px;font-weight:700;color:#0a9e83">${fmtMoney(esGrupo?totalGrupo:e['Valor Total'])}</div></div>
+          <div><div class="form-label">Valor total ${esGrupo?'(grupo)':''}</div><div style="font-size:18px;font-weight:700;color:#0a9e83">${fmtMoneyEnt(esGrupo?totalGrupo:e['Valor Total'])}</div></div>
           ${!esGrupo ? `<div><div class="form-label">Comprador</div><div style="font-size:14px">${esc(e['_nombreComprador']||'—')}</div></div>
           <div><div class="form-label">Nivel</div><div>${nivelBadge(e['Nivel Intermediacion'])}</div></div>` : ''}
         </div>
@@ -658,7 +667,7 @@ function _renderBloqueComprador(existente, todosMats) {
         <div class="material-row-label">${esc(n)}${prio?` <span class="badge badge-cyan" style="font-size:9px;padding:1px 6px">Prio</span>`:''}</div>
         <input type="number" class="form-input" id="mat-kg-${bIdx}-${mid}" placeholder="Kilos" value="${kg}" min="0" step="0.01" oninput="calcularValorMaterial('${bIdx}','${mid}')">
         <input type="number" class="form-input" id="mat-precio-${bIdx}-${mid}" placeholder="$/kg" value="${prec}" min="0" step="0.01" oninput="calcularValorMaterial('${bIdx}','${mid}')">
-        <div class="material-valor" id="mat-venta-${bIdx}-${mid}">${vent>0?fmtMoney(vent):'—'}</div>
+        <div class="material-valor" id="mat-venta-${bIdx}-${mid}">${vent>0?fmtMoneyEnt(vent):'—'}</div>
       </div>`;
   };
 
@@ -742,31 +751,38 @@ function calcularValorMaterial(bIdx, mid) {
   const pr = parseFloat(document.getElementById(`mat-precio-${bIdx}-${mid}`)?.value || 0);
   const v  = kg * pr;
   const vEl = document.getElementById(`mat-venta-${bIdx}-${mid}`);
-  if (vEl) vEl.textContent = v > 0 ? fmtMoney(v) : '—';
+  if (vEl) vEl.textContent = v > 0 ? fmtMoneyEnt(v) : '—';
   recalcularSubtotal(bIdx);
   recalcularTotal();
 }
 
+// Valor (kg × precio) de un material leído directamente de sus inputs, sin redondear.
+function _ventaMaterialInput(bIdx, mid) {
+  const kg = parseFloat(document.getElementById(`mat-kg-${bIdx}-${mid}`)?.value) || 0;
+  const pr = parseFloat(document.getElementById(`mat-precio-${bIdx}-${mid}`)?.value) || 0;
+  return kg * pr;
+}
+
 function recalcularSubtotal(bIdx) {
   let sub = 0;
-  document.querySelectorAll(`[id^="mat-venta-${bIdx}-"]`).forEach(el => {
-    const t = el.textContent.replace(/[^\d,.-]/g,'').replace(/\./g,'').replace(',','.');
-    const n = parseFloat(t);
-    if (!isNaN(n)) sub += n;
+  document.querySelectorAll(`[id^="mat-kg-${bIdx}-"]`).forEach(inp => {
+    const mid = inp.id.split('-').slice(3).join('-');   // mat-kg-{bIdx}-{mid...}
+    sub += _ventaMaterialInput(bIdx, mid);
   });
   const el = document.getElementById('ent-subtotal-' + bIdx);
-  if (el) el.textContent = fmtMoney(sub);
+  if (el) el.textContent = fmtMoneyEnt(sub);
 }
 
 function recalcularTotal() {
   let total = 0;
-  document.querySelectorAll('[id^="mat-venta-"]').forEach(el => {
-    const t = el.textContent.replace(/[^\d,.-]/g,'').replace(/\./g,'').replace(',','.');
-    const n = parseFloat(t);
-    if (!isNaN(n)) total += n;
+  document.querySelectorAll('#cmp-container [id^="mat-kg-"]').forEach(inp => {
+    const partes = inp.id.split('-');                   // ['mat','kg',bIdx,...mid]
+    const bIdx = partes[2];
+    const mid  = partes.slice(3).join('-');
+    total += _ventaMaterialInput(bIdx, mid);
   });
   const totEl = document.getElementById('ent-total');
-  if (totEl) totEl.textContent = fmtMoney(total);
+  if (totEl) totEl.textContent = fmtMoneyEnt(total);
 }
 
 // ============================================================
