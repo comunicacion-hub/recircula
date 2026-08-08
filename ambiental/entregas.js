@@ -253,6 +253,40 @@ async function cargarEntregas() {
 // TABLA
 // ============================================================
 
+// Agrupa la lista visible por ID_Grupo_Entrega (igual que la ficha de detalle),
+// conservando el orden y sumando kilos/valores de TODOS los compradores del grupo.
+// Las entregas sin grupo (legado o individuales) quedan cada una en su propia tarjeta.
+function _agruparEntregasVista(lista) {
+  const vistos = new Set();
+  const grupos = [];
+  (lista || []).forEach(e => {
+    const clave = e['ID_Grupo_Entrega'] || e['_docId'];
+    if (vistos.has(clave)) return;
+    vistos.add(clave);
+    const hermanos = e['ID_Grupo_Entrega']
+      ? (CAT.entregas || []).filter(r => r['ID_Grupo_Entrega'] === e['ID_Grupo_Entrega'])
+      : [e];
+    let petKg = 0, suaveKg = 0, duroKg = 0, total = 0;
+    hermanos.forEach(h => {
+      petKg   += parseFloat(h['PET Kilos'] || 0) || 0;
+      suaveKg += parseFloat(h['Plástico Suave Kilos'] || 0) || 0;
+      duroKg  += parseFloat(h['Plástico Duro Kilos'] || 0) || 0;
+      total   += parseFloat(h['Valor Total'] || 0) || 0;
+    });
+    grupos.push({ rep: e, hermanos: hermanos, petKg: petKg, suaveKg: suaveKg, duroKg: duroKg, total: total, n: hermanos.length });
+  });
+  return grupos;
+}
+
+// Hermanos (todos los compradores del grupo) a partir del _docId de uno de ellos.
+function _hermanosPorDocId(docId) {
+  const primaria = (CAT.entregas || []).find(r => r['_docId'] === docId);
+  if (!primaria) return [];
+  const grp = primaria['ID_Grupo_Entrega'];
+  if (!grp) return [primaria];
+  return (CAT.entregas || []).filter(r => r['ID_Grupo_Entrega'] === grp);
+}
+
 function renderTablaEntregas() {
   const wrap = document.getElementById('entregas-table-wrap');
   if (!wrap) return;
@@ -266,13 +300,12 @@ function renderTablaEntregas() {
     return;
   }
 
-  // Máximo de kilos (entre PET/Suave/Duro de todas las entregas) para escalar las barras
+  // Agrupar por entrega (ID_Grupo_Entrega), uniendo compradores como en la ficha
+  const grupos = _agruparEntregasVista(ENTREGAS_DATA);
+
+  // Máximo de kilos (entre los TOTALES PET/Suave/Duro de cada entrega) para escalar las barras
   let maxKg = 0;
-  ENTREGAS_DATA.forEach(e => {
-    ['PET Kilos', 'Plástico Suave Kilos', 'Plástico Duro Kilos'].forEach(k => {
-      const v = parseFloat(e[k] || 0) || 0; if (v > maxKg) maxKg = v;
-    });
-  });
+  grupos.forEach(g => { [g.petKg, g.suaveKg, g.duroKg].forEach(v => { if (v > maxKg) maxKg = v; }); });
   const barra = (kg, color) => {
     const pct = maxKg > 0 ? Math.max((kg / maxKg) * 100, kg > 0 ? 4 : 0) : 0;
     return `<div class="ent-bar"><div class="ent-bar-fill" style="width:${pct}%;background:${color}"></div></div>`;
@@ -284,33 +317,32 @@ function renderTablaEntregas() {
       ${barra(kg, color)}
     </div>`;
 
-  const cards = ENTREGAS_DATA.map(e => {
-    const petKg   = parseFloat(e['PET Kilos'] || 0);
-    const suaveKg = parseFloat(e['Plástico Suave Kilos'] || 0);
-    const duroKg  = parseFloat(e['Plástico Duro Kilos'] || 0);
-    const total   = parseFloat(e['Valor Total'] || 0);
+  const cards = grupos.map(g => {
+    const e       = g.rep;
     const idEnt   = jsEsc(e['ID_Entrega'] || '');
     const docId   = jsEsc(e['_docId'] || '');
-    const idCarpeta = jsEsc(e['ID_Carpeta_Evidencia'] || '');
     const col     = _mesColor(e['Mes']);
+    const nBuyers = g.n > 1
+      ? `<span style="display:block;font-size:10.5px;font-weight:600;color:var(--text-dim);margin-top:2px">${g.n} compradores</span>`
+      : '';
 
     return `
       <div class="ent-card" onclick="verEntrega('${idEnt}')">
         <div class="ent-c-per">
           <span class="ent-cal" style="background:${_rgbaEnt(col, 0.14)};color:${col}">${icoHTML('calendar')}</span>
-          <span class="ent-cal-txt">${esc(e['Mes'] || '')} ${esc(e['Año'] || '')}</span>
+          <span class="ent-cal-txt">${esc(e['Mes'] || '')} ${esc(e['Año'] || '')}${nBuyers}</span>
         </div>
         <div class="ent-c-mats">
-          ${mat('PET', petKg, '#506CFF')}
-          ${mat('SUAVE', suaveKg, '#18AE97')}
-          ${mat('DURO', duroKg, '#F5AD21')}
+          ${mat('PET', g.petKg, '#506CFF')}
+          ${mat('SUAVE', g.suaveKg, '#18AE97')}
+          ${mat('DURO', g.duroKg, '#F5AD21')}
         </div>
-        <div class="ent-c-val">${fmtMoney(total)}</div>
+        <div class="ent-c-val">${fmtMoney(g.total)}</div>
         <div class="ent-c-acts td-actions" onclick="event.stopPropagation()">
           <button class="icon-btn" onclick="verEntrega('${idEnt}')" title="Ver">${icoHTML('view')}</button>
           ${puedeEditar() ? `
             <button class="icon-btn primary" onclick="editarEntrega('${idEnt}')" title="Editar">${icoHTML('edit')}</button>
-            <button class="icon-btn del" onclick="confirmarEliminarEntrega('${docId}','${idCarpeta}')" title="Eliminar">${icoHTML('trash')}</button>
+            <button class="icon-btn del" onclick="confirmarEliminarEntrega('${docId}')" title="Eliminar">${icoHTML('trash')}</button>
           ` : ''}
         </div>
       </div>`;
@@ -319,7 +351,7 @@ function renderTablaEntregas() {
   wrap.innerHTML = `
     <div class="ent-cards">${cards}</div>
     <div style="font-size:12px;color:var(--text-dim);text-align:center;margin-top:14px">
-      ${ENTREGAS_DATA.length} registro${ENTREGAS_DATA.length !== 1 ? 's' : ''}
+      ${grupos.length} entrega${grupos.length !== 1 ? 's' : ''}
     </div>
   `;
 }
@@ -337,7 +369,11 @@ function _mesColor(mes) {
 // ELIMINAR
 // ============================================================
 
-function confirmarEliminarEntrega(docId, folderId) {
+function confirmarEliminarEntrega(docId) {
+  const n = _hermanosPorDocId(docId).length;
+  const cuerpo = n > 1
+    ? `Esta entrega agrupa <b>${n} compradores</b>. Se eliminarán los <b>${n} registros</b> del grupo. Esta acción no se puede deshacer.`
+    : `¿Seguro que quieres eliminar esta entrega? Se eliminará la fila del registro. Esta acción no se puede deshacer.`;
   abrirModal(`
     <div class="modal" style="max-width:440px">
       <div class="modal-head">
@@ -345,10 +381,7 @@ function confirmarEliminarEntrega(docId, folderId) {
         <button class="modal-close" onclick="cerrarModal()"></button>
       </div>
       <div class="modal-body">
-        <p style="color:var(--text-muted);font-size:14px;line-height:1.6">
-          ¿Seguro que quieres eliminar esta entrega?
-          Se eliminará la fila del registro. Esta acción no se puede deshacer.
-        </p>
+        <p style="color:var(--text-muted);font-size:14px;line-height:1.6">${cuerpo}</p>
       </div>
       <div class="modal-foot">
         <button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>
@@ -358,12 +391,19 @@ function confirmarEliminarEntrega(docId, folderId) {
   `);
 }
 
+// Elimina TODOS los compradores del grupo al que pertenece el documento indicado.
 async function eliminarEntrega(docId) {
-  if (!docId) { showToast('No se encontró la entrega'); return; }
+  const hermanos = _hermanosPorDocId(docId);
+  if (!hermanos.length) { showToast('No se encontró la entrega'); return; }
   try {
-    const res = await eliminarEntregaFS(docId);
-    if (!res.ok) { showToast('Error al eliminar: ' + (res.error || '')); return; }
-    showToast(res.offline ? 'Eliminada (se sincronizará) ✓' : 'Entrega eliminada ✓');
+    let ok = true, offline = false;
+    for (const h of hermanos) {
+      if (!h['_docId']) continue;
+      const res = await eliminarEntregaFS(h['_docId']);
+      if (!res.ok) { ok = false; showToast('Error al eliminar: ' + (res.error || '')); break; }
+      if (res.offline) offline = true;
+    }
+    if (ok) showToast(offline ? 'Eliminada (se sincronizará) ✓' : 'Entrega eliminada ✓');
     cerrarModal();
     renderVistaEntregas();
   } catch (e) {
