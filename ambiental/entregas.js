@@ -8,6 +8,10 @@ let ENTREGAS_FILTROS = { anio: [], mes: [], asociacion: [], provincia: [] };
 let EVIDENCIAS_LISTA = [];
 let ENTREGAS_LOADED  = false;
 
+// ── Edición multi-comprador (grupo) ──
+let EDITING_SIBLINGS = [];    // documentos del mismo grupo cargados al abrir el form
+let COMPRADOR_IDX    = 0;     // contador de bloques (índice DOM único)
+
 // ── Navegación de dos niveles ──
 let ENT_VISTA = 'asociaciones';   // 'asociaciones' | 'lista'
 let ENT_ASOC_SEL = null;          // ID_Asociacion abierta
@@ -373,30 +377,65 @@ async function eliminarEntrega(docId) {
 // ============================================================
 
 function verEntrega(id) {
-  const e = ENTREGAS_DATA.find(r => r['ID_Entrega'] === id);
+  const e = ENTREGAS_DATA.find(r => r['ID_Entrega'] === id) || (CAT.entregas || []).find(r => r['ID_Entrega'] === id);
   if (!e) { showToast('Entrega no encontrada'); return; }
 
   const MATS = ['PET','Plástico Suave','Plástico Duro','Lata Aluminio','Vidrio','Cartón',
     'Chatarra','Cobre','Papel Archivo','Periódico','Soplado','Tetrapak','Suela','Bronce','Batería','Acero'];
 
-  const filasMat = MATS.filter(m => parseFloat(e[m+' Kilos']||0) > 0).map(m => {
-    const kg     = parseFloat(e[m+' Kilos']||0);
-    const precio = parseFloat(e[m+' Precio']||0);
-    const venta  = parseFloat(e[m+' Valor Venta']||0) || kg*precio;
-    const prio   = ['PET','Plástico Suave','Plástico Duro'].includes(m);
-    return `<tr>
-      <td style="${prio?'font-weight:600;color:#1c7aa8':''}">${esc(m)}</td>
-      <td style="text-align:right">${fmtNum(kg)} kg</td>
-      <td style="text-align:right">$${fmtNum(precio,2)}/kg</td>
-      <td style="text-align:right;font-weight:600;color:#0a9e83">${fmtMoney(venta)}</td>
-    </tr>`;
-  }).join('');
+  // Hermanos del grupo (si existen) — para mostrar todos los compradores juntos
+  const hermanos = _cargarHermanos(id);
+  const esGrupo = hermanos.length > 1;
+
+  const renderBloqueDetalle = (ent, mostrarHead) => {
+    const filasMat = MATS.filter(m => parseFloat(ent[m+' Kilos']||0) > 0).map(m => {
+      const kg     = parseFloat(ent[m+' Kilos']||0);
+      const precio = parseFloat(ent[m+' Precio']||0);
+      const venta  = parseFloat(ent[m+' Valor Venta']||0) || kg*precio;
+      const prio   = ['PET','Plástico Suave','Plástico Duro'].includes(m);
+      return `<tr>
+        <td style="${prio?'font-weight:600;color:#1c7aa8':''}">${esc(m)}</td>
+        <td style="text-align:right">${fmtNum(kg)} kg</td>
+        <td style="text-align:right">$${fmtNum(precio,2)}/kg</td>
+        <td style="text-align:right;font-weight:600;color:#0a9e83">${fmtMoney(venta)}</td>
+      </tr>`;
+    }).join('');
+    return `
+      <div class="cmp-block" style="cursor:default">
+        ${mostrarHead ? `
+          <div class="cmp-block-head" style="margin-bottom:12px">
+            <div>
+              <div class="cmp-block-num">Comprador</div>
+              <div style="font-size:15px;font-weight:700;color:var(--text);margin-top:2px">${esc(ent['_nombreComprador']||'—')}</div>
+            </div>
+            <div>${nivelBadge(ent['Nivel Intermediacion'])}</div>
+          </div>` : ''}
+        <div class="materiales-section" style="margin-bottom:0">
+          <div class="materiales-section-title">Materiales entregados</div>
+          <div class="table-wrap" style="border-radius:14px;box-shadow:none;border:1px solid var(--border)"><table>
+            <thead><tr><th>Material</th><th style="text-align:right">Kilos</th><th style="text-align:right">Precio</th><th style="text-align:right">Valor</th></tr></thead>
+            <tbody>${filasMat||'<tr><td colspan="4" style="text-align:center;color:var(--text-dim)">Sin materiales</td></tr>'}</tbody>
+          </table></div>
+        </div>
+        <div class="cmp-block-foot">
+          <span class="cmp-block-sub-lbl">Subtotal:</span>
+          <span class="cmp-block-sub">${fmtMoney(ent['Valor Total'])}</span>
+        </div>
+      </div>`;
+  };
+
+  const totalGrupo = hermanos.reduce((s, r) => s + (parseFloat(r['Valor Total']) || 0), 0);
+  const evidenciaMerged = _fusionarDocsEvidencia(hermanos);
+
+  const bloquesHtml = esGrupo
+    ? hermanos.map(h => renderBloqueDetalle(h, true)).join('')
+    : renderBloqueDetalle(e, false);
 
   abrirModal(`
     <div class="modal">
       <div class="modal-head">
         <div>
-          <div class="modal-title">Detalle de entrega</div>
+          <div class="modal-title">Detalle de entrega${esGrupo ? ` · ${hermanos.length} compradores` : ''}</div>
           <div class="modal-sub">${esc(e['Mes']||'')} ${esc(e['Año']||'')} · ${esc(e['_nombreAsociacion']||'')}</div>
         </div>
         <button class="modal-close" onclick="cerrarModal()"></button>
@@ -405,23 +444,17 @@ function verEntrega(id) {
         <div class="form-grid-2" style="margin-bottom:16px">
           <div><div class="form-label">Fecha</div><div style="font-size:14px">${fmtFecha(e['Fecha'])}</div></div>
           <div><div class="form-label">Provincia</div><div style="font-size:14px">${esc(e['Provincia']||e['_provinciaAsociacion']||'—')}</div></div>
-          <div><div class="form-label">Comprador</div><div style="font-size:14px">${esc(e['_nombreComprador']||'—')}</div></div>
-          <div><div class="form-label">Nivel</div><div>${nivelBadge(e['Nivel Intermediacion'])}</div></div>
           <div><div class="form-label">Actividad fuente</div><div style="font-size:14px">${esc(e['Actividad Fuente']||'—')}</div></div>
-          <div><div class="form-label">Valor total</div><div style="font-size:18px;font-weight:700;color:#0a9e83">${fmtMoney(e['Valor Total'])}</div></div>
+          <div><div class="form-label">Valor total ${esGrupo?'(grupo)':''}</div><div style="font-size:18px;font-weight:700;color:#0a9e83">${fmtMoney(esGrupo?totalGrupo:e['Valor Total'])}</div></div>
+          ${!esGrupo ? `<div><div class="form-label">Comprador</div><div style="font-size:14px">${esc(e['_nombreComprador']||'—')}</div></div>
+          <div><div class="form-label">Nivel</div><div>${nivelBadge(e['Nivel Intermediacion'])}</div></div>` : ''}
         </div>
-        <div class="materiales-section">
-          <div class="materiales-section-title">Materiales entregados</div>
-          <div class="table-wrap" style="border-radius:14px;box-shadow:none;border:1px solid var(--border)"><table>
-            <thead><tr><th>Material</th><th style="text-align:right">Kilos</th><th style="text-align:right">Precio</th><th style="text-align:right">Valor</th></tr></thead>
-            <tbody>${filasMat||'<tr><td colspan="4" style="text-align:center;color:var(--text-dim)">Sin materiales</td></tr>'}</tbody>
-          </table></div>
-        </div>
+        ${bloquesHtml}
         ${e['Observaciones'] ? `<div style="margin-top:14px"><div class="form-label">Observaciones</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px">${esc(e['Observaciones'])}</div></div>` : ''}
         <div style="margin-top:16px"><div class="form-label" style="margin-bottom:8px">Verificables</div>
           <div class="ent-docs-ver">
             ${ENT_DOCS.map(d => {
-              const doc = _entDoc(e, d.key);
+              const doc = evidenciaMerged[d.key] || null;
               return doc && doc.url
                 ? `<a class="ent-doc-chip" href="${esc(doc.url)}" target="_blank" rel="noopener">${icoHTML('view')} ${esc(d.lbl)}</a>`
                 : `<span class="ent-doc-chip ent-doc-chip-off">${icoHTML('view')} ${esc(d.lbl)}</span>`;
@@ -442,9 +475,39 @@ function verEntrega(id) {
 
 function editarEntrega(id) { abrirFormEntrega(id); }
 
+// Cargar los hermanos (documentos que comparten ID_Grupo_Entrega). Si es legado
+// sin grupo o entrega individual, el arreglo trae solo el documento primario.
+function _cargarHermanos(idEnt) {
+  if (!idEnt) return [];
+  const primaria = (CAT.entregas || []).find(r => r['ID_Entrega'] === idEnt);
+  if (!primaria) return [];
+  const grp = primaria['ID_Grupo_Entrega'];
+  if (!grp) return [primaria];
+  return (CAT.entregas || []).filter(r => r['ID_Grupo_Entrega'] === grp);
+}
+
+function _fusionarDocsEvidencia(siblings) {
+  const merged = {};
+  (siblings || []).forEach(s => {
+    const d = s['Documentos'] || {};
+    Object.keys(d).forEach(k => { if (d[k] && d[k].url) merged[k] = d[k]; });
+  });
+  return merged;
+}
+
+function _carpetaEvidenciaComun(siblings) {
+  for (const s of (siblings || [])) if (s['ID_Carpeta_Evidencia']) return s['ID_Carpeta_Evidencia'];
+  return '';
+}
+
 function abrirFormEntrega(id = null) {
-  const e = id ? ENTREGAS_DATA.find(r => r['ID_Entrega'] === id) : null;
   EVIDENCIAS_LISTA = [];
+  COMPRADOR_IDX = 0;
+  EDITING_SIBLINGS = _cargarHermanos(id);
+
+  // Primario = el que se abrió; el resto se muestran también como bloques
+  const primario = id ? EDITING_SIBLINGS.find(s => s['ID_Entrega'] === id) : null;
+  const restoHermanos = EDITING_SIBLINGS.filter(s => s !== primario);
 
   const todosMats = CAT.materiales.length ? CAT.materiales : [
     { Nombre: 'PET', Priorizable: true },
@@ -454,29 +517,20 @@ function abrirFormEntrega(id = null) {
     { Nombre: 'Vidrio' },
     { Nombre: 'Lata Aluminio' },
   ];
-  const priorizables = todosMats.filter(m => m['Priorizable']==='Sí' || m['Priorizable']===true);
-  const otros = todosMats.filter(m => !(m['Priorizable']==='Sí' || m['Priorizable']===true));
 
-  const filaMaterial = (mat) => {
-    const n    = mat['Nombre'];
-    const prio = mat['Priorizable']==='Sí' || mat['Priorizable']===true;
-    const kg   = e ? (e[n+' Kilos']||'') : '';
-    const prec = e ? (e[n+' Precio']||'') : '';
-    const vent = e ? parseFloat(e[n+' Valor Venta']||0) : 0;
-    const mid  = n.replace(/[^a-zA-Z0-9]/g,'_');
-    return `
-      <div class="material-row${prio?' material-priorizable':''}">
-        <div class="material-row-label">${esc(n)}${prio?` <span class="badge badge-cyan" style="font-size:9px;padding:1px 6px">Prio</span>`:''}</div>
-        <input type="number" class="form-input" id="mat-kg-${mid}" placeholder="Kilos" value="${kg}" min="0" step="0.01" oninput="calcularValorMaterial('${mid}')">
-        <input type="number" class="form-input" id="mat-precio-${mid}" placeholder="$/kg" value="${prec}" min="0" step="0.01" oninput="calcularValorMaterial('${mid}')">
-        <div class="material-valor" id="mat-venta-${mid}">${vent>0?fmtMoney(vent):'—'}</div>
-      </div>`;
-  };
+  // PDFs y carpeta son compartidos entre todos los hermanos del grupo
+  const evidenciaCompartida = _fusionarDocsEvidencia(EDITING_SIBLINGS);
+  const carpetaCompartida   = _carpetaEvidenciaComun(EDITING_SIBLINGS);
+
+  // Bloques iniciales: uno por hermano existente, o uno vacío si es nuevo
+  const bloquesIniciales = EDITING_SIBLINGS.length
+    ? [primario, ...restoHermanos].filter(Boolean).map(s => _renderBloqueComprador(s, todosMats)).join('')
+    : _renderBloqueComprador(null, todosMats);
 
   abrirModal(`
-    <div class="modal" style="max-width:720px">
+    <div class="modal" style="max-width:760px">
       <div class="modal-head">
-        <div><div class="modal-title">${e?'Editar entrega':'Nueva entrega'}</div><div class="modal-sub">Registra los kilos y precios por material</div></div>
+        <div><div class="modal-title">${primario?'Editar entrega':'Nueva entrega'}</div><div class="modal-sub">Registra los kilos y precios por comprador</div></div>
         <button class="modal-close" onclick="cerrarModal()"></button>
       </div>
       <div class="modal-body">
@@ -484,20 +538,20 @@ function abrirFormEntrega(id = null) {
         <div class="form-grid-3">
           <div class="form-group">
             <label class="form-label">Fecha</label>
-            <input type="date" class="form-input" id="ent-fecha" readonly value="${e?.['Fecha']?String(e.Fecha).substring(0,10):new Date().toISOString().substring(0,10)}">
+            <input type="date" class="form-input" id="ent-fecha" readonly value="${primario?.['Fecha']?String(primario.Fecha).substring(0,10):new Date().toISOString().substring(0,10)}">
           </div>
           <div class="form-group">
             <label class="form-label">Año *</label>
             <select class="form-select" id="ent-anio">
               <option value="">Selecciona...</option>
-              ${['2024','2025','2026','2027','2028'].map(a=>`<option value="${a}" ${String(e?.['Año'])===a?'selected':''}>${a}</option>`).join('')}
+              ${['2024','2025','2026','2027','2028'].map(a=>`<option value="${a}" ${String(primario?.['Año'])===a?'selected':''}>${a}</option>`).join('')}
             </select>
           </div>
           <div class="form-group">
             <label class="form-label">Mes *</label>
             <select class="form-select" id="ent-mes">
               <option value="">Selecciona...</option>
-              ${['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map(m=>`<option value="${m}" ${e?.['Mes']===m?'selected':''}>${m}</option>`).join('')}
+              ${['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map(m=>`<option value="${m}" ${primario?.['Mes']===m?'selected':''}>${m}</option>`).join('')}
             </select>
           </div>
         </div>
@@ -507,26 +561,12 @@ function abrirFormEntrega(id = null) {
             <label class="form-label">Asociación *</label>
             <select class="form-select" id="ent-asociacion" onchange="autocompletarProvincia(this.value)">
               <option value="">Selecciona una asociación</option>
-              ${CAT.asociaciones.map(a=>`<option value="${esc(a['ID_Asociacion'])}" ${e?.['ID_Asociacion']===a['ID_Asociacion']?'selected':''}>${esc(a['Nombre'])}</option>`).join('')}
+              ${CAT.asociaciones.map(a=>`<option value="${esc(a['ID_Asociacion'])}" ${primario?.['ID_Asociacion']===a['ID_Asociacion']?'selected':''}>${esc(a['Nombre'])}</option>`).join('')}
             </select>
           </div>
           <div class="form-group">
             <label class="form-label">Provincia</label>
-            <input type="text" class="form-input" id="ent-provincia" readonly value="${esc(e?.['Provincia']||e?.['_provinciaAsociacion']||'')}">
-          </div>
-        </div>
-
-        <div class="form-grid-2">
-          <div class="form-group">
-            <label class="form-label">Comprador *</label>
-            <select class="form-select" id="ent-comprador" onchange="autocompletarNivel(this.value)">
-              <option value="">Selecciona un comprador</option>
-              ${CAT.compradores.map(c=>`<option value="${esc(c['ID_Comprador'])}" data-nivel="${esc(c['Nivel']||c['Nivel Intermediacion']||'')}" ${e?.['ID_Comprador']===c['ID_Comprador']?'selected':''}>${esc(c['Nombre'])}</option>`).join('')}
-            </select>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Nivel intermediación <span style="font-weight:400;text-transform:none;color:var(--text-dim);font-size:10px">(auto)</span></label>
-            <input type="text" class="form-input" id="ent-nivel" readonly value="${esc(e?.['Nivel Intermediacion']||'')}">
+            <input type="text" class="form-input" id="ent-provincia" readonly value="${esc(primario?.['Provincia']||primario?.['_provinciaAsociacion']||'')}">
           </div>
         </div>
 
@@ -535,37 +575,33 @@ function abrirFormEntrega(id = null) {
             <label class="form-label">Actividad fuente</label>
             <select class="form-select" id="ent-actividad">
               <option value="">Selecciona...</option>
-              ${['Recuperación a pie de Vereda / Fuente','Recuperación en Relleno','Recuperación GIRA','Otros'].map(a=>`<option value="${a}" ${e?.['Actividad Fuente']===a?'selected':''}>${a}</option>`).join('')}
+              ${['Recuperación a pie de Vereda / Fuente','Recuperación en Relleno','Recuperación GIRA','Otros'].map(a=>`<option value="${a}" ${primario?.['Actividad Fuente']===a?'selected':''}>${a}</option>`).join('')}
             </select>
           </div>
         </div>
 
-        ${priorizables.length ? `
-        <div class="materiales-section">
-          <div class="materiales-section-title">Materiales priorizables</div>
-          ${priorizables.map(filaMaterial).join('')}
-        </div>` : ''}
-
-        ${otros.length ? `
-        <div class="materiales-section">
-          <div class="materiales-section-title">Otros materiales</div>
-          ${otros.map(filaMaterial).join('')}
-        </div>` : ''}
+        <div class="cmp-section">
+          <div class="cmp-section-head">
+            <div class="cmp-section-title">Compradores y pesos</div>
+            ${puedeEditar() ? `<button type="button" class="btn btn-glass btn-sm" onclick="agregarComprador()">＋ Agregar comprador</button>` : ''}
+          </div>
+          <div id="cmp-container">${bloquesIniciales}</div>
+        </div>
 
         <div style="margin-top:14px;display:flex;justify-content:flex-end;align-items:center;gap:12px;padding:12px 16px;background:rgba(24,174,151,0.06);border-radius:12px">
           <span style="font-size:13px;color:var(--text-muted);font-weight:600">VALOR TOTAL:</span>
-          <span id="ent-total" style="font-size:22px;font-weight:700;color:#0a9e83">${e?fmtMoney(e['Valor Total']):'$0,00'}</span>
+          <span id="ent-total" style="font-size:22px;font-weight:700;color:#0a9e83">$0,00</span>
         </div>
 
         <div class="form-group" style="margin-top:14px">
           <label class="form-label">Observaciones</label>
-          <textarea class="form-textarea" id="ent-obs" placeholder="Notas adicionales...">${esc(e?.['Observaciones']||'')}</textarea>
+          <textarea class="form-textarea" id="ent-obs" placeholder="Notas adicionales...">${esc(primario?.['Observaciones']||'')}</textarea>
         </div>
 
-        <div class="form-label" style="margin:16px 0 8px">Verificables (PDF)</div>
+        <div class="form-label" style="margin:16px 0 8px">Verificables (PDF) <span style="font-weight:400;text-transform:none;color:var(--text-dim);font-size:10px">— compartidos entre todos los compradores de esta entrega</span></div>
         <div class="ent-docs">
           ${ENT_DOCS.map(d => {
-            const doc = _entDoc(e || {}, d.key);
+            const doc = evidenciaCompartida[d.key] || null;
             const ver = (doc && doc.url)
               ? `<button type="button" class="ent-doc-ver" onclick="window.open('${jsEsc(doc.url)}','_blank')">${icoHTML('view')} Ver PDF</button>`
               : '<span class="ent-doc-sin">Sin archivo</span>';
@@ -576,17 +612,115 @@ function abrirFormEntrega(id = null) {
           }).join('')}
         </div>
 
+        <input type="hidden" id="ent-carpeta-compartida" value="${esc(carpetaCompartida)}">
+
       </div>
       <div class="modal-foot">
         <button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>
-        ${puedeEditar() ? `<button class="btn btn-primary" id="btn-guardar-entrega" onclick="guardarEntrega('${jsEsc(id||'')}')">${e?'Actualizar':'Guardar entrega'}</button>` : ''}
+        ${puedeEditar() ? `<button class="btn btn-primary" id="btn-guardar-entrega" onclick="guardarEntrega('${jsEsc(id||'')}')">${primario?'Actualizar':'Guardar entrega'}</button>` : ''}
       </div>
     </div>
   `);
 
-  if (e?.['ID_Asociacion']) autocompletarProvincia(e['ID_Asociacion']);
-  if (e?.['ID_Comprador'])  autocompletarNivel(e['ID_Comprador']);
-  if (e) recalcularTotal();
+  if (primario?.['ID_Asociacion']) autocompletarProvincia(primario['ID_Asociacion']);
+  // Autocompletar nivel de cada bloque y calcular subtotales
+  document.querySelectorAll('#cmp-container .cmp-block').forEach(bl => {
+    const bIdx = bl.getAttribute('data-block-idx');
+    const sel = document.getElementById('ent-comprador-' + bIdx);
+    if (sel && sel.value) autocompletarNivel(bIdx, sel.value);
+    recalcularSubtotal(bIdx);
+  });
+  recalcularTotal();
+}
+
+// Render de un bloque de comprador. `existente` puede ser un documento de CAT.entregas
+// (para edición) o null (bloque nuevo vacío).
+function _renderBloqueComprador(existente, todosMats) {
+  const bIdx = String(COMPRADOR_IDX++);
+  const idComp = existente ? (existente['ID_Comprador'] || '') : '';
+  const nivel  = existente ? (existente['Nivel Intermediacion'] || '') : '';
+  const docId  = existente ? (existente._docId || '') : '';
+  const idEnt  = existente ? (existente['ID_Entrega'] || '') : '';
+  const nombreExistente = existente ? (existente['_nombreComprador'] || '') : '';
+
+  const priorizables = todosMats.filter(m => m['Priorizable']==='Sí' || m['Priorizable']===true);
+  const otros        = todosMats.filter(m => !(m['Priorizable']==='Sí' || m['Priorizable']===true));
+
+  const filaMaterial = (mat) => {
+    const n    = mat['Nombre'];
+    const prio = mat['Priorizable']==='Sí' || mat['Priorizable']===true;
+    const kg   = existente ? (existente[n+' Kilos']||'') : '';
+    const prec = existente ? (existente[n+' Precio']||'') : '';
+    const vent = existente ? parseFloat(existente[n+' Valor Venta']||0) : 0;
+    const mid  = n.replace(/[^a-zA-Z0-9]/g,'_');
+    return `
+      <div class="material-row${prio?' material-priorizable':''}">
+        <div class="material-row-label">${esc(n)}${prio?` <span class="badge badge-cyan" style="font-size:9px;padding:1px 6px">Prio</span>`:''}</div>
+        <input type="number" class="form-input" id="mat-kg-${bIdx}-${mid}" placeholder="Kilos" value="${kg}" min="0" step="0.01" oninput="calcularValorMaterial('${bIdx}','${mid}')">
+        <input type="number" class="form-input" id="mat-precio-${bIdx}-${mid}" placeholder="$/kg" value="${prec}" min="0" step="0.01" oninput="calcularValorMaterial('${bIdx}','${mid}')">
+        <div class="material-valor" id="mat-venta-${bIdx}-${mid}">${vent>0?fmtMoney(vent):'—'}</div>
+      </div>`;
+  };
+
+  return `
+    <div class="cmp-block" data-block-idx="${bIdx}" data-doc-id="${esc(docId)}" data-id-entrega="${esc(idEnt)}">
+      <div class="cmp-block-head">
+        <div class="cmp-block-num">Comprador</div>
+        ${puedeEditar() ? `<button type="button" class="cmp-block-remove" title="Quitar comprador" onclick="quitarComprador('${bIdx}')">✕</button>` : ''}
+      </div>
+      <div class="form-grid-2">
+        <div class="form-group">
+          <label class="form-label">Comprador *</label>
+          <select class="form-select" id="ent-comprador-${bIdx}" onchange="autocompletarNivel('${bIdx}', this.value)">
+            <option value="">Selecciona un comprador</option>
+            ${CAT.compradores.map(c=>`<option value="${esc(c['ID_Comprador'])}" ${idComp===c['ID_Comprador']?'selected':''}>${esc(c['Nombre'])}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nivel intermediación <span style="font-weight:400;text-transform:none;color:var(--text-dim);font-size:10px">(auto)</span></label>
+          <input type="text" class="form-input" id="ent-nivel-${bIdx}" readonly value="${esc(nivel)}">
+        </div>
+      </div>
+      ${priorizables.length ? `
+      <div class="materiales-section">
+        <div class="materiales-section-title">Materiales priorizables${nombreExistente?` — ${esc(nombreExistente)}`:''}</div>
+        ${priorizables.map(filaMaterial).join('')}
+      </div>` : ''}
+      ${otros.length ? `
+      <div class="materiales-section">
+        <div class="materiales-section-title">Otros materiales</div>
+        ${otros.map(filaMaterial).join('')}
+      </div>` : ''}
+      <div class="cmp-block-foot">
+        <span class="cmp-block-sub-lbl">Subtotal:</span>
+        <span class="cmp-block-sub" id="ent-subtotal-${bIdx}">$0,00</span>
+      </div>
+    </div>`;
+}
+
+function agregarComprador() {
+  const cont = document.getElementById('cmp-container');
+  if (!cont) return;
+  const mats = CAT.materiales.length ? CAT.materiales : [
+    { Nombre: 'PET', Priorizable: true },
+    { Nombre: 'Plástico Suave', Priorizable: true },
+    { Nombre: 'Plástico Duro', Priorizable: true },
+    { Nombre: 'Cartón' },
+    { Nombre: 'Vidrio' },
+    { Nombre: 'Lata Aluminio' },
+  ];
+  cont.insertAdjacentHTML('beforeend', _renderBloqueComprador(null, mats));
+  recalcularTotal();
+  // Scroll al nuevo bloque
+  const nuevos = cont.querySelectorAll('.cmp-block');
+  if (nuevos.length) nuevos[nuevos.length - 1].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function quitarComprador(bIdx) {
+  const bloques = document.querySelectorAll('#cmp-container .cmp-block');
+  if (bloques.length <= 1) { showToast('Debe haber al menos un comprador'); return; }
+  const bl = document.querySelector(`#cmp-container .cmp-block[data-block-idx="${bIdx}"]`);
+  if (bl) { bl.remove(); recalcularTotal(); }
 }
 
 function autocompletarProvincia(idAsoc) {
@@ -596,20 +730,32 @@ function autocompletarProvincia(idAsoc) {
   inp.value = a ? (a['Provincia']||'') : '';
 }
 
-function autocompletarNivel(idComp) {
-  const inp = document.getElementById('ent-nivel');
+function autocompletarNivel(bIdx, idComp) {
+  const inp = document.getElementById('ent-nivel-' + bIdx);
   if (!inp) return;
   const c = CAT.compradores.find(x => x['ID_Comprador'] === idComp);
   inp.value = c ? (c['Nivel'] || c['Nivel Intermediacion'] || '') : '';
 }
 
-function calcularValorMaterial(mid) {
-  const kg = parseFloat(document.getElementById('mat-kg-'+mid)?.value || 0);
-  const pr = parseFloat(document.getElementById('mat-precio-'+mid)?.value || 0);
+function calcularValorMaterial(bIdx, mid) {
+  const kg = parseFloat(document.getElementById(`mat-kg-${bIdx}-${mid}`)?.value || 0);
+  const pr = parseFloat(document.getElementById(`mat-precio-${bIdx}-${mid}`)?.value || 0);
   const v  = kg * pr;
-  const vEl = document.getElementById('mat-venta-'+mid);
+  const vEl = document.getElementById(`mat-venta-${bIdx}-${mid}`);
   if (vEl) vEl.textContent = v > 0 ? fmtMoney(v) : '—';
+  recalcularSubtotal(bIdx);
   recalcularTotal();
+}
+
+function recalcularSubtotal(bIdx) {
+  let sub = 0;
+  document.querySelectorAll(`[id^="mat-venta-${bIdx}-"]`).forEach(el => {
+    const t = el.textContent.replace(/[^\d,.-]/g,'').replace(/\./g,'').replace(',','.');
+    const n = parseFloat(t);
+    if (!isNaN(n)) sub += n;
+  });
+  const el = document.getElementById('ent-subtotal-' + bIdx);
+  if (el) el.textContent = fmtMoney(sub);
 }
 
 function recalcularTotal() {
@@ -624,60 +770,68 @@ function recalcularTotal() {
 }
 
 // ============================================================
-// GUARDAR (Firestore)
+// GUARDAR (Firestore) — multi-comprador
 // ============================================================
 
-async function guardarEntrega(id) {
+async function guardarEntrega(idPrimario) {
   const fecha       = document.getElementById('ent-fecha').value;
   const anio        = document.getElementById('ent-anio').value;
   const mes         = document.getElementById('ent-mes').value;
   const idAsoc      = document.getElementById('ent-asociacion').value;
   const provincia   = document.getElementById('ent-provincia').value;
-  const idComp      = document.getElementById('ent-comprador').value;
-  const nivel       = document.getElementById('ent-nivel').value;
   const actividad   = document.getElementById('ent-actividad').value;
   const obs         = document.getElementById('ent-obs').value;
 
-  if (!anio || !mes) { showToast('Año y mes son obligatorios'); return; }
-  if (!idAsoc) { showToast('Selecciona una asociación'); return; }
-  if (!idComp) { showToast('Selecciona un comprador'); return; }
+  if (!anio || !mes)  { showToast('Año y mes son obligatorios'); return; }
+  if (!idAsoc)        { showToast('Selecciona una asociación'); return; }
 
-  // Mantener la carpeta de evidencia existente si es edición
-  const actual = id ? (CAT.entregas.find(r => r['ID_Entrega'] === id) || {}) : {};
-
-  const data = {
-    ID_Entrega: id || '',
-    Fecha: fecha, 'Año': anio, Mes: mes,
-    ID_Asociacion: idAsoc, Provincia: provincia,
-    ID_Comprador: idComp, 'Nivel Intermediacion': nivel,
-    'Actividad Fuente': actividad,
-    Observaciones: obs,
-    'ID_Carpeta_Evidencia': actual['ID_Carpeta_Evidencia'] || '',
-    'Documentos': Object.assign({}, actual['Documentos'] || {}),
-  };
-
-  let total = 0;
-  document.querySelectorAll('[id^="mat-kg-"]').forEach(inp => {
-    const mid = inp.id.replace('mat-kg-','');
-    const kg = parseFloat(inp.value || 0);
-    const precio = parseFloat(document.getElementById('mat-precio-'+mid)?.value || 0);
-    const venta = kg * precio;
-    if (kg > 0) {
-      const matReal = (CAT.materiales || []).find(m => m['Nombre'].replace(/[^a-zA-Z0-9]/g,'_') === mid);
-      const realName = matReal ? matReal['Nombre'] : mid.replace(/_/g,' ');
-      data[realName + ' Kilos']       = kg;
-      data[realName + ' Precio']      = precio;
-      data[realName + ' Valor Venta'] = venta;
-      total += venta;
-    }
+  // Recolectar bloques del DOM
+  const bloques = [];
+  const compradoresVistos = new Set();
+  document.querySelectorAll('#cmp-container .cmp-block').forEach(bl => {
+    const bIdx  = bl.getAttribute('data-block-idx');
+    const docId = bl.getAttribute('data-doc-id') || '';
+    const idEnt = bl.getAttribute('data-id-entrega') || '';
+    const idComp = document.getElementById('ent-comprador-' + bIdx)?.value || '';
+    const nivel  = document.getElementById('ent-nivel-' + bIdx)?.value || '';
+    const mats = [];
+    document.querySelectorAll(`[id^="mat-kg-${bIdx}-"]`).forEach(inp => {
+      const partes = inp.id.split('-'); // mat-kg-{bIdx}-{mid...}
+      const mid = partes.slice(3).join('-');
+      const kg = parseFloat(inp.value || 0);
+      const precio = parseFloat(document.getElementById(`mat-precio-${bIdx}-${mid}`)?.value || 0);
+      if (kg > 0) {
+        const matReal = (CAT.materiales || []).find(m => m['Nombre'].replace(/[^a-zA-Z0-9]/g,'_') === mid);
+        const nombreReal = matReal ? matReal['Nombre'] : mid.replace(/_/g,' ');
+        mats.push({ nombre: nombreReal, kg: kg, precio: precio, venta: kg * precio });
+      }
+    });
+    bloques.push({ bIdx, docId, idEnt, idComp, nivel, mats });
   });
-  data['Valor Total'] = total;
+
+  if (!bloques.length)   { showToast('Debe haber al menos un comprador'); return; }
+  for (const b of bloques) {
+    if (!b.idComp) { showToast('Todos los bloques deben tener un comprador seleccionado'); return; }
+    if (compradoresVistos.has(b.idComp)) {
+      const nom = (CAT.compradores.find(c => c['ID_Comprador'] === b.idComp) || {})['Nombre'] || b.idComp;
+      showToast(`El comprador "${nom}" está repetido`); return;
+    }
+    compradoresVistos.add(b.idComp);
+  }
 
   const btn = document.getElementById('btn-guardar-entrega');
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
 
   try {
-    // ── Verificables: subir los PDFs seleccionados a la carpeta de la entrega ──
+    // ── Identificador del grupo (reusar el existente o generar uno nuevo) ──
+    let groupId = '';
+    for (const s of EDITING_SIBLINGS) { if (s['ID_Grupo_Entrega']) { groupId = s['ID_Grupo_Entrega']; break; } }
+    if (!groupId) groupId = 'GRP_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+
+    // ── Verificables: subir PDFs UNA sola vez, compartir referencias entre hermanos ──
+    let carpetaCompartida = document.getElementById('ent-carpeta-compartida')?.value || '';
+    const evidenciaMerged = _fusionarDocsEvidencia(EDITING_SIBLINGS);
+
     const nuevos = ENT_DOCS.map(d => {
       const el = document.getElementById('ent-doc-' + d.key);
       const f = el && el.files && el.files[0] ? el.files[0] : null;
@@ -685,45 +839,84 @@ async function guardarEntrega(id) {
     }).filter(Boolean);
 
     const noPdf = nuevos.find(n => n.archivo.type !== 'application/pdf' && !/\.pdf$/i.test(n.archivo.name));
-    if (noPdf) { showToast('Solo se permiten archivos PDF'); if (btn) { btn.disabled = false; btn.textContent = id ? 'Actualizar' : 'Guardar entrega'; } return; }
+    if (noPdf) { showToast('Solo se permiten archivos PDF'); if (btn) { btn.disabled = false; btn.textContent = idPrimario ? 'Actualizar' : 'Guardar entrega'; } return; }
 
     if (nuevos.length) {
       const tok = driveToken();
       if (!tok) {
         showToast('Sesión de Drive expirada: la entrega se guarda sin los PDFs');
       } else {
-        // Asegurar la carpeta de la entrega (la crea vía Apps Script si no existe)
-        await asegurarCarpetaEntrega(data);
-        if (!data['ID_Carpeta_Evidencia']) {
+        if (!carpetaCompartida) {
+          const tmp = { ID_Asociacion: idAsoc, Mes: mes, 'Año': anio, ID_Carpeta_Evidencia: '' };
+          await asegurarCarpetaEntrega(tmp);
+          carpetaCompartida = tmp['ID_Carpeta_Evidencia'] || '';
+        }
+        if (!carpetaCompartida) {
           showToast('No se pudo preparar la carpeta: la entrega se guarda sin los PDFs');
         } else {
-          // Sufijo para distinguir archivos dentro de la carpeta compartida del mes
-          const comp = (CAT.compradores || []).find(c => c['ID_Comprador'] === idComp);
-          const suf = String((comp && comp['Nombre']) || 'entrega').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 24);
           for (let i = 0; i < nuevos.length; i++) {
             const n = nuevos[i];
             if (btn) btn.textContent = `Subiendo ${i + 1}/${nuevos.length}…`;
             try {
-              const fname = `${n.file}_${suf}_${mes}${anio}.pdf`;
-              const up = await driveSubirArchivo(n.archivo, fname, data['ID_Carpeta_Evidencia'], tok);
-              data['Documentos'][n.key] = { id: up.id, url: up.webViewLink, nombre: fname };
+              const fname = `${n.file}_${mes}${anio}.pdf`;
+              const up = await driveSubirArchivo(n.archivo, fname, carpetaCompartida, tok);
+              evidenciaMerged[n.key] = { id: up.id, url: up.webViewLink, nombre: fname };
             } catch (err) { console.warn('Subida verificable:', err); showToast('No se pudo subir ' + n.file); }
           }
         }
       }
     }
 
-    const docId = id ? (actual._docId || null) : null;
-    const res = await guardarEntregaFS(docId, data);
-    if (!res.ok) { showToast('Error: ' + (res.error || 'desconocido')); return; }
-    showToast(res.offline ? 'Guardada (se sincronizará) ✓' : (id ? 'Entrega actualizada ✓' : 'Entrega creada ✓'));
+    // ── Guardar cada bloque como su propio documento (siblings del grupo) ──
+    if (btn) btn.textContent = 'Guardando…';
+    const idsProcesados = new Set();
+    let ok = true;
+
+    for (const b of bloques) {
+      let total = 0;
+      const data = {
+        ID_Entrega:             b.idEnt || '',
+        'ID_Grupo_Entrega':     groupId,
+        Fecha:                  fecha,
+        'Año':                  anio,
+        Mes:                    mes,
+        ID_Asociacion:          idAsoc,
+        Provincia:              provincia,
+        ID_Comprador:           b.idComp,
+        'Nivel Intermediacion': b.nivel,
+        'Actividad Fuente':     actividad,
+        Observaciones:          obs,
+        'ID_Carpeta_Evidencia': carpetaCompartida,
+        'Documentos':           Object.assign({}, evidenciaMerged),
+      };
+      b.mats.forEach(m => {
+        data[m.nombre + ' Kilos']       = m.kg;
+        data[m.nombre + ' Precio']      = m.precio;
+        data[m.nombre + ' Valor Venta'] = m.venta;
+        total += m.venta;
+      });
+      data['Valor Total'] = total;
+
+      const res = await guardarEntregaFS(b.docId || null, data);
+      if (!res.ok) { ok = false; showToast('Error al guardar un bloque: ' + (res.error || '')); }
+      if (b.docId) idsProcesados.add(b.docId);
+    }
+
+    // ── Eliminar hermanos que ya no están en el formulario ──
+    for (const s of EDITING_SIBLINGS) {
+      if (s._docId && !idsProcesados.has(s._docId)) {
+        try { await eliminarEntregaFS(s._docId); } catch (err) { console.warn('No se pudo eliminar hermano:', err); }
+      }
+    }
+
+    if (ok) showToast(idPrimario ? 'Entrega actualizada ✓' : 'Entrega creada ✓');
     cerrarModal();
     renderVistaEntregas();
   } catch (e) {
     console.error(e);
     showToast('Error al guardar');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = id ? 'Actualizar' : 'Guardar entrega'; }
+    if (btn) { btn.disabled = false; btn.textContent = idPrimario ? 'Actualizar' : 'Guardar entrega'; }
   }
 }
 
@@ -846,6 +1039,20 @@ function exportarMatrizEntregas() {
     .ent-visto-ic { width:22px; height:22px; border-radius:50%; background:#18AE97; color:#fff; display:inline-flex; align-items:center; justify-content:center; }
     .ent-visto-ic svg { width:13px; height:13px; }
     .ent-visto-no { color:var(--text-dim); font-weight:600; }
+
+    /* Sección multi-comprador en el formulario */
+    .cmp-section { margin-top:14px; margin-bottom:6px; }
+    .cmp-section-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+    .cmp-section-title { font-size:12px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.7px; }
+    .btn.btn-sm { padding:6px 12px; font-size:12px; }
+    .cmp-block { position:relative; background:rgba(80,108,255,0.03); border:1px solid rgba(80,108,255,0.15); border-radius:14px; padding:14px 16px; margin-bottom:12px; }
+    .cmp-block-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+    .cmp-block-num { font-size:11px; font-weight:700; color:#506CFF; text-transform:uppercase; letter-spacing:0.6px; }
+    .cmp-block-remove { background:transparent; border:1px solid var(--border); width:26px; height:26px; border-radius:8px; color:var(--text-dim); cursor:pointer; font-size:14px; line-height:1; display:flex; align-items:center; justify-content:center; font-family:inherit; transition:all .15s; }
+    .cmp-block-remove:hover { background:#fde5ea; color:#d9345f; border-color:#d9345f; }
+    .cmp-block-foot { display:flex; justify-content:flex-end; align-items:center; gap:8px; padding-top:8px; margin-top:6px; border-top:1px dashed var(--border); }
+    .cmp-block-sub-lbl { font-size:11.5px; color:var(--text-muted); font-weight:600; }
+    .cmp-block-sub { font-size:15px; font-weight:700; color:#0a9e83; }
 
     /* Verificables: casillas en el formulario */
     .ent-docs { display:flex; flex-direction:column; gap:10px; }
