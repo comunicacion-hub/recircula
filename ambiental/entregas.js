@@ -995,8 +995,41 @@ async function guardarEntrega(idPrimario) {
 const ACTA_NAVY     = [13, 42, 84];
 const ACTA_BORDE     = [214, 219, 227];
 const ACTA_TOTAL_BG  = [205, 226, 247];
+const ACTA_MARGEN    = 70; // ~2.5cm, A4
 
 let _ACTA_LOGO_DATAURL = null;
+let _ACTA_FONTS_CACHE  = null;
+
+function _arrayBufferABase64(buffer) {
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  return btoa(binary);
+}
+
+// Descarga las tipografías Outfit (Regular/Bold) para incrustarlas en el PDF —
+// jsPDF solo trae Helvetica/Times/Courier por defecto. Se cachea en memoria.
+async function _outfitFontsBase64() {
+  if (_ACTA_FONTS_CACHE) return _ACTA_FONTS_CACHE;
+  const [rBuf, bBuf] = await Promise.all([
+    fetch('assets/fonts/Outfit-Regular.ttf').then(r => r.arrayBuffer()),
+    fetch('assets/fonts/Outfit-Bold.ttf').then(r => r.arrayBuffer()),
+  ]);
+  _ACTA_FONTS_CACHE = { regular: _arrayBufferABase64(rBuf), bold: _arrayBufferABase64(bBuf) };
+  return _ACTA_FONTS_CACHE;
+}
+
+// Registra Outfit en el documento jsPDF (debe llamarse una vez por doc, antes de dibujar).
+function _registrarFuenteActa(doc, fonts) {
+  doc.addFileToVFS('Outfit-Regular.ttf', fonts.regular);
+  doc.addFont('Outfit-Regular.ttf', 'Outfit', 'normal');
+  doc.addFileToVFS('Outfit-Bold.ttf', fonts.bold);
+  doc.addFont('Outfit-Bold.ttf', 'Outfit', 'bold');
+  doc.setFont('Outfit', 'normal');
+}
 
 // Rasteriza el logo (SVG con ícono + texto vectorizado) a PNG en un canvas
 // oculto, porque jsPDF no soporta trazos SVG directamente. Se cachea en memoria.
@@ -1057,9 +1090,9 @@ function _recolectarBloquesActa() {
 function _pdfLineaMixta(doc, runs, rightX, y, size) {
   doc.setFontSize(size);
   let total = 0;
-  runs.forEach(r => { doc.setFont('helvetica', r.bold ? 'bold' : 'normal'); total += doc.getTextWidth(r.text); });
+  runs.forEach(r => { doc.setFont('Outfit', r.bold ? 'bold' : 'normal'); total += doc.getTextWidth(r.text); });
   let cx = rightX - total;
-  runs.forEach(r => { doc.setFont('helvetica', r.bold ? 'bold' : 'normal'); doc.text(r.text, cx, y); cx += doc.getTextWidth(r.text); });
+  runs.forEach(r => { doc.setFont('Outfit', r.bold ? 'bold' : 'normal'); doc.text(r.text, cx, y); cx += doc.getTextWidth(r.text); });
 }
 
 // Celda bordeada "Etiqueta: Valor" en una sola línea (grilla Periodo/Asociación/Fecha/Provincia).
@@ -1067,22 +1100,44 @@ function _pdfCeldaInfo(doc, x, y, w, h, label, valor, labelW) {
   doc.setDrawColor.apply(doc, ACTA_BORDE); doc.setLineWidth(0.75);
   doc.rect(x, y, w, h);
   const cy = y + h / 2 + 3.5;
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(50, 52, 58);
+  doc.setFont('Outfit', 'bold'); doc.setFontSize(9.5); doc.setTextColor(50, 52, 58);
   doc.text(label, x + 12, cy);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(20, 20, 25);
+  doc.setFont('Outfit', 'normal'); doc.setFontSize(10); doc.setTextColor(20, 20, 25);
   doc.text(String(valor || '—'), x + 12 + labelW, cy);
 }
 
-// Fila con fondo navy y texto blanco centrado por columna (encabezados de tabla).
+// Fila con fondo navy y texto blanco centrado por columna (encabezados de tabla, ej. MATERIAL/PRECIO/KG/VALOR).
 function _pdfFilaNavy(doc, x, y, cols, alturaFila) {
   doc.setFillColor.apply(doc, ACTA_NAVY);
   const anchoTotal = cols.reduce((s, c) => s + c.ancho, 0);
   doc.rect(x, y, anchoTotal, alturaFila, 'F');
   let cx = x;
   cols.forEach(c => {
-    doc.setFont('helvetica', c.bold ? 'bold' : 'normal');
+    doc.setFont('Outfit', c.bold ? 'bold' : 'normal');
     doc.setFontSize(c.tamano || 9.5);
     doc.setTextColor(255, 255, 255);
+    doc.text(String(c.texto || ''), cx + c.ancho / 2, y + alturaFila / 2 + 3.5, { align: 'center' });
+    cx += c.ancho;
+  });
+}
+
+// Fila "COMPRADOR | nombre | CÉDULA/RUC | valor": las celdas de etiqueta van en
+// navy con texto blanco; las celdas de valor (el "cuadro de llenado") van en
+// blanco con borde, como un campo de formulario.
+function _pdfFilaComprador(doc, x, y, cols, alturaFila) {
+  let cx = x;
+  cols.forEach(c => {
+    if (c.esLabel) {
+      doc.setFillColor.apply(doc, ACTA_NAVY);
+      doc.rect(cx, y, c.ancho, alturaFila, 'F');
+      doc.setFont('Outfit', 'bold'); doc.setFontSize(9.5); doc.setTextColor(255, 255, 255);
+    } else {
+      doc.setFillColor(255, 255, 255);
+      doc.rect(cx, y, c.ancho, alturaFila, 'F');
+      doc.setDrawColor.apply(doc, ACTA_BORDE); doc.setLineWidth(0.75);
+      doc.rect(cx, y, c.ancho, alturaFila);
+      doc.setFont('Outfit', 'normal'); doc.setFontSize(10); doc.setTextColor(30, 32, 38);
+    }
     doc.text(String(c.texto || ''), cx + c.ancho / 2, y + alturaFila / 2 + 3.5, { align: 'center' });
     cx += c.ancho;
   });
@@ -1094,7 +1149,7 @@ function _pdfFilaDatos(doc, x, y, cols, alturaFila) {
   doc.line(x, y + alturaFila, x + cols.reduce((s, c) => s + c.ancho, 0), y + alturaFila);
   let cx = x;
   cols.forEach(c => {
-    doc.setFont('helvetica', 'normal');
+    doc.setFont('Outfit', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(30, 32, 38);
     doc.text(String(c.texto || ''), cx + c.ancho / 2, y + alturaFila / 2 + 3.5, { align: 'center' });
@@ -1105,7 +1160,7 @@ function _pdfFilaDatos(doc, x, y, cols, alturaFila) {
 function _construirActaPDF(doc, logoDataUrl, cab, bloques) {
   const W = doc.internal.pageSize.getWidth();
   const H = doc.internal.pageSize.getHeight();
-  const M = 44;
+  const M = ACTA_MARGEN;
   const contentW = W - M * 2;
   let y = M;
 
@@ -1133,20 +1188,21 @@ function _construirActaPDF(doc, logoDataUrl, cab, bloques) {
   dibujarEncabezado();
   dibujarInfoGrid();
 
+  // "Resumen de consolidado" se imprime UNA sola vez; cada comprador solo agrega su propia tabla debajo.
+  doc.setFont('Outfit', 'bold'); doc.setFontSize(13); doc.setTextColor.apply(doc, ACTA_NAVY);
+  doc.text('Resumen de consolidado', M, y); y += 20;
+
   const colW = [contentW * 0.30, contentW * 0.22, contentW * 0.22, contentW * 0.26];
 
   bloques.forEach(b => {
-    const altoEstimado = 20 + 26 + 24 + (b.mats.length) * 24 + 28 + 26;
+    const altoEstimado = 26 + 24 + (b.mats.length) * 24 + 28 + 26;
     if (y + altoEstimado > H - M) { doc.addPage(); y = M; }
 
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor.apply(doc, ACTA_NAVY);
-    doc.text('Resumen de consolidado', M, y); y += 20;
-
-    _pdfFilaNavy(doc, M, y, [
-      { texto: 'COMPRADOR', ancho: contentW * 0.18, bold: true },
-      { texto: b.nombreComprador || '—', ancho: contentW * 0.42, bold: false },
-      { texto: 'CÉDULA/RUC', ancho: contentW * 0.18, bold: true },
-      { texto: b.ciRuc || '—', ancho: contentW * 0.22, bold: false },
+    _pdfFilaComprador(doc, M, y, [
+      { texto: 'COMPRADOR', ancho: contentW * 0.18, esLabel: true },
+      { texto: b.nombreComprador || '—', ancho: contentW * 0.42 },
+      { texto: 'CÉDULA/RUC', ancho: contentW * 0.18, esLabel: true },
+      { texto: b.ciRuc || '—', ancho: contentW * 0.22 },
     ], 26);
     y += 26;
 
@@ -1172,7 +1228,7 @@ function _construirActaPDF(doc, logoDataUrl, cab, bloques) {
 
     doc.setFillColor.apply(doc, ACTA_TOTAL_BG);
     doc.rect(M, y, contentW, 28, 'F');
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(20, 20, 25);
+    doc.setFont('Outfit', 'bold'); doc.setFontSize(10.5); doc.setTextColor(20, 20, 25);
     doc.text('TOTAL:', M + colW[0] + colW[1] - 12, y + 18, { align: 'right' });
     doc.text(fmtNum(sumKg), M + colW[0] + colW[1] + colW[2] / 2, y + 18, { align: 'center' });
     doc.text(fmtMoney(sumValor), M + colW[0] + colW[1] + colW[2] + colW[3] / 2, y + 18, { align: 'center' });
@@ -1199,9 +1255,13 @@ async function descargarActaPDF() {
 
   try {
     await cargarJsPDF();
-    const logo = await _logoActaDataURL().catch(() => null);
+    const [logo, fonts] = await Promise.all([
+      _logoActaDataURL().catch(() => null),
+      _outfitFontsBase64(),
+    ]);
     const jsPDF = window.jspdf.jsPDF;
     const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    _registrarFuenteActa(doc, fonts);
     _construirActaPDF(doc, logo, {
       asociacion: asoc['Nombre'] || '',
       provincia: provincia || asoc['Provincia'] || '',
