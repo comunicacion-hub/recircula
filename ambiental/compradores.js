@@ -162,6 +162,7 @@ function verComprador(id) {
           <div><div class="form-label">Nivel</div><div style="margin-top:4px">${nivelBadge(c['Nivel Intermediacion']||c['Nivel'])}</div></div>
           <div><div class="form-label">Estado</div><div style="margin-top:4px"><span class="badge ${activo?'badge-on':'badge-off'}">${activo?'Activo':'Inactivo'}</span></div></div>
           <div><div class="form-label">Provincia</div><div style="font-size:14px;margin-top:4px">${esc(c['Provincia']||'—')}</div></div>
+          <div><div class="form-label">C.I / RUC</div><div style="font-size:14px;margin-top:4px">${esc(c['CI/RUC']||'—')}</div></div>
           <div><div class="form-label">ID</div><div style="font-size:12px;margin-top:4px;font-family:monospace;color:var(--text-muted)">${esc(c['ID_Comprador']||'—')}</div></div>
         </div>
         <div style="margin-top:14px">
@@ -221,6 +222,10 @@ function abrirFormComprador(id = null) {
           <input type="text" class="form-input" id="com-destino" placeholder="Ej: Se vende a INTERCIA S.A." value="${esc(c?.['Destino Final']||'')}">
         </div>
         <div class="form-group">
+          <label class="form-label">C.I / RUC</label>
+          <input type="text" class="form-input" id="com-ciruc" placeholder="Cédula o RUC (opcional)" value="${esc(c?.['CI/RUC']||'')}">
+        </div>
+        <div class="form-group">
           <label class="form-label">Activo</label>
           <select class="form-select" id="com-activo">
             <option value="true"  ${activo?'selected':''}>Sí</option>
@@ -245,6 +250,7 @@ async function guardarComprador(id) {
   const nivel     = document.getElementById('com-nivel')?.value;
   const provincia = document.getElementById('com-provincia')?.value;
   const destino   = document.getElementById('com-destino')?.value?.trim();
+  const ciRuc     = document.getElementById('com-ciruc')?.value?.trim();
   const activo    = document.getElementById('com-activo')?.value === 'true';
 
   if (!nombre) { showToast('El nombre es obligatorio'); return; }
@@ -261,6 +267,7 @@ async function guardarComprador(id) {
       'Nivel Intermediacion': nivel,
       Provincia: provincia,
       'Destino Final': destino,
+      'CI/RUC': ciRuc,
       Activo: activo,
     };
     const res = await guardarCompradorFS(docId, data);
@@ -340,12 +347,13 @@ async function exportarCompradoresExcel() {
   try {
     await cargarSheetJS();
 
-    const header = ['Nombre','Nivel intermediación','Provincia','Destino final','Activo'];
+    const header = ['Nombre','Nivel intermediación','Provincia','Destino final','C.I / RUC','Activo'];
     const filas = datos.map(c => [
       c['Nombre'] || '',
       c['Nivel Intermediacion'] || c['Nivel'] || '',
       c['Provincia'] || '',
       c['Destino Final'] || '',
+      c['CI/RUC'] || '',
       c['Activo'] === true ? 'Sí' : 'No',
     ]);
 

@@ -104,6 +104,7 @@ function compradorFromFS(d) {
     'Nivel Intermediacion': d.nivel_intermediacion || '',
     'Destino Final':        d.destino_final || '',
     'Provincia':            d.provincia || '',
+    'CI/RUC':               d.ci_ruc || '',
     'Activo':               d.activo === true,
   };
 }
@@ -187,6 +188,7 @@ function compradorToFS(data) {
     nivel_intermediacion: data['Nivel Intermediacion'] || '',
     destino_final:        data['Destino Final'] || '',
     provincia:            data['Provincia'] || '',
+    ci_ruc:               data['CI/RUC'] || '',
     activo:               data['Activo'] === true,
   };
 }
