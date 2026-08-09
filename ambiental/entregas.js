@@ -1095,15 +1095,32 @@ function _pdfLineaMixta(doc, runs, rightX, y, size) {
   runs.forEach(r => { doc.setFont('Outfit', r.bold ? 'bold' : 'normal'); doc.text(r.text, cx, y); cx += doc.getTextWidth(r.text); });
 }
 
-// Celda bordeada "Etiqueta: Valor" en una sola línea (grilla Periodo/Asociación/Fecha/Provincia).
+// Líneas envueltas del valor de una celda info, al ancho disponible real de esa celda.
+function _pdfLineasCeldaInfo(doc, valor, w, labelW) {
+  doc.setFont('Outfit', 'normal'); doc.setFontSize(10);
+  const maxW = w - 12 - labelW - 10;
+  return doc.splitTextToSize(String(valor == null || valor === '' ? '—' : valor), maxW);
+}
+
+// Altura que necesita una celda info según cuántas líneas requiera su valor —
+// para que el cuadro sea dinámico y no corte textos largos (ej. nombres de asociación).
+function _pdfAlturaCeldaInfo(doc, valor, w, labelW, alturaMin) {
+  const lineas = _pdfLineasCeldaInfo(doc, valor, w, labelW);
+  return Math.max(alturaMin || 38, 22 + lineas.length * 13);
+}
+
+// Celda bordeada "Etiqueta: Valor" (grilla Periodo/Asociación/Fecha/Provincia).
+// `h` debe venir ya calculado con _pdfAlturaCeldaInfo (para que ambas celdas de la fila midan igual).
 function _pdfCeldaInfo(doc, x, y, w, h, label, valor, labelW) {
   doc.setDrawColor.apply(doc, ACTA_BORDE); doc.setLineWidth(0.75);
   doc.rect(x, y, w, h);
-  const cy = y + h / 2 + 3.5;
   doc.setFont('Outfit', 'bold'); doc.setFontSize(9.5); doc.setTextColor(50, 52, 58);
-  doc.text(label, x + 12, cy);
+  doc.text(label, x + 12, y + h / 2 + 3.5);
+  const lineas = _pdfLineasCeldaInfo(doc, valor, w, labelW);
   doc.setFont('Outfit', 'normal'); doc.setFontSize(10); doc.setTextColor(20, 20, 25);
-  doc.text(String(valor || '—'), x + 12 + labelW, cy);
+  const lineH = 13;
+  let cy = y + h / 2 - ((lineas.length - 1) * lineH) / 2 + 3.5;
+  lineas.forEach(linea => { doc.text(linea, x + 12 + labelW, cy); cy += lineH; });
 }
 
 // Fila con fondo navy y texto blanco centrado por columna (encabezados de tabla, ej. MATERIAL/PRECIO/KG/VALOR).
@@ -1121,24 +1138,43 @@ function _pdfFilaNavy(doc, x, y, cols, alturaFila) {
   });
 }
 
+// Altura que necesita la fila Comprador/CI-RUC según el texto más largo de sus
+// celdas de valor (nombre de comprador, C.I./RUC) — cuadro dinámico, no fijo.
+function _pdfAlturaFilaComprador(doc, cols, alturaMin) {
+  let maxLineas = 1;
+  cols.forEach(c => {
+    if (!c.esLabel) {
+      doc.setFont('Outfit', 'normal'); doc.setFontSize(10);
+      const lineas = doc.splitTextToSize(String(c.texto || '—'), c.ancho - 16);
+      if (lineas.length > maxLineas) maxLineas = lineas.length;
+    }
+  });
+  return Math.max(alturaMin || 26, 12 + maxLineas * 13);
+}
+
 // Fila "COMPRADOR | nombre | CÉDULA/RUC | valor": las celdas de etiqueta van en
 // navy con texto blanco; las celdas de valor (el "cuadro de llenado") van en
-// blanco con borde, como un campo de formulario.
+// blanco con borde, como un campo de formulario. `alturaFila` debe venir ya
+// calculada con _pdfAlturaFilaComprador para que el cuadro crezca si el texto es largo.
 function _pdfFilaComprador(doc, x, y, cols, alturaFila) {
   let cx = x;
+  const lineH = 13;
   cols.forEach(c => {
     if (c.esLabel) {
       doc.setFillColor.apply(doc, ACTA_NAVY);
       doc.rect(cx, y, c.ancho, alturaFila, 'F');
       doc.setFont('Outfit', 'bold'); doc.setFontSize(9.5); doc.setTextColor(255, 255, 255);
+      doc.text(String(c.texto || ''), cx + c.ancho / 2, y + alturaFila / 2 + 3.5, { align: 'center' });
     } else {
       doc.setFillColor(255, 255, 255);
       doc.rect(cx, y, c.ancho, alturaFila, 'F');
       doc.setDrawColor.apply(doc, ACTA_BORDE); doc.setLineWidth(0.75);
       doc.rect(cx, y, c.ancho, alturaFila);
       doc.setFont('Outfit', 'normal'); doc.setFontSize(10); doc.setTextColor(30, 32, 38);
+      const lineas = doc.splitTextToSize(String(c.texto || '—'), c.ancho - 16);
+      let cy = y + alturaFila / 2 - ((lineas.length - 1) * lineH) / 2 + 3.5;
+      lineas.forEach(linea => { doc.text(linea, cx + c.ancho / 2, cy, { align: 'center' }); cy += lineH; });
     }
-    doc.text(String(c.texto || ''), cx + c.ancho / 2, y + alturaFila / 2 + 3.5, { align: 'center' });
     cx += c.ancho;
   });
 }
@@ -1176,13 +1212,23 @@ function _construirActaPDF(doc, logoDataUrl, cab, bloques) {
   };
 
   const dibujarInfoGrid = () => {
-    const halfW = contentW / 2, rowH = 38;
-    _pdfCeldaInfo(doc, M, y, halfW, rowH, 'Periodo (mes/año):', `${cab.mes} ${cab.anio}`, 108);
-    _pdfCeldaInfo(doc, M + halfW, y, halfW, rowH, 'Asociación:', cab.asociacion, 68);
-    y += rowH;
-    _pdfCeldaInfo(doc, M, y, halfW, rowH, 'Fecha de emisión:', _fechaDDMMYYYY(new Date()), 108);
-    _pdfCeldaInfo(doc, M + halfW, y, halfW, rowH, 'Provincia:', cab.provincia, 68);
-    y += rowH + 28;
+    const halfW = contentW / 2;
+
+    const alturaPeriodo = Math.max(
+      _pdfAlturaCeldaInfo(doc, `${cab.mes} ${cab.anio}`, halfW, 108, 38),
+      _pdfAlturaCeldaInfo(doc, cab.asociacion, halfW, 68, 38)
+    );
+    _pdfCeldaInfo(doc, M, y, halfW, alturaPeriodo, 'Periodo (mes/año):', `${cab.mes} ${cab.anio}`, 108);
+    _pdfCeldaInfo(doc, M + halfW, y, halfW, alturaPeriodo, 'Asociación:', cab.asociacion, 68);
+    y += alturaPeriodo;
+
+    const alturaFecha = Math.max(
+      _pdfAlturaCeldaInfo(doc, _fechaDDMMYYYY(new Date()), halfW, 108, 38),
+      _pdfAlturaCeldaInfo(doc, cab.provincia, halfW, 68, 38)
+    );
+    _pdfCeldaInfo(doc, M, y, halfW, alturaFecha, 'Fecha de emisión:', _fechaDDMMYYYY(new Date()), 108);
+    _pdfCeldaInfo(doc, M + halfW, y, halfW, alturaFecha, 'Provincia:', cab.provincia, 68);
+    y += alturaFecha + 28;
   };
 
   dibujarEncabezado();
@@ -1195,16 +1241,18 @@ function _construirActaPDF(doc, logoDataUrl, cab, bloques) {
   const colW = [contentW * 0.30, contentW * 0.22, contentW * 0.22, contentW * 0.26];
 
   bloques.forEach(b => {
-    const altoEstimado = 26 + 24 + (b.mats.length) * 24 + 28 + 26;
-    if (y + altoEstimado > H - M) { doc.addPage(); y = M; }
-
-    _pdfFilaComprador(doc, M, y, [
+    const colsComprador = [
       { texto: 'COMPRADOR', ancho: contentW * 0.18, esLabel: true },
       { texto: b.nombreComprador || '—', ancho: contentW * 0.42 },
       { texto: 'CÉDULA/RUC', ancho: contentW * 0.18, esLabel: true },
       { texto: b.ciRuc || '—', ancho: contentW * 0.22 },
-    ], 26);
-    y += 26;
+    ];
+    const alturaComprador = _pdfAlturaFilaComprador(doc, colsComprador, 26);
+    const altoEstimado = alturaComprador + 24 + (b.mats.length) * 24 + 28 + 26;
+    if (y + altoEstimado > H - M) { doc.addPage(); y = M; }
+
+    _pdfFilaComprador(doc, M, y, colsComprador, alturaComprador);
+    y += alturaComprador;
 
     _pdfFilaNavy(doc, M, y, [
       { texto: 'MATERIAL', ancho: colW[0], bold: true },
