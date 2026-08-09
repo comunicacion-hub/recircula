@@ -448,7 +448,10 @@ function verEntrega(id) {
               <div class="cmp-block-num">Comprador</div>
               <div style="font-size:15px;font-weight:700;color:var(--text);margin-top:2px">${esc(ent['_nombreComprador']||'—')}</div>
             </div>
-            <div>${nivelBadge(ent['Nivel Intermediacion'])}</div>
+            <div style="text-align:right">
+              <div class="form-label" style="margin-bottom:2px">C.I / RUC</div>
+              <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(ent['CI/RUC']||ent['_ciRucComprador']||'—')}</div>
+            </div>
           </div>` : ''}
         <div class="materiales-section" style="margin-bottom:0">
           <div class="materiales-section-title">Materiales entregados</div>
@@ -487,7 +490,7 @@ function verEntrega(id) {
           <div><div class="form-label">Actividad fuente</div><div style="font-size:14px">${esc(e['Actividad Fuente']||'—')}</div></div>
           <div><div class="form-label">Valor total ${esGrupo?'(grupo)':''}</div><div style="font-size:18px;font-weight:700;color:#0a9e83">${fmtMoney(esGrupo?totalGrupo:e['Valor Total'])}</div></div>
           ${!esGrupo ? `<div><div class="form-label">Comprador</div><div style="font-size:14px">${esc(e['_nombreComprador']||'—')}</div></div>
-          <div><div class="form-label">Nivel</div><div>${nivelBadge(e['Nivel Intermediacion'])}</div></div>` : ''}
+          <div><div class="form-label">C.I / RUC</div><div style="font-size:14px">${esc(e['CI/RUC']||e['_ciRucComprador']||'—')}</div></div>` : ''}
         </div>
         ${bloquesHtml}
         ${e['Observaciones'] ? `<div style="margin-top:14px"><div class="form-label">Observaciones</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px">${esc(e['Observaciones'])}</div></div>` : ''}
@@ -663,11 +666,11 @@ function abrirFormEntrega(id = null) {
   `);
 
   if (primario?.['ID_Asociacion']) autocompletarProvincia(primario['ID_Asociacion']);
-  // Autocompletar nivel de cada bloque y calcular subtotales
+  // Autocompletar C.I/RUC de cada bloque y calcular subtotales
   document.querySelectorAll('#cmp-container .cmp-block').forEach(bl => {
     const bIdx = bl.getAttribute('data-block-idx');
     const sel = document.getElementById('ent-comprador-' + bIdx);
-    if (sel && sel.value) autocompletarNivel(bIdx, sel.value);
+    if (sel && sel.value) autocompletarCIRUC(bIdx, sel.value);
     recalcularSubtotal(bIdx);
   });
   recalcularTotal();
@@ -678,7 +681,7 @@ function abrirFormEntrega(id = null) {
 function _renderBloqueComprador(existente, todosMats) {
   const bIdx = String(COMPRADOR_IDX++);
   const idComp = existente ? (existente['ID_Comprador'] || '') : '';
-  const nivel  = existente ? (existente['Nivel Intermediacion'] || '') : '';
+  const ciRuc  = existente ? (existente['CI/RUC'] || '') : '';
   const docId  = existente ? (existente._docId || '') : '';
   const idEnt  = existente ? (existente['ID_Entrega'] || '') : '';
   const nombreExistente = existente ? (existente['_nombreComprador'] || '') : '';
@@ -711,14 +714,14 @@ function _renderBloqueComprador(existente, todosMats) {
       <div class="form-grid-2">
         <div class="form-group">
           <label class="form-label">Comprador *</label>
-          <select class="form-select" id="ent-comprador-${bIdx}" onchange="autocompletarNivel('${bIdx}', this.value)">
+          <select class="form-select" id="ent-comprador-${bIdx}" onchange="autocompletarCIRUC('${bIdx}', this.value)">
             <option value="">Selecciona un comprador</option>
             ${CAT.compradores.map(c=>`<option value="${esc(c['ID_Comprador'])}" ${idComp===c['ID_Comprador']?'selected':''}>${esc(c['Nombre'])}</option>`).join('')}
           </select>
         </div>
         <div class="form-group">
-          <label class="form-label">Nivel intermediación <span style="font-weight:400;text-transform:none;color:var(--text-dim);font-size:10px">(auto)</span></label>
-          <input type="text" class="form-input" id="ent-nivel-${bIdx}" readonly value="${esc(nivel)}">
+          <label class="form-label">C.I / RUC <span style="font-weight:400;text-transform:none;color:var(--text-dim);font-size:10px">(auto)</span></label>
+          <input type="text" class="form-input" id="ent-ciruc-${bIdx}" readonly value="${esc(ciRuc)}">
         </div>
       </div>
       ${priorizables.length ? `
@@ -770,11 +773,11 @@ function autocompletarProvincia(idAsoc) {
   inp.value = a ? (a['Provincia']||'') : '';
 }
 
-function autocompletarNivel(bIdx, idComp) {
-  const inp = document.getElementById('ent-nivel-' + bIdx);
+function autocompletarCIRUC(bIdx, idComp) {
+  const inp = document.getElementById('ent-ciruc-' + bIdx);
   if (!inp) return;
   const c = CAT.compradores.find(x => x['ID_Comprador'] === idComp);
-  inp.value = c ? (c['Nivel'] || c['Nivel Intermediacion'] || '') : '';
+  inp.value = c ? (c['CI/RUC'] || '') : '';
 }
 
 function calcularValorMaterial(bIdx, mid) {
@@ -840,7 +843,7 @@ async function guardarEntrega(idPrimario) {
     const docId = bl.getAttribute('data-doc-id') || '';
     const idEnt = bl.getAttribute('data-id-entrega') || '';
     const idComp = document.getElementById('ent-comprador-' + bIdx)?.value || '';
-    const nivel  = document.getElementById('ent-nivel-' + bIdx)?.value || '';
+    const ciRuc  = document.getElementById('ent-ciruc-' + bIdx)?.value || '';
     const mats = [];
     document.querySelectorAll(`[id^="mat-kg-${bIdx}-"]`).forEach(inp => {
       const partes = inp.id.split('-'); // mat-kg-{bIdx}-{mid...}
@@ -853,7 +856,7 @@ async function guardarEntrega(idPrimario) {
         mats.push({ nombre: nombreReal, kg: kg, precio: precio, venta: kg * precio });
       }
     });
-    bloques.push({ bIdx, docId, idEnt, idComp, nivel, mats });
+    bloques.push({ bIdx, docId, idEnt, idComp, ciRuc, mats });
   });
 
   if (!bloques.length)   { showToast('Debe haber al menos un comprador'); return; }
@@ -930,7 +933,7 @@ async function guardarEntrega(idPrimario) {
         ID_Asociacion:          idAsoc,
         Provincia:              provincia,
         ID_Comprador:           b.idComp,
-        'Nivel Intermediacion': b.nivel,
+        'CI/RUC':               b.ciRuc,
         'Actividad Fuente':     actividad,
         Observaciones:          obs,
         'ID_Carpeta_Evidencia': carpetaCompartida,
@@ -982,7 +985,7 @@ async function exportarEntregasExcel(dataset) {
 
     const mats = (CAT.materiales || []);
 
-    const header = ['Fecha','Año','Mes','Asociación','Provincia','Comprador','Nivel','Actividad fuente'];
+    const header = ['Fecha','Año','Mes','Asociación','Provincia','Comprador','C.I / RUC','Actividad fuente'];
     mats.forEach(m => { header.push(m['Nombre'] + ' Kilos', m['Nombre'] + ' Precio', m['Nombre'] + ' Valor'); });
     header.push('Valor Total','Observaciones');
 
@@ -994,7 +997,7 @@ async function exportarEntregasExcel(dataset) {
         e['_nombreAsociacion'] || '',
         e['Provincia'] || e['_provinciaAsociacion'] || '',
         e['_nombreComprador'] || '',
-        e['_nivelComprador'] || e['Nivel Intermediacion'] || '',
+        e['CI/RUC'] || e['_ciRucComprador'] || '',
         e['Actividad Fuente'] || '',
       ];
       mats.forEach(m => {

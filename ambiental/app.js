@@ -129,7 +129,7 @@ function entregaFromFS(d) {
     'Provincia':            d.provincia || '',
     'ID_Comprador':         d.id_comprador || '',
     'ID_Grupo_Entrega':     d.id_grupo_entrega || '',
-    'Nivel Intermediacion': d.nivel_intermediacion || '',
+    'CI/RUC':               d.ci_ruc || '',
     'Actividad Fuente':     d.actividad_fuente || '',
     'Valor Total':          d.valor_total || 0,
     'ID_Carpeta_Evidencia': d.id_carpeta_evidencia || '',
@@ -149,7 +149,7 @@ function entregaFromFS(d) {
   o['_provinciaAsociacion'] = a ? a['Provincia'] : '';
   const c = (CAT.compradores || []).find(function(x) { return x['ID_Comprador'] === o['ID_Comprador']; });
   o['_nombreComprador'] = c ? c['Nombre'] : '';
-  o['_nivelComprador']  = c ? c['Nivel Intermediacion'] : '';
+  o['_ciRucComprador']  = c ? c['CI/RUC'] : '';
   return o;
 }
 
@@ -164,7 +164,7 @@ function entregaToFS(data) {
     provincia:            data['Provincia'] || '',
     id_comprador:         data['ID_Comprador'] || '',
     id_grupo_entrega:     data['ID_Grupo_Entrega'] || '',
-    nivel_intermediacion: data['Nivel Intermediacion'] || '',
+    ci_ruc:               data['CI/RUC'] || '',
     actividad_fuente:     data['Actividad Fuente'] || '',
     observaciones:        data['Observaciones'] || '',
     valor_total:          parseFloat(data['Valor Total']) || 0,
