@@ -602,7 +602,7 @@ function abrirFormEntrega(id = null) {
         <div class="form-grid-2">
           <div class="form-group">
             <label class="form-label">Asociación *</label>
-            <select class="form-select" id="ent-asociacion" onchange="autocompletarProvincia(this.value)">
+            <select class="form-select" id="ent-asociacion" onchange="autocompletarProvincia(this.value);actualizarVisibilidadActaPdf(this.value)">
               <option value="">Selecciona una asociación</option>
               ${CAT.asociaciones.map(a=>`<option value="${esc(a['ID_Asociacion'])}" ${primario?.['ID_Asociacion']===a['ID_Asociacion']?'selected':''}>${esc(a['Nombre'])}</option>`).join('')}
             </select>
@@ -641,6 +641,11 @@ function abrirFormEntrega(id = null) {
           <textarea class="form-textarea" id="ent-obs" placeholder="Notas adicionales...">${esc(primario?.['Observaciones']||'')}</textarea>
         </div>
 
+        <div id="ent-acta-pdf-wrap" style="display:none;margin-top:16px">
+          <button type="button" class="btn btn-glass" style="width:100%;justify-content:center" id="btn-acta-pdf" onclick="descargarActaPDF()">${icoHTML('download')}<span id="btn-acta-pdf-label">Descargar Acta de Validación (PDF)</span></button>
+          <div style="font-size:11.5px;color:var(--text-dim);margin-top:6px;text-align:center;line-height:1.5">Descarga el acta, imprímela y fírmala. Luego sube el PDF firmado como Verificable.</div>
+        </div>
+
         <div class="form-label" style="margin:16px 0 8px">Verificables (PDF) <span style="font-weight:400;text-transform:none;color:var(--text-dim);font-size:10px">— compartidos entre todos los compradores de esta entrega</span></div>
         <div class="ent-docs">
           ${ENT_DOCS.map(d => {
@@ -666,6 +671,7 @@ function abrirFormEntrega(id = null) {
   `);
 
   if (primario?.['ID_Asociacion']) autocompletarProvincia(primario['ID_Asociacion']);
+  actualizarVisibilidadActaPdf(primario?.['ID_Asociacion'] || '');
   // Autocompletar C.I/RUC de cada bloque y calcular subtotales
   document.querySelectorAll('#cmp-container .cmp-block').forEach(bl => {
     const bIdx = bl.getAttribute('data-block-idx');
@@ -771,6 +777,16 @@ function autocompletarProvincia(idAsoc) {
   if (!inp) return;
   const a = CAT.asociaciones.find(x => x['ID_Asociacion'] === idAsoc);
   inp.value = a ? (a['Provincia']||'') : '';
+}
+
+// El Acta de Validación (PDF) solo aplica a asociaciones en categoría
+// "En Acompañamiento" o "En Fortalecimiento" (categoría calculada por el
+// módulo Asociativo a partir de su diagnóstico más reciente).
+function actualizarVisibilidadActaPdf(idAsoc) {
+  const wrap = document.getElementById('ent-acta-pdf-wrap');
+  if (!wrap) return;
+  const cat = categoriaVigente(idAsoc);
+  wrap.style.display = (cat === 'En Acompañamiento' || cat === 'En Fortalecimiento') ? '' : 'none';
 }
 
 function autocompletarCIRUC(bIdx, idComp) {
@@ -967,6 +983,238 @@ async function guardarEntrega(idPrimario) {
     showToast('Error al guardar');
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = idPrimario ? 'Actualizar' : 'Guardar entrega'; }
+  }
+}
+
+// ============================================================
+// ACTA DE VALIDACIÓN (PDF) — solo Acompañamiento / Fortalecimiento
+// Se genera desde los datos YA escritos en el formulario (antes de guardar),
+// para que la asociación la imprima, la firme y suba el PDF firmado como Verificable.
+// ============================================================
+
+const ACTA_NAVY     = [13, 42, 84];
+const ACTA_BORDE     = [214, 219, 227];
+const ACTA_TOTAL_BG  = [205, 226, 247];
+
+let _ACTA_LOGO_DATAURL = null;
+
+// Rasteriza el logo (SVG con ícono + texto vectorizado) a PNG en un canvas
+// oculto, porque jsPDF no soporta trazos SVG directamente. Se cachea en memoria.
+async function _logoActaDataURL() {
+  if (_ACTA_LOGO_DATAURL) return _ACTA_LOGO_DATAURL;
+  const resp = await fetch('assets/logo-recircula.svg');
+  const svgText = await resp.text();
+  const url = URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml' }));
+  try {
+    const img = new Image();
+    await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = url; });
+    const escala = 3; // nitidez para impresión
+    const w = (img.naturalWidth || 454.73) * escala;
+    const h = (img.naturalHeight || 148.32) * escala;
+    const canvas = document.createElement('canvas');
+    canvas.width = w; canvas.height = h;
+    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+    _ACTA_LOGO_DATAURL = canvas.toDataURL('image/png');
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+  return _ACTA_LOGO_DATAURL;
+}
+
+function _fechaDDMMYYYY(d) {
+  const dt = d || new Date();
+  const dd = String(dt.getDate()).padStart(2, '0');
+  const mm = String(dt.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${dt.getFullYear()}`;
+}
+
+// Lee del DOM los bloques de comprador ya llenados en el formulario (mismo
+// criterio que guardarEntrega: solo materiales con kg > 0), sin escribir nada.
+function _recolectarBloquesActa() {
+  const bloques = [];
+  document.querySelectorAll('#cmp-container .cmp-block').forEach(bl => {
+    const bIdx = bl.getAttribute('data-block-idx');
+    const idComp = document.getElementById('ent-comprador-' + bIdx)?.value || '';
+    if (!idComp) return;
+    const nombreComprador = (CAT.compradores.find(c => c['ID_Comprador'] === idComp) || {})['Nombre'] || '';
+    const ciRuc = document.getElementById('ent-ciruc-' + bIdx)?.value || '';
+    const mats = [];
+    document.querySelectorAll(`[id^="mat-kg-${bIdx}-"]`).forEach(inp => {
+      const mid = inp.id.split('-').slice(3).join('-');
+      const kg = parseFloat(inp.value || 0) || 0;
+      if (kg <= 0) return;
+      const precio = parseFloat(document.getElementById(`mat-precio-${bIdx}-${mid}`)?.value || 0) || 0;
+      const matReal = (CAT.materiales || []).find(m => m['Nombre'].replace(/[^a-zA-Z0-9]/g, '_') === mid);
+      const nombreMat = matReal ? matReal['Nombre'] : mid.replace(/_/g, ' ');
+      mats.push({ nombre: nombreMat, kg, precio, venta: kg * precio });
+    });
+    if (mats.length) bloques.push({ nombreComprador, ciRuc, mats });
+  });
+  return bloques;
+}
+
+// Línea con tramos en negrita/normal, alineada a la derecha en rightX.
+function _pdfLineaMixta(doc, runs, rightX, y, size) {
+  doc.setFontSize(size);
+  let total = 0;
+  runs.forEach(r => { doc.setFont('helvetica', r.bold ? 'bold' : 'normal'); total += doc.getTextWidth(r.text); });
+  let cx = rightX - total;
+  runs.forEach(r => { doc.setFont('helvetica', r.bold ? 'bold' : 'normal'); doc.text(r.text, cx, y); cx += doc.getTextWidth(r.text); });
+}
+
+// Celda bordeada "Etiqueta: Valor" en una sola línea (grilla Periodo/Asociación/Fecha/Provincia).
+function _pdfCeldaInfo(doc, x, y, w, h, label, valor, labelW) {
+  doc.setDrawColor.apply(doc, ACTA_BORDE); doc.setLineWidth(0.75);
+  doc.rect(x, y, w, h);
+  const cy = y + h / 2 + 3.5;
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.setTextColor(50, 52, 58);
+  doc.text(label, x + 12, cy);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(20, 20, 25);
+  doc.text(String(valor || '—'), x + 12 + labelW, cy);
+}
+
+// Fila con fondo navy y texto blanco centrado por columna (encabezados de tabla).
+function _pdfFilaNavy(doc, x, y, cols, alturaFila) {
+  doc.setFillColor.apply(doc, ACTA_NAVY);
+  const anchoTotal = cols.reduce((s, c) => s + c.ancho, 0);
+  doc.rect(x, y, anchoTotal, alturaFila, 'F');
+  let cx = x;
+  cols.forEach(c => {
+    doc.setFont('helvetica', c.bold ? 'bold' : 'normal');
+    doc.setFontSize(c.tamano || 9.5);
+    doc.setTextColor(255, 255, 255);
+    doc.text(String(c.texto || ''), cx + c.ancho / 2, y + alturaFila / 2 + 3.5, { align: 'center' });
+    cx += c.ancho;
+  });
+}
+
+// Fila de datos con texto centrado por columna y línea divisoria inferior.
+function _pdfFilaDatos(doc, x, y, cols, alturaFila) {
+  doc.setDrawColor.apply(doc, ACTA_BORDE); doc.setLineWidth(0.6);
+  doc.line(x, y + alturaFila, x + cols.reduce((s, c) => s + c.ancho, 0), y + alturaFila);
+  let cx = x;
+  cols.forEach(c => {
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(30, 32, 38);
+    doc.text(String(c.texto || ''), cx + c.ancho / 2, y + alturaFila / 2 + 3.5, { align: 'center' });
+    cx += c.ancho;
+  });
+}
+
+function _construirActaPDF(doc, logoDataUrl, cab, bloques) {
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  const M = 44;
+  const contentW = W - M * 2;
+  let y = M;
+
+  const dibujarEncabezado = () => {
+    if (logoDataUrl) {
+      const logoW = 118, logoH = logoW * (148.32 / 454.73);
+      try { doc.addImage(logoDataUrl, 'PNG', M, y, logoW, logoH); } catch (e) {}
+    }
+    doc.setTextColor.apply(doc, ACTA_NAVY);
+    _pdfLineaMixta(doc, [{ text: 'Acta de Validación', bold: true }, { text: ' de ', bold: false }, { text: 'Recuperación', bold: true }], W - M, y + 20, 15);
+    _pdfLineaMixta(doc, [{ text: 'y ', bold: false }, { text: 'Comercialización de Material', bold: true }], W - M, y + 40, 15);
+    y += 66;
+  };
+
+  const dibujarInfoGrid = () => {
+    const halfW = contentW / 2, rowH = 38;
+    _pdfCeldaInfo(doc, M, y, halfW, rowH, 'Periodo (mes/año):', `${cab.mes} ${cab.anio}`, 108);
+    _pdfCeldaInfo(doc, M + halfW, y, halfW, rowH, 'Asociación:', cab.asociacion, 68);
+    y += rowH;
+    _pdfCeldaInfo(doc, M, y, halfW, rowH, 'Fecha de emisión:', _fechaDDMMYYYY(new Date()), 108);
+    _pdfCeldaInfo(doc, M + halfW, y, halfW, rowH, 'Provincia:', cab.provincia, 68);
+    y += rowH + 28;
+  };
+
+  dibujarEncabezado();
+  dibujarInfoGrid();
+
+  const colW = [contentW * 0.30, contentW * 0.22, contentW * 0.22, contentW * 0.26];
+
+  bloques.forEach(b => {
+    const altoEstimado = 20 + 26 + 24 + (b.mats.length) * 24 + 28 + 26;
+    if (y + altoEstimado > H - M) { doc.addPage(); y = M; }
+
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor.apply(doc, ACTA_NAVY);
+    doc.text('Resumen de consolidado', M, y); y += 20;
+
+    _pdfFilaNavy(doc, M, y, [
+      { texto: 'COMPRADOR', ancho: contentW * 0.18, bold: true },
+      { texto: b.nombreComprador || '—', ancho: contentW * 0.42, bold: false },
+      { texto: 'CÉDULA/RUC', ancho: contentW * 0.18, bold: true },
+      { texto: b.ciRuc || '—', ancho: contentW * 0.22, bold: false },
+    ], 26);
+    y += 26;
+
+    _pdfFilaNavy(doc, M, y, [
+      { texto: 'MATERIAL', ancho: colW[0], bold: true },
+      { texto: 'PRECIO POR KG', ancho: colW[1], bold: true },
+      { texto: 'KG TOTALES', ancho: colW[2], bold: true },
+      { texto: 'VALOR TOTAL (USD)', ancho: colW[3], bold: true },
+    ], 24);
+    y += 24;
+
+    let sumKg = 0, sumValor = 0;
+    b.mats.forEach(m => {
+      sumKg += m.kg; sumValor += m.venta;
+      _pdfFilaDatos(doc, M, y, [
+        { texto: m.nombre, ancho: colW[0] },
+        { texto: '$' + fmtNum(m.precio, 2), ancho: colW[1] },
+        { texto: fmtNum(m.kg), ancho: colW[2] },
+        { texto: fmtMoney(m.venta), ancho: colW[3] },
+      ], 24);
+      y += 24;
+    });
+
+    doc.setFillColor.apply(doc, ACTA_TOTAL_BG);
+    doc.rect(M, y, contentW, 28, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(20, 20, 25);
+    doc.text('TOTAL:', M + colW[0] + colW[1] - 12, y + 18, { align: 'right' });
+    doc.text(fmtNum(sumKg), M + colW[0] + colW[1] + colW[2] / 2, y + 18, { align: 'center' });
+    doc.text(fmtMoney(sumValor), M + colW[0] + colW[1] + colW[2] + colW[3] / 2, y + 18, { align: 'center' });
+    y += 28 + 26;
+  });
+}
+
+async function descargarActaPDF() {
+  const idAsoc    = document.getElementById('ent-asociacion')?.value || '';
+  const asoc      = CAT.asociaciones.find(a => a['ID_Asociacion'] === idAsoc);
+  const anio      = document.getElementById('ent-anio')?.value || '';
+  const mes       = document.getElementById('ent-mes')?.value || '';
+  const provincia = document.getElementById('ent-provincia')?.value || '';
+
+  if (!asoc)          { showToast('Selecciona una asociación'); return; }
+  if (!anio || !mes)  { showToast('Año y mes son obligatorios'); return; }
+  const bloques = _recolectarBloquesActa();
+  if (!bloques.length) { showToast('Agrega al menos un comprador con materiales antes de descargar el acta'); return; }
+
+  const btn = document.getElementById('btn-acta-pdf');
+  const lbl = document.getElementById('btn-acta-pdf-label');
+  if (btn) btn.disabled = true;
+  if (lbl) lbl.textContent = 'Generando PDF…';
+
+  try {
+    await cargarJsPDF();
+    const logo = await _logoActaDataURL().catch(() => null);
+    const jsPDF = window.jspdf.jsPDF;
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    _construirActaPDF(doc, logo, {
+      asociacion: asoc['Nombre'] || '',
+      provincia: provincia || asoc['Provincia'] || '',
+      mes, anio,
+    }, bloques);
+    const nomArch = (asoc['Nombre'] || 'Acta').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_');
+    doc.save(`Acta_${nomArch}_${mes}${anio}.pdf`);
+  } catch (e) {
+    console.error(e);
+    showToast('Error al generar el PDF');
+  } finally {
+    if (btn) btn.disabled = false;
+    if (lbl) lbl.textContent = 'Descargar Acta de Validación (PDF)';
   }
 }
 

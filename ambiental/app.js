@@ -25,6 +25,7 @@ let CAT = {
   compradores:  [],
   materiales:   [],
   entregas:     [],
+  diagnosticos: [],   // solo lectura — colección del módulo Asociativo (misma base de Firebase)
 };
 
 // ── Período interno a ocultar (no se muestra en ninguna parte) ──
@@ -94,6 +95,29 @@ function asocFromFS(d) {
     'Numero de Recicladores':d.num_recicladores || 0,
     'ID_Carpeta_Drive':      d.id_carpeta_drive || '',
   };
+}
+
+// Categoría por puntaje de diagnóstico (mismos umbrales que el módulo Asociativo).
+function categoriaDesdePuntaje(v) {
+  if (v == null || isNaN(v)) return '';
+  if (v >= 90) return 'Líderes de ReCircula';
+  if (v >= 80) return 'En Fortalecimiento';
+  return 'En Acompañamiento';
+}
+
+// Categoría vigente de una asociación = la de su diagnóstico más reciente
+// (mayor año; a igual año, Cierre tiene prioridad sobre Inicial).
+// Devuelve '' si la asociación no tiene ningún diagnóstico cargado.
+function categoriaVigente(idAsociacion) {
+  const ds = (CAT.diagnosticos || []).filter(function(d) { return d.id_asociacion === idAsociacion; });
+  if (!ds.length) return '';
+  ds.sort(function(a, b) {
+    const ay = parseFloat(a.anio) || 0, by = parseFloat(b.anio) || 0;
+    if (by !== ay) return by - ay;
+    const rank = function(t) { return t === 'Cierre' ? 1 : 0; };
+    return rank(b.tipo) - rank(a.tipo);
+  });
+  return categoriaDesdePuntaje(parseFloat(ds[0].valoracion_total));
 }
 
 function compradorFromFS(d) {
@@ -299,6 +323,7 @@ async function cargarCatalogos() {
       fsGetAll('Compradores'),
       fsGetAll('Materiales'),
       fsGetAll('Entregas'),
+      fsGetAll('Diagnosticos'),
     ]);
     CAT.asociaciones = resultados[0].map(asocFromFS)
       .sort(function(a, b) { return (a['Nombre'] || '').localeCompare(b['Nombre'] || ''); });
@@ -310,6 +335,16 @@ async function cargarCatalogos() {
     // en ninguna parte (tarjetas, gráficos, totales, tablas ni exportaciones).
     CAT.entregas = resultados[3].map(entregaFromFS)
       .filter(function(e) { return !_entregaOculta(e); });
+    // Diagnosticos: colección del módulo Asociativo, leída solo para calcular la
+    // categoría vigente de cada asociación (Acta de validación en Entregas).
+    CAT.diagnosticos = resultados[4].map(function(d) {
+      return {
+        id_asociacion:    d.id_asociacion || '',
+        anio:             d.anio || '',
+        tipo:             d.tipo || '',
+        valoracion_total: d.valoracion_total || 0,
+      };
+    });
   } catch (e) {
     console.error('Error cargando catálogos:', e);
     showToast('Error al cargar datos');
@@ -466,6 +501,18 @@ async function cargarSheetJS() {
   await new Promise(function(resolve, reject) {
     const s = document.createElement('script');
     s.src = 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    s.onload = resolve;
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+}
+
+// Carga jsPDF bajo demanda (para el Acta de validación de Entregas).
+async function cargarJsPDF() {
+  if (window.jspdf && window.jspdf.jsPDF) return;
+  await new Promise(function(resolve, reject) {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';
     s.onload = resolve;
     s.onerror = reject;
     document.head.appendChild(s);
