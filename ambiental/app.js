@@ -389,6 +389,19 @@ async function driveSubirArchivo(blob, filename, parentId, token) {
   return await r.json();
 }
 
+// Envía a la papelera (reversible). 404 = ya no existe.
+async function driveEliminarCarpeta(folderId, token) {
+  const url = 'https://www.googleapis.com/drive/v3/files/' + folderId + '?fields=id&supportsAllDrives=true';
+  const r = await fetch(url, {
+    method: 'PATCH',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ trashed: true }),
+  });
+  if (r.status === 404) return true;
+  if (!r.ok) throw new Error('Drive papelera ' + r.status);
+  return true;
+}
+
 // Si la entrega aún no tiene carpeta, la crea (mismo criterio que el backend viejo:
 // solo cuando hay asociación + mes + año y no existe carpeta previa).
 async function asegurarCarpetaEntrega(data) {

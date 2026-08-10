@@ -12,6 +12,10 @@ let ENTREGAS_LOADED  = false;
 let EDITING_SIBLINGS = [];    // documentos del mismo grupo cargados al abrir el form
 let COMPRADOR_IDX    = 0;     // contador de bloques (índice DOM único)
 
+// Estado editable de los Verificables del formulario abierto: { docs: {clave: {id,url,nombre}}, eliminar: [ids de Drive] }.
+// Se resetea cada vez que se abre el formulario; "eliminar" se aplica en Drive al guardar.
+let ENT_EVIDENCIA_FORM = null;
+
 // ── Navegación de dos niveles ──
 let ENT_VISTA = 'asociaciones';   // 'asociaciones' | 'lista'
 let ENT_ASOC_SEL = null;          // ID_Asociacion abierta
@@ -31,6 +35,7 @@ const ENT_DOCS = [
   { key: 'verificable1', lbl: 'Verificable 1', file: 'Verificable_1' },
   { key: 'verificable2', lbl: 'Verificable 2', file: 'Verificable_2' },
   { key: 'verificable3', lbl: 'Verificable 3', file: 'Verificable_3' },
+  { key: 'verificable4', lbl: 'Verificable 4', file: 'Verificable_4' },
 ];
 function _entDoc(e, key) { return (e && e['Documentos'] && e['Documentos'][key]) ? e['Documentos'][key] : null; }
 
@@ -553,6 +558,48 @@ function _carpetaEvidenciaComun(siblings) {
   return '';
 }
 
+// Pinta las casillas de Verificables desde ENT_EVIDENCIA_FORM.docs (estado editable
+// de la sesión de edición actual, no directamente de Firestore).
+function _renderEntDocs() {
+  const cont = document.getElementById('ent-docs-cont');
+  if (!cont || !ENT_EVIDENCIA_FORM) return;
+  cont.innerHTML = ENT_DOCS.map(d => {
+    const f = ENT_EVIDENCIA_FORM.docs[d.key];
+    const fila = (f && (f.url || f.id))
+      ? `<div class="ent-f-list"><div class="ent-f-row">
+          <span class="ent-f-nom">${esc(f.nombre || d.lbl)}</span>
+          ${f.url ? `<a class="ent-f-ver" href="${esc(f.url)}" target="_blank" rel="noopener" title="Ver PDF">${icoHTML('view')}</a>` : ''}
+          <button type="button" class="ent-f-del" onclick="_entQuitarVerificable('${d.key}')" title="Eliminar archivo">${icoHTML('trash')}</button>
+        </div></div>`
+      : '';
+    return `<div class="ent-doc-item">
+      <div class="ent-doc-cab"><span class="ent-doc-lbl">${esc(d.lbl)}</span></div>
+      ${fila}
+      <label class="ent-doc-add">${icoHTML('cloudUp')}<span>${f ? 'Reemplazar archivo' : 'Subir archivo'}</span>
+        <input type="file" accept="application/pdf,.pdf" class="ent-doc-file" id="ent-doc-${d.key}" onchange="_entDocFileSel(this,'${d.key}')">
+      </label>
+      <div class="ent-doc-pend" id="ent-pend-${d.key}"></div>
+    </div>`;
+  }).join('');
+}
+
+// Muestra el nombre del archivo recién seleccionado (aún no subido a Drive).
+function _entDocFileSel(input, key) {
+  const cont = document.getElementById('ent-pend-' + key);
+  if (!cont) return;
+  const f = input.files && input.files[0] ? input.files[0] : null;
+  cont.innerHTML = f ? `<div class="ent-f-pend">${icoHTML('check')}<span>${esc(f.name)}</span><small>listo para subir al guardar</small></div>` : '';
+}
+
+// Quita el verificable existente del formulario (se envía a la papelera de Drive al guardar).
+function _entQuitarVerificable(key) {
+  if (!ENT_EVIDENCIA_FORM) return;
+  const f = ENT_EVIDENCIA_FORM.docs[key];
+  if (f && f.id) ENT_EVIDENCIA_FORM.eliminar.push(f.id);
+  delete ENT_EVIDENCIA_FORM.docs[key];
+  _renderEntDocs();
+}
+
 function abrirFormEntrega(id = null) {
   EVIDENCIAS_LISTA = [];
   COMPRADOR_IDX = 0;
@@ -574,6 +621,7 @@ function abrirFormEntrega(id = null) {
   // PDFs y carpeta son compartidos entre todos los hermanos del grupo
   const evidenciaCompartida = _fusionarDocsEvidencia(EDITING_SIBLINGS);
   const carpetaCompartida   = _carpetaEvidenciaComun(EDITING_SIBLINGS);
+  ENT_EVIDENCIA_FORM = { docs: Object.assign({}, evidenciaCompartida), eliminar: [] };
 
   // Bloques iniciales: uno por hermano existente, o uno vacío si es nuevo
   const bloquesIniciales = EDITING_SIBLINGS.length
@@ -667,18 +715,7 @@ function abrirFormEntrega(id = null) {
         </div>
 
         <div class="form-label" style="margin:16px 0 8px">Verificables (PDF) <span style="font-weight:400;text-transform:none;color:var(--text-dim);font-size:10px">— compartidos entre todos los compradores de esta entrega</span></div>
-        <div class="ent-docs">
-          ${ENT_DOCS.map(d => {
-            const doc = evidenciaCompartida[d.key] || null;
-            const ver = (doc && doc.url)
-              ? `<button type="button" class="ent-doc-ver" onclick="window.open('${jsEsc(doc.url)}','_blank')">${icoHTML('view')} Ver PDF</button>`
-              : '<span class="ent-doc-sin">Sin archivo</span>';
-            return `<div class="ent-doc-item">
-              <div class="ent-doc-cab"><span class="ent-doc-lbl">${esc(d.lbl)}</span>${ver}</div>
-              <input type="file" accept="application/pdf,.pdf" class="form-input ent-doc-file" id="ent-doc-${d.key}">
-            </div>`;
-          }).join('')}
-        </div>
+        <div class="ent-docs" id="ent-docs-cont"></div>
 
         <input type="hidden" id="ent-carpeta-compartida" value="${esc(carpetaCompartida)}">
 
@@ -693,6 +730,7 @@ function abrirFormEntrega(id = null) {
   if (primario?.['ID_Asociacion']) autocompletarProvincia(primario['ID_Asociacion']);
   actualizarVisibilidadActaPdf(primario?.['ID_Asociacion'] || '');
   actualizarVisibilidadLideres(primario?.['ID_Asociacion'] || '');
+  _renderEntDocs();
   // Autocompletar C.I/RUC de cada bloque y calcular subtotales
   document.querySelectorAll('#cmp-container .cmp-block').forEach(bl => {
     const bIdx = bl.getAttribute('data-block-idx');
@@ -929,7 +967,8 @@ async function guardarEntrega(idPrimario) {
 
     // ── Verificables: subir PDFs UNA sola vez, compartir referencias entre hermanos ──
     let carpetaCompartida = document.getElementById('ent-carpeta-compartida')?.value || '';
-    const evidenciaMerged = _fusionarDocsEvidencia(EDITING_SIBLINGS);
+    const evidenciaMerged = Object.assign({}, (ENT_EVIDENCIA_FORM && ENT_EVIDENCIA_FORM.docs) || {});
+    const aEliminar = (ENT_EVIDENCIA_FORM && ENT_EVIDENCIA_FORM.eliminar) || [];
 
     const nuevos = ENT_DOCS.map(d => {
       const el = document.getElementById('ent-doc-' + d.key);
@@ -940,28 +979,33 @@ async function guardarEntrega(idPrimario) {
     const noPdf = nuevos.find(n => n.archivo.type !== 'application/pdf' && !/\.pdf$/i.test(n.archivo.name));
     if (noPdf) { showToast('Solo se permiten archivos PDF'); if (btn) { btn.disabled = false; btn.textContent = idPrimario ? 'Actualizar' : 'Guardar entrega'; } return; }
 
-    if (nuevos.length) {
+    if (nuevos.length || aEliminar.length) {
       const tok = driveToken();
       if (!tok) {
-        showToast('Sesión de Drive expirada: la entrega se guarda sin los PDFs');
+        showToast('Sesión de Drive expirada: la entrega se guarda sin cambios en los PDFs');
       } else {
-        if (!carpetaCompartida) {
-          const tmp = { ID_Asociacion: idAsoc, Mes: mes, 'Año': anio, ID_Carpeta_Evidencia: '' };
-          await asegurarCarpetaEntrega(tmp);
-          carpetaCompartida = tmp['ID_Carpeta_Evidencia'] || '';
-        }
-        if (!carpetaCompartida) {
-          showToast('No se pudo preparar la carpeta: la entrega se guarda sin los PDFs');
-        } else {
-          for (let i = 0; i < nuevos.length; i++) {
-            const n = nuevos[i];
-            if (btn) btn.textContent = `Subiendo ${i + 1}/${nuevos.length}…`;
-            try {
-              const fname = `${n.file}_${mes}${anio}.pdf`;
-              const up = await driveSubirArchivo(n.archivo, fname, carpetaCompartida, tok);
-              evidenciaMerged[n.key] = { id: up.id, url: up.webViewLink, nombre: fname };
-            } catch (err) { console.warn('Subida verificable:', err); showToast('No se pudo subir ' + n.file); }
+        if (nuevos.length) {
+          if (!carpetaCompartida) {
+            const tmp = { ID_Asociacion: idAsoc, Mes: mes, 'Año': anio, ID_Carpeta_Evidencia: '' };
+            await asegurarCarpetaEntrega(tmp);
+            carpetaCompartida = tmp['ID_Carpeta_Evidencia'] || '';
           }
+          if (!carpetaCompartida) {
+            showToast('No se pudo preparar la carpeta: la entrega se guarda sin los PDFs nuevos');
+          } else {
+            for (let i = 0; i < nuevos.length; i++) {
+              const n = nuevos[i];
+              if (btn) btn.textContent = `Subiendo ${i + 1}/${nuevos.length}…`;
+              try {
+                const fname = `${n.file}_${mes}${anio}.pdf`;
+                const up = await driveSubirArchivo(n.archivo, fname, carpetaCompartida, tok);
+                evidenciaMerged[n.key] = { id: up.id, url: up.webViewLink, nombre: fname };
+              } catch (err) { console.warn('Subida verificable:', err); showToast('No se pudo subir ' + n.file); }
+            }
+          }
+        }
+        for (const idDrive of aEliminar) {
+          try { await driveEliminarCarpeta(idDrive, tok); } catch (err) { console.warn('Papelera verificable:', err); }
         }
       }
     }
@@ -1611,16 +1655,33 @@ function exportarMatrizEntregas() {
     .cmp-block-sub-lbl { font-size:11.5px; color:var(--text-muted); font-weight:600; }
     .cmp-block-sub { font-size:15px; font-weight:700; color:#0a9e83; }
 
-    /* Verificables: casillas en el formulario */
+    /* Verificables: casillas en el formulario (mismo patrón que la ficha de Asociaciones) */
     .ent-docs { display:flex; flex-direction:column; gap:10px; }
     .ent-doc-item { border:1px solid var(--border); border-radius:12px; padding:12px 14px; }
-    .ent-doc-cab { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
-    .ent-doc-lbl { font-size:13px; font-weight:600; color:var(--text); }
-    .ent-doc-ver { display:inline-flex; align-items:center; gap:5px; background:rgba(80,108,255,.1); color:#506CFF; border:none; font-family:inherit; font-size:11px; font-weight:700; padding:5px 10px; border-radius:8px; cursor:pointer; }
-    .ent-doc-ver svg { width:14px; height:14px; }
-    .ent-doc-ver:hover { background:rgba(80,108,255,.18); }
-    .ent-doc-sin { font-size:11.5px; color:var(--text-dim); }
-    .ent-doc-file { font-size:12px; }
+    .ent-doc-cab { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+    .ent-doc-lbl { font-size:13px; font-weight:700; color:var(--text); }
+
+    .ent-f-list { display:flex; flex-direction:column; gap:7px; margin-bottom:10px; }
+    .ent-f-row { display:flex; align-items:center; gap:8px; background:rgba(0,0,0,.03); border-radius:9px; padding:8px 10px; }
+    .ent-f-nom { flex:1; min-width:0; font-size:12.5px; color:var(--text); font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ent-f-ver, .ent-f-del { width:28px; height:28px; border-radius:8px; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; border:none; cursor:pointer; }
+    .ent-f-ver { background:rgba(80,108,255,.1); color:#506CFF; text-decoration:none; }
+    .ent-f-ver:hover { background:rgba(80,108,255,.2); }
+    .ent-f-ver svg { width:14px; height:14px; }
+    .ent-f-del { background:rgba(201,26,68,.09); color:#c91a44; }
+    .ent-f-del:hover { background:rgba(201,26,68,.18); }
+    .ent-f-del svg { width:14px; height:14px; }
+
+    .ent-doc-add { display:flex; align-items:center; gap:8px; font-size:12.5px; font-weight:600; color:#506CFF; cursor:pointer; padding:9px 12px; border:1.5px dashed var(--border); border-radius:10px; }
+    .ent-doc-add:hover { border-color:#506CFF; background:rgba(80,108,255,.04); }
+    .ent-doc-add svg { width:16px; height:16px; }
+    .ent-doc-add input[type=file] { display:none; }
+
+    .ent-doc-pend { margin-top:8px; display:flex; flex-direction:column; gap:6px; }
+    .ent-f-pend { display:flex; align-items:center; gap:7px; background:rgba(24,174,151,.08); border:1px solid rgba(24,174,151,.25); border-radius:9px; padding:8px 10px; font-size:12px; color:#0a9e83; }
+    .ent-f-pend svg { width:14px; height:14px; flex-shrink:0; }
+    .ent-f-pend span { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ent-f-pend small { margin-left:auto; font-size:10.5px; color:var(--text-dim); white-space:nowrap; flex-shrink:0; }
 
     /* Verificables: chips en la ficha de detalle */
     .ent-docs-ver { display:flex; flex-wrap:wrap; gap:8px; }
