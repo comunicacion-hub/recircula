@@ -17,6 +17,15 @@ let ENT_VISTA = 'asociaciones';   // 'asociaciones' | 'lista'
 let ENT_ASOC_SEL = null;          // ID_Asociacion abierta
 let ENT_FILTROS_N2 = { material: [], anio: [], mes: [] };
 
+// Opciones de Actividad Fuente — selección múltiple (una entrega puede combinar varias).
+const ENT_ACTIVIDADES = ['Recuperación a pie de Vereda / Fuente', 'Recuperación en Relleno', 'Recuperación GIRA', 'Otros'];
+
+// Normaliza 'Actividad Fuente' a array: soporta el string legado de un solo valor.
+function _actividadesArray(v) {
+  if (Array.isArray(v)) return v;
+  return v ? [v] : [];
+}
+
 // Casillas de documentos (PDF) de la entrega. key = campo en Documentos; file = nombre en Drive.
 const ENT_DOCS = [
   { key: 'verificable1', lbl: 'Verificable 1', file: 'Verificable_1' },
@@ -487,7 +496,7 @@ function verEntrega(id) {
         <div class="form-grid-2" style="margin-bottom:16px">
           <div><div class="form-label">Fecha</div><div style="font-size:14px">${fmtFecha(e['Fecha'])}</div></div>
           <div><div class="form-label">Provincia</div><div style="font-size:14px">${esc(e['Provincia']||e['_provinciaAsociacion']||'—')}</div></div>
-          <div><div class="form-label">Actividad fuente</div><div style="font-size:14px">${esc(e['Actividad Fuente']||'—')}</div></div>
+          <div><div class="form-label">Actividad fuente</div><div style="font-size:14px">${esc(_actividadesArray(e['Actividad Fuente']).join(', ') || '—')}</div></div>
           <div><div class="form-label">Valor total ${esGrupo?'(grupo)':''}</div><div style="font-size:18px;font-weight:700;color:#0a9e83">${fmtMoney(esGrupo?totalGrupo:e['Valor Total'])}</div></div>
           ${!esGrupo ? `<div><div class="form-label">Comprador</div><div style="font-size:14px">${esc(e['_nombreComprador']||'—')}</div></div>
           <div><div class="form-label">C.I / RUC</div><div style="font-size:14px">${esc(e['CI/RUC']||e['_ciRucComprador']||'—')}</div></div>` : ''}
@@ -613,13 +622,13 @@ function abrirFormEntrega(id = null) {
           </div>
         </div>
 
-        <div class="form-grid-2">
-          <div class="form-group">
-            <label class="form-label">Actividad fuente</label>
-            <select class="form-select" id="ent-actividad">
-              <option value="">Selecciona...</option>
-              ${['Recuperación a pie de Vereda / Fuente','Recuperación en Relleno','Recuperación GIRA','Otros'].map(a=>`<option value="${a}" ${primario?.['Actividad Fuente']===a?'selected':''}>${a}</option>`).join('')}
-            </select>
+        <div class="form-group">
+          <label class="form-label">Actividad fuente <span style="font-weight:400;text-transform:none;color:var(--text-dim);font-size:10px">— selección múltiple</span></label>
+          <div class="ent-actividad-checks" id="ent-actividad-checks">
+            ${ENT_ACTIVIDADES.map(a => `<label class="filter-opt">
+              <input type="checkbox" value="${esc(a)}" ${_actividadesArray(primario?.['Actividad Fuente']).includes(a) ? 'checked' : ''}>
+              <span>${esc(a)}</span>
+            </label>`).join('')}
           </div>
         </div>
 
@@ -845,7 +854,7 @@ async function guardarEntrega(idPrimario) {
   const mes         = document.getElementById('ent-mes').value;
   const idAsoc      = document.getElementById('ent-asociacion').value;
   const provincia   = document.getElementById('ent-provincia').value;
-  const actividad   = document.getElementById('ent-actividad').value;
+  const actividad   = Array.from(document.querySelectorAll('#ent-actividad-checks input:checked')).map(cb => cb.value);
   const obs         = document.getElementById('ent-obs').value;
 
   if (!anio || !mes)  { showToast('Año y mes son obligatorios'); return; }
@@ -1354,7 +1363,7 @@ async function exportarEntregasExcel(dataset) {
         e['Provincia'] || e['_provinciaAsociacion'] || '',
         e['_nombreComprador'] || '',
         e['CI/RUC'] || e['_ciRucComprador'] || '',
-        e['Actividad Fuente'] || '',
+        _actividadesArray(e['Actividad Fuente']).join(', '),
       ];
       mats.forEach(m => {
         const n = m['Nombre'];
