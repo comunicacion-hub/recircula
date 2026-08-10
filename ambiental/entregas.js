@@ -500,6 +500,7 @@ function verEntrega(id) {
           <div><div class="form-label">Valor total ${esGrupo?'(grupo)':''}</div><div style="font-size:18px;font-weight:700;color:#0a9e83">${fmtMoney(esGrupo?totalGrupo:e['Valor Total'])}</div></div>
           ${!esGrupo ? `<div><div class="form-label">Comprador</div><div style="font-size:14px">${esc(e['_nombreComprador']||'—')}</div></div>
           <div><div class="form-label">C.I / RUC</div><div style="font-size:14px">${esc(e['CI/RUC']||e['_ciRucComprador']||'—')}</div></div>` : ''}
+          ${e['Voucher'] ? `<div><div class="form-label">N° Voucher / Factura / Otros</div><div style="font-size:14px">${esc(e['Voucher'])}</div></div>` : ''}
         </div>
         ${bloquesHtml}
         ${e['Observaciones'] ? `<div style="margin-top:14px"><div class="form-label">Observaciones</div><div style="font-size:13px;color:var(--text-muted);margin-top:4px">${esc(e['Observaciones'])}</div></div>` : ''}
@@ -611,7 +612,7 @@ function abrirFormEntrega(id = null) {
         <div class="form-grid-2">
           <div class="form-group">
             <label class="form-label">Asociación *</label>
-            <select class="form-select" id="ent-asociacion" onchange="autocompletarProvincia(this.value);actualizarVisibilidadActaPdf(this.value)">
+            <select class="form-select" id="ent-asociacion" onchange="autocompletarProvincia(this.value);actualizarVisibilidadActaPdf(this.value);actualizarVisibilidadLideres(this.value)">
               <option value="">Selecciona una asociación</option>
               ${CAT.asociaciones.map(a=>`<option value="${esc(a['ID_Asociacion'])}" ${primario?.['ID_Asociacion']===a['ID_Asociacion']?'selected':''}>${esc(a['Nombre'])}</option>`).join('')}
             </select>
@@ -640,6 +641,11 @@ function abrirFormEntrega(id = null) {
           <div id="cmp-container">${bloquesIniciales}</div>
         </div>
 
+        <div class="form-group" id="ent-voucher-wrap" style="display:none;margin-top:4px">
+          <label class="form-label">N° Voucher / Factura / Otros <span style="font-weight:400;text-transform:none;color:var(--text-dim);font-size:10px">— si hay varios, sepáralos con comas</span></label>
+          <input type="text" class="form-input" id="ent-voucher" placeholder="Ej: 0001, 0002" value="${esc(primario?.['Voucher']||'')}">
+        </div>
+
         <div style="margin-top:14px;display:flex;justify-content:flex-end;align-items:center;gap:12px;padding:12px 16px;background:rgba(24,174,151,0.06);border-radius:12px">
           <span style="font-size:13px;color:var(--text-muted);font-weight:600">VALOR TOTAL:</span>
           <span id="ent-total" style="font-size:22px;font-weight:700;color:#0a9e83">$0,00</span>
@@ -653,6 +659,11 @@ function abrirFormEntrega(id = null) {
         <div id="ent-acta-pdf-wrap" style="display:none;margin-top:16px">
           <button type="button" class="btn btn-glass" style="width:100%;justify-content:center" id="btn-acta-pdf" onclick="descargarActaPDF()">${icoHTML('download')}<span id="btn-acta-pdf-label">Descargar Acta de Validación (PDF)</span></button>
           <div style="font-size:11.5px;color:var(--text-dim);margin-top:6px;text-align:center;line-height:1.5">Descarga el acta, imprímela y fírmala. Luego sube el PDF firmado como Verificable.</div>
+        </div>
+
+        <div id="ent-cac-pdf-wrap" style="display:none;margin-top:16px">
+          <button type="button" class="btn btn-glass" style="width:100%;justify-content:center" id="btn-cac-pdf" onclick="descargarComprobanteCAC()">${icoHTML('download')}<span id="btn-cac-pdf-label">Descargar Comprobante de Acopio Comunitario (PDF)</span></button>
+          <div style="font-size:11.5px;color:var(--text-dim);margin-top:6px;text-align:center;line-height:1.5">Descarga el comprobante, imprímelo y fírmalo. Luego sube el PDF firmado como Verificable.</div>
         </div>
 
         <div class="form-label" style="margin:16px 0 8px">Verificables (PDF) <span style="font-weight:400;text-transform:none;color:var(--text-dim);font-size:10px">— compartidos entre todos los compradores de esta entrega</span></div>
@@ -681,6 +692,7 @@ function abrirFormEntrega(id = null) {
 
   if (primario?.['ID_Asociacion']) autocompletarProvincia(primario['ID_Asociacion']);
   actualizarVisibilidadActaPdf(primario?.['ID_Asociacion'] || '');
+  actualizarVisibilidadLideres(primario?.['ID_Asociacion'] || '');
   // Autocompletar C.I/RUC de cada bloque y calcular subtotales
   document.querySelectorAll('#cmp-container .cmp-block').forEach(bl => {
     const bIdx = bl.getAttribute('data-block-idx');
@@ -798,6 +810,17 @@ function actualizarVisibilidadActaPdf(idAsoc) {
   wrap.style.display = (cat === 'En Acompañamiento' || cat === 'En Fortalecimiento') ? '' : 'none';
 }
 
+// El campo N° Voucher/Factura/Otros y el botón del Comprobante de Acopio
+// Comunitario (CAC) solo aplican a asociaciones "Líderes de ReCircula" (las
+// más formalizadas, que emiten su propio comprobante de venta).
+function actualizarVisibilidadLideres(idAsoc) {
+  const esLideres = categoriaVigente(idAsoc) === 'Líderes de ReCircula';
+  const wrapVoucher = document.getElementById('ent-voucher-wrap');
+  if (wrapVoucher) wrapVoucher.style.display = esLideres ? '' : 'none';
+  const wrapCac = document.getElementById('ent-cac-pdf-wrap');
+  if (wrapCac) wrapCac.style.display = esLideres ? '' : 'none';
+}
+
 function autocompletarCIRUC(bIdx, idComp) {
   const inp = document.getElementById('ent-ciruc-' + bIdx);
   if (!inp) return;
@@ -855,6 +878,7 @@ async function guardarEntrega(idPrimario) {
   const idAsoc      = document.getElementById('ent-asociacion').value;
   const provincia   = document.getElementById('ent-provincia').value;
   const actividad   = Array.from(document.querySelectorAll('#ent-actividad-checks input:checked')).map(cb => cb.value);
+  const voucher     = document.getElementById('ent-voucher')?.value?.trim() || '';
   const obs         = document.getElementById('ent-obs').value;
 
   if (!anio || !mes)  { showToast('Año y mes son obligatorios'); return; }
@@ -960,6 +984,7 @@ async function guardarEntrega(idPrimario) {
         ID_Comprador:           b.idComp,
         'CI/RUC':               b.ciRuc,
         'Actividad Fuente':     actividad,
+        Voucher:                voucher,
         Observaciones:          obs,
         'ID_Carpeta_Evidencia': carpetaCompartida,
         'Documentos':           Object.assign({}, evidenciaMerged),
@@ -1005,6 +1030,9 @@ const ACTA_NAVY     = [13, 42, 84];
 const ACTA_BORDE     = [214, 219, 227];
 const ACTA_TOTAL_BG  = [205, 226, 247];
 const ACTA_MARGEN    = 70; // ~2.5cm, A4
+// Acentos del Comprobante de Acopio Comunitario (Líderes de ReCircula)
+const CAC_VERDE_CONSOLIDADO   = [91, 189, 112];  // #5bbd70 — Resumen consolidado
+const CAC_CELESTE_COMPROBANTES = [134, 210, 218]; // #86d2da — Comprobantes emitidos
 
 let _ACTA_LOGO_DATAURL = null;
 let _ACTA_FONTS_CACHE  = null;
@@ -1072,7 +1100,8 @@ function _fechaDDMMYYYY(d) {
 
 // Lee del DOM los bloques de comprador ya llenados en el formulario (mismo
 // criterio que guardarEntrega: solo materiales con kg > 0), sin escribir nada.
-function _recolectarBloquesActa() {
+// Compartido por el Acta de Validación y el Comprobante de Acopio Comunitario.
+function _recolectarBloquesPDF() {
   const bloques = [];
   document.querySelectorAll('#cmp-container .cmp-block').forEach(bl => {
     const bIdx = bl.getAttribute('data-block-idx');
@@ -1132,9 +1161,10 @@ function _pdfCeldaInfo(doc, x, y, w, h, label, valor, labelW) {
   lineas.forEach(linea => { doc.text(linea, x + 12 + labelW, cy); cy += lineH; });
 }
 
-// Fila con fondo navy y texto blanco centrado por columna (encabezados de tabla, ej. MATERIAL/PRECIO/KG/VALOR).
-function _pdfFilaNavy(doc, x, y, cols, alturaFila) {
-  doc.setFillColor.apply(doc, ACTA_NAVY);
+// Fila con fondo de color (navy o verde según la plantilla) y texto blanco
+// centrado por columna (encabezados de tabla, ej. MATERIAL/PRECIO/KG/VALOR).
+function _pdfFilaAcento(doc, x, y, cols, alturaFila, color) {
+  doc.setFillColor.apply(doc, color || ACTA_NAVY);
   const anchoTotal = cols.reduce((s, c) => s + c.ancho, 0);
   doc.rect(x, y, anchoTotal, alturaFila, 'F');
   let cx = x;
@@ -1162,15 +1192,16 @@ function _pdfAlturaFilaComprador(doc, cols, alturaMin) {
 }
 
 // Fila "COMPRADOR | nombre | CÉDULA/RUC | valor": las celdas de etiqueta van en
-// navy con texto blanco; las celdas de valor (el "cuadro de llenado") van en
-// blanco con borde, como un campo de formulario. `alturaFila` debe venir ya
-// calculada con _pdfAlturaFilaComprador para que el cuadro crezca si el texto es largo.
-function _pdfFilaComprador(doc, x, y, cols, alturaFila) {
+// color de acento (navy o verde) con texto blanco; las celdas de valor (el
+// "cuadro de llenado") van en blanco con borde, como un campo de formulario.
+// `alturaFila` debe venir ya calculada con _pdfAlturaFilaComprador para que el
+// cuadro crezca si el texto es largo.
+function _pdfFilaComprador(doc, x, y, cols, alturaFila, color) {
   let cx = x;
   const lineH = 13;
   cols.forEach(c => {
     if (c.esLabel) {
-      doc.setFillColor.apply(doc, ACTA_NAVY);
+      doc.setFillColor.apply(doc, color || ACTA_NAVY);
       doc.rect(cx, y, c.ancho, alturaFila, 'F');
       doc.setFont('Outfit', 'bold'); doc.setFontSize(9.5); doc.setTextColor(255, 255, 255);
       doc.text(String(c.texto || ''), cx + c.ancho / 2, y + alturaFila / 2 + 3.5, { align: 'center' });
@@ -1202,6 +1233,98 @@ function _pdfFilaDatos(doc, x, y, cols, alturaFila) {
   });
 }
 
+// Fila "N° VOUCHER / FACTURA / OTROS": celda de etiqueta en color de acento,
+// y los números repartidos en columnas iguales a su derecha (sin borde, texto simple).
+// `labelLineas` es un array de líneas ya partidas (no depende de splitTextToSize/\n).
+function _pdfFilaVouchers(doc, x, y, contentW, labelLineas, valores, color, alturaFila) {
+  const labelW = contentW * 0.24;
+  doc.setFillColor.apply(doc, color);
+  doc.rect(x, y, labelW, alturaFila, 'F');
+  doc.setFont('Outfit', 'bold'); doc.setFontSize(9.5); doc.setTextColor(255, 255, 255);
+  let cyL = y + alturaFila / 2 - ((labelLineas.length - 1) * 12) / 2 + 3.5;
+  labelLineas.forEach(l => { doc.text(l, x + labelW / 2, cyL, { align: 'center' }); cyL += 12; });
+
+  const restoW = contentW - labelW;
+  const lista = (valores && valores.length) ? valores : ['—'];
+  const colW = restoW / lista.length;
+  doc.setFont('Outfit', 'normal'); doc.setFontSize(10.5); doc.setTextColor(30, 32, 38);
+  lista.forEach((v, i) => {
+    doc.text(v, x + labelW + colW * i + colW / 2, y + alturaFila / 2 + 3.5, { align: 'center' });
+  });
+}
+
+// Altura necesaria para la fila de vouchers, según cuántas líneas tenga la etiqueta.
+function _pdfAlturaFilaVouchers(labelLineas, alturaMin) {
+  return Math.max(alturaMin || 30, 12 + labelLineas.length * 12);
+}
+
+// Grilla Periodo/Asociación/Fecha de emisión/Provincia — compartida por el Acta
+// de Validación y el Comprobante de Acopio Comunitario. Devuelve el nuevo y.
+function _dibujarInfoGridActa(doc, M, y, contentW, cab) {
+  const halfW = contentW / 2;
+
+  const alturaPeriodo = Math.max(
+    _pdfAlturaCeldaInfo(doc, `${cab.mes} ${cab.anio}`, halfW, 108, 38),
+    _pdfAlturaCeldaInfo(doc, cab.asociacion, halfW, 68, 38)
+  );
+  _pdfCeldaInfo(doc, M, y, halfW, alturaPeriodo, 'Periodo (mes/año):', `${cab.mes} ${cab.anio}`, 108);
+  _pdfCeldaInfo(doc, M + halfW, y, halfW, alturaPeriodo, 'Asociación:', cab.asociacion, 68);
+  y += alturaPeriodo;
+
+  const alturaFecha = Math.max(
+    _pdfAlturaCeldaInfo(doc, _fechaDDMMYYYY(new Date()), halfW, 108, 38),
+    _pdfAlturaCeldaInfo(doc, cab.provincia, halfW, 68, 38)
+  );
+  _pdfCeldaInfo(doc, M, y, halfW, alturaFecha, 'Fecha de emisión:', _fechaDDMMYYYY(new Date()), 108);
+  _pdfCeldaInfo(doc, M + halfW, y, halfW, alturaFecha, 'Provincia:', cab.provincia, 68);
+  return y + alturaFecha + 28;
+}
+
+// Tabla "Resumen de consolidado" de un comprador (Comprador/CI-RUC + materiales + total).
+// Devuelve el nuevo y. Lanza salto de página si el bloque no cabe en lo que queda.
+function _dibujarTablaConsolidado(doc, M, y, H, contentW, colW, b, colorAcento) {
+  const colsComprador = [
+    { texto: 'COMPRADOR', ancho: contentW * 0.18, esLabel: true },
+    { texto: b.nombreComprador || '—', ancho: contentW * 0.42 },
+    { texto: 'CÉDULA/RUC', ancho: contentW * 0.18, esLabel: true },
+    { texto: b.ciRuc || '—', ancho: contentW * 0.22 },
+  ];
+  const alturaComprador = _pdfAlturaFilaComprador(doc, colsComprador, 26);
+  const altoEstimado = alturaComprador + 24 + (b.mats.length) * 24 + 28 + 26;
+  if (y + altoEstimado > H - M) { doc.addPage(); y = M; }
+
+  _pdfFilaComprador(doc, M, y, colsComprador, alturaComprador, colorAcento);
+  y += alturaComprador;
+
+  _pdfFilaAcento(doc, M, y, [
+    { texto: 'MATERIAL', ancho: colW[0], bold: true },
+    { texto: 'PRECIO POR KG', ancho: colW[1], bold: true },
+    { texto: 'KG TOTALES', ancho: colW[2], bold: true },
+    { texto: 'VALOR TOTAL (USD)', ancho: colW[3], bold: true },
+  ], 24, colorAcento);
+  y += 24;
+
+  let sumKg = 0, sumValor = 0;
+  b.mats.forEach(m => {
+    sumKg += m.kg; sumValor += m.venta;
+    _pdfFilaDatos(doc, M, y, [
+      { texto: m.nombre, ancho: colW[0] },
+      { texto: '$' + fmtNum(m.precio, 2), ancho: colW[1] },
+      { texto: fmtNum(m.kg), ancho: colW[2] },
+      { texto: fmtMoney(m.venta), ancho: colW[3] },
+    ], 24);
+    y += 24;
+  });
+
+  doc.setFillColor.apply(doc, ACTA_TOTAL_BG);
+  doc.rect(M, y, contentW, 28, 'F');
+  doc.setFont('Outfit', 'bold'); doc.setFontSize(10.5); doc.setTextColor(20, 20, 25);
+  doc.text('TOTAL:', M + colW[0] + colW[1] - 12, y + 18, { align: 'right' });
+  doc.text(fmtNum(sumKg), M + colW[0] + colW[1] + colW[2] / 2, y + 18, { align: 'center' });
+  doc.text(fmtMoney(sumValor), M + colW[0] + colW[1] + colW[2] + colW[3] / 2, y + 18, { align: 'center' });
+  return y + 28 + 26;
+}
+
 function _construirActaPDF(doc, logoDataUrl, cab, bloques) {
   const W = doc.internal.pageSize.getWidth();
   const H = doc.internal.pageSize.getHeight();
@@ -1209,88 +1332,61 @@ function _construirActaPDF(doc, logoDataUrl, cab, bloques) {
   const contentW = W - M * 2;
   let y = M;
 
-  const dibujarEncabezado = () => {
-    if (logoDataUrl) {
-      const logoW = 118, logoH = logoW * (148.32 / 454.73);
-      try { doc.addImage(logoDataUrl, 'PNG', M, y, logoW, logoH); } catch (e) {}
-    }
-    doc.setTextColor.apply(doc, ACTA_NAVY);
-    _pdfLineaMixta(doc, [{ text: 'Acta de Validación', bold: true }, { text: ' de ', bold: false }, { text: 'Recuperación', bold: true }], W - M, y + 20, 15);
-    _pdfLineaMixta(doc, [{ text: 'y ', bold: false }, { text: 'Comercialización de Material', bold: true }], W - M, y + 40, 15);
-    y += 66;
-  };
+  if (logoDataUrl) {
+    const logoW = 118, logoH = logoW * (148.32 / 454.73);
+    try { doc.addImage(logoDataUrl, 'PNG', M, y, logoW, logoH); } catch (e) {}
+  }
+  doc.setTextColor.apply(doc, ACTA_NAVY);
+  _pdfLineaMixta(doc, [{ text: 'Acta de Validación', bold: true }, { text: ' de ', bold: false }, { text: 'Recuperación', bold: true }], W - M, y + 20, 15);
+  _pdfLineaMixta(doc, [{ text: 'y ', bold: false }, { text: 'Comercialización de Material', bold: true }], W - M, y + 40, 15);
+  y += 66;
 
-  const dibujarInfoGrid = () => {
-    const halfW = contentW / 2;
-
-    const alturaPeriodo = Math.max(
-      _pdfAlturaCeldaInfo(doc, `${cab.mes} ${cab.anio}`, halfW, 108, 38),
-      _pdfAlturaCeldaInfo(doc, cab.asociacion, halfW, 68, 38)
-    );
-    _pdfCeldaInfo(doc, M, y, halfW, alturaPeriodo, 'Periodo (mes/año):', `${cab.mes} ${cab.anio}`, 108);
-    _pdfCeldaInfo(doc, M + halfW, y, halfW, alturaPeriodo, 'Asociación:', cab.asociacion, 68);
-    y += alturaPeriodo;
-
-    const alturaFecha = Math.max(
-      _pdfAlturaCeldaInfo(doc, _fechaDDMMYYYY(new Date()), halfW, 108, 38),
-      _pdfAlturaCeldaInfo(doc, cab.provincia, halfW, 68, 38)
-    );
-    _pdfCeldaInfo(doc, M, y, halfW, alturaFecha, 'Fecha de emisión:', _fechaDDMMYYYY(new Date()), 108);
-    _pdfCeldaInfo(doc, M + halfW, y, halfW, alturaFecha, 'Provincia:', cab.provincia, 68);
-    y += alturaFecha + 28;
-  };
-
-  dibujarEncabezado();
-  dibujarInfoGrid();
+  y = _dibujarInfoGridActa(doc, M, y, contentW, cab);
 
   // "Resumen de consolidado" se imprime UNA sola vez; cada comprador solo agrega su propia tabla debajo.
   doc.setFont('Outfit', 'bold'); doc.setFontSize(13); doc.setTextColor.apply(doc, ACTA_NAVY);
   doc.text('Resumen de consolidado', M, y); y += 20;
 
   const colW = [contentW * 0.30, contentW * 0.22, contentW * 0.22, contentW * 0.26];
-
   bloques.forEach(b => {
-    const colsComprador = [
-      { texto: 'COMPRADOR', ancho: contentW * 0.18, esLabel: true },
-      { texto: b.nombreComprador || '—', ancho: contentW * 0.42 },
-      { texto: 'CÉDULA/RUC', ancho: contentW * 0.18, esLabel: true },
-      { texto: b.ciRuc || '—', ancho: contentW * 0.22 },
-    ];
-    const alturaComprador = _pdfAlturaFilaComprador(doc, colsComprador, 26);
-    const altoEstimado = alturaComprador + 24 + (b.mats.length) * 24 + 28 + 26;
-    if (y + altoEstimado > H - M) { doc.addPage(); y = M; }
-
-    _pdfFilaComprador(doc, M, y, colsComprador, alturaComprador);
-    y += alturaComprador;
-
-    _pdfFilaNavy(doc, M, y, [
-      { texto: 'MATERIAL', ancho: colW[0], bold: true },
-      { texto: 'PRECIO POR KG', ancho: colW[1], bold: true },
-      { texto: 'KG TOTALES', ancho: colW[2], bold: true },
-      { texto: 'VALOR TOTAL (USD)', ancho: colW[3], bold: true },
-    ], 24);
-    y += 24;
-
-    let sumKg = 0, sumValor = 0;
-    b.mats.forEach(m => {
-      sumKg += m.kg; sumValor += m.venta;
-      _pdfFilaDatos(doc, M, y, [
-        { texto: m.nombre, ancho: colW[0] },
-        { texto: '$' + fmtNum(m.precio, 2), ancho: colW[1] },
-        { texto: fmtNum(m.kg), ancho: colW[2] },
-        { texto: fmtMoney(m.venta), ancho: colW[3] },
-      ], 24);
-      y += 24;
-    });
-
-    doc.setFillColor.apply(doc, ACTA_TOTAL_BG);
-    doc.rect(M, y, contentW, 28, 'F');
-    doc.setFont('Outfit', 'bold'); doc.setFontSize(10.5); doc.setTextColor(20, 20, 25);
-    doc.text('TOTAL:', M + colW[0] + colW[1] - 12, y + 18, { align: 'right' });
-    doc.text(fmtNum(sumKg), M + colW[0] + colW[1] + colW[2] / 2, y + 18, { align: 'center' });
-    doc.text(fmtMoney(sumValor), M + colW[0] + colW[1] + colW[2] + colW[3] / 2, y + 18, { align: 'center' });
-    y += 28 + 26;
+    y = _dibujarTablaConsolidado(doc, M, y, H, contentW, colW, b, ACTA_NAVY);
   });
+}
+
+function _construirComprobanteCAC(doc, logoDataUrl, cab, bloques, vouchers) {
+  const W = doc.internal.pageSize.getWidth();
+  const H = doc.internal.pageSize.getHeight();
+  const M = ACTA_MARGEN;
+  const contentW = W - M * 2;
+  let y = M;
+
+  if (logoDataUrl) {
+    const logoW = 118, logoH = logoW * (148.32 / 454.73);
+    try { doc.addImage(logoDataUrl, 'PNG', M, y, logoW, logoH); } catch (e) {}
+  }
+  doc.setTextColor.apply(doc, ACTA_NAVY);
+  _pdfLineaMixta(doc, [{ text: 'Comprobante', bold: true }, { text: ' de', bold: false }], W - M, y + 20, 15);
+  _pdfLineaMixta(doc, [{ text: 'Acopio Comunitario (CAC)', bold: true }], W - M, y + 40, 15);
+  y += 66;
+
+  y = _dibujarInfoGridActa(doc, M, y, contentW, cab);
+
+  doc.setFont('Outfit', 'bold'); doc.setFontSize(13); doc.setTextColor.apply(doc, CAC_VERDE_CONSOLIDADO);
+  doc.text('RESUMEN CONSOLIDADO', M, y); y += 20;
+
+  const colW = [contentW * 0.30, contentW * 0.22, contentW * 0.22, contentW * 0.26];
+  bloques.forEach(b => {
+    y = _dibujarTablaConsolidado(doc, M, y, H, contentW, colW, b, CAC_VERDE_CONSOLIDADO);
+  });
+
+  // Comprobantes emitidos (N° Voucher/Factura/Otros) — exclusivo de este comprobante.
+  const labelVoucherLineas = ['N° VOUCHER /', 'FACTURA / OTROS'];
+  const alturaVoucher = _pdfAlturaFilaVouchers(labelVoucherLineas, 30);
+  if (y + 20 + alturaVoucher > H - M) { doc.addPage(); y = M; }
+
+  doc.setFont('Outfit', 'bold'); doc.setFontSize(13); doc.setTextColor.apply(doc, CAC_CELESTE_COMPROBANTES);
+  doc.text('COMPROBANTES EMITIDOS', M, y); y += 20;
+  _pdfFilaVouchers(doc, M, y, contentW, labelVoucherLineas, vouchers, CAC_CELESTE_COMPROBANTES, alturaVoucher);
 }
 
 async function descargarActaPDF() {
@@ -1302,7 +1398,7 @@ async function descargarActaPDF() {
 
   if (!asoc)          { showToast('Selecciona una asociación'); return; }
   if (!anio || !mes)  { showToast('Año y mes son obligatorios'); return; }
-  const bloques = _recolectarBloquesActa();
+  const bloques = _recolectarBloquesPDF();
   if (!bloques.length) { showToast('Agrega al menos un comprador con materiales antes de descargar el acta'); return; }
 
   const btn = document.getElementById('btn-acta-pdf');
@@ -1335,6 +1431,52 @@ async function descargarActaPDF() {
   }
 }
 
+// Comprobante de Acopio Comunitario (CAC) — exclusivo de asociaciones "Líderes de ReCircula".
+async function descargarComprobanteCAC() {
+  const idAsoc    = document.getElementById('ent-asociacion')?.value || '';
+  const asoc      = CAT.asociaciones.find(a => a['ID_Asociacion'] === idAsoc);
+  const anio      = document.getElementById('ent-anio')?.value || '';
+  const mes       = document.getElementById('ent-mes')?.value || '';
+  const provincia = document.getElementById('ent-provincia')?.value || '';
+
+  if (!asoc)          { showToast('Selecciona una asociación'); return; }
+  if (!anio || !mes)  { showToast('Año y mes son obligatorios'); return; }
+  const bloques = _recolectarBloquesPDF();
+  if (!bloques.length) { showToast('Agrega al menos un comprador con materiales antes de descargar el comprobante'); return; }
+
+  const vouchers = (document.getElementById('ent-voucher')?.value || '')
+    .split(',').map(v => v.trim()).filter(Boolean);
+
+  const btn = document.getElementById('btn-cac-pdf');
+  const lbl = document.getElementById('btn-cac-pdf-label');
+  if (btn) btn.disabled = true;
+  if (lbl) lbl.textContent = 'Generando PDF…';
+
+  try {
+    await cargarJsPDF();
+    const [logo, fonts] = await Promise.all([
+      _logoActaDataURL().catch(() => null),
+      _outfitFontsBase64(),
+    ]);
+    const jsPDF = window.jspdf.jsPDF;
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    _registrarFuenteActa(doc, fonts);
+    _construirComprobanteCAC(doc, logo, {
+      asociacion: asoc['Nombre'] || '',
+      provincia: provincia || asoc['Provincia'] || '',
+      mes, anio,
+    }, bloques, vouchers);
+    const nomArch = (asoc['Nombre'] || 'Comprobante').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_');
+    doc.save(`Comprobante_CAC_${nomArch}_${mes}${anio}.pdf`);
+  } catch (e) {
+    console.error(e);
+    showToast('Error al generar el PDF');
+  } finally {
+    if (btn) btn.disabled = false;
+    if (lbl) lbl.textContent = 'Descargar Comprobante de Acopio Comunitario (PDF)';
+  }
+}
+
 // ============================================================
 // EXPORTAR A EXCEL (respeta los filtros aplicados)
 // ============================================================
@@ -1352,7 +1494,7 @@ async function exportarEntregasExcel(dataset) {
 
     const header = ['Fecha','Año','Mes','Asociación','Provincia','Comprador','C.I / RUC','Actividad fuente'];
     mats.forEach(m => { header.push(m['Nombre'] + ' Kilos', m['Nombre'] + ' Precio', m['Nombre'] + ' Valor'); });
-    header.push('Valor Total','Observaciones');
+    header.push('Valor Total','N° Voucher / Factura / Otros','Observaciones');
 
     const filas = datos.map(e => {
       const r = [
@@ -1373,7 +1515,7 @@ async function exportarEntregasExcel(dataset) {
           parseFloat(e[n + ' Valor Venta']) || 0
         );
       });
-      r.push(parseFloat(e['Valor Total']) || 0, e['Observaciones'] || '');
+      r.push(parseFloat(e['Valor Total']) || 0, e['Voucher'] || '', e['Observaciones'] || '');
       return r;
     });
 
