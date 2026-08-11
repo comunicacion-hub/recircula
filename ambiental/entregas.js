@@ -924,7 +924,6 @@ async function guardarEntrega(idPrimario) {
 
   // Recolectar bloques del DOM
   const bloques = [];
-  const compradoresVistos = new Set();
   document.querySelectorAll('#cmp-container .cmp-block').forEach(bl => {
     const bIdx  = bl.getAttribute('data-block-idx');
     const docId = bl.getAttribute('data-doc-id') || '';
@@ -949,11 +948,6 @@ async function guardarEntrega(idPrimario) {
   if (!bloques.length)   { showToast('Debe haber al menos un comprador'); return; }
   for (const b of bloques) {
     if (!b.idComp) { showToast('Todos los bloques deben tener un comprador seleccionado'); return; }
-    if (compradoresVistos.has(b.idComp)) {
-      const nom = (CAT.compradores.find(c => c['ID_Comprador'] === b.idComp) || {})['Nombre'] || b.idComp;
-      showToast(`El comprador "${nom}" está repetido`); return;
-    }
-    compradoresVistos.add(b.idComp);
   }
 
   const btn = document.getElementById('btn-guardar-entrega');
