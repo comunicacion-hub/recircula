@@ -15,9 +15,9 @@ const COLORES_PROV = {
 // Metas editables (en memoria)
 let METAS = { PET: 811, Suave: 248, Duro: 377 };
 
-// Factores ambientales
-const FACTOR_CO2  = { PET: 2.2,  Suave: 1.3,  Duro: 1.5  };  // TN CO₂ evitadas / TN
-const FACTOR_AGUA = { PET: 3000, Suave: 1500, Duro: 2000 };  // litros / TN
+// Factores ambientales — Marco Metodológico de Indicadores de Desempeño Ambiental (ReCircula)
+const FACTOR_CO2  = { PET: 2.17, Suave: 1.58, Duro: 1.42 };  // tCO₂e evitadas / TN
+const FACTOR_AGUA = { PET: 3000, Suave: 3930, Duro: 4900 };  // litros / TN
 
 // Materiales en la torta (usan el nombre real del catálogo)
 const MATS_TORTA = ['PET','Plástico Duro','Plástico Suave','Cartón','Lata Aluminio','Vidrio'];

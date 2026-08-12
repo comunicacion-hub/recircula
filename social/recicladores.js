@@ -79,12 +79,16 @@ function _avatarColor(nombre) {
   return PROV_PALETA[h % PROV_PALETA.length];
 }
 
-// ¿La ficha tiene los datos clave completos?
+// ¿La ficha tiene los datos clave completos? Incluye las 3 fotos (perfil,
+// cédula anverso y reverso): sin alguna de ellas, la ficha queda incompleta.
 function _datosCompletos(r) {
   return !!(String(r.nombres_apellidos || '').trim() &&
     String(r.cedula || '').trim() &&
     String(r.fecha_nacimiento || '').trim() &&
-    String(r.celular || '').trim());
+    String(r.celular || '').trim() &&
+    (r.foto_perfil_id || r.foto_perfil_url) &&
+    (r.foto_cedula_anverso_id || r.foto_cedula_anverso_url) &&
+    (r.foto_cedula_reverso_id || r.foto_cedula_reverso_url));
 }
 
 // Visor de foto (overlay sobre el formulario; se cierra al tocar)
@@ -164,6 +168,7 @@ function renderAsociacionesCards() {
     '<div class="page-header">' +
       '<div><div class="page-title">Recicladores</div><div class="page-sub">Elegí una asociación</div></div>' +
       '<div class="hdr-actions">' +
+        '<button class="hdr-circle" onclick="exportarTodosRecicladoresExcel()" title="Descargar Excel de todas las asociaciones">' + icoHTML('download') + '</button>' +
         (add ? '<button class="hdr-circle hdr-circle-primary" onclick="abrirFormReciclador()" title="Nuevo reciclador">' + icoHTML('plus') + '</button>' : '') +
       '</div>' +
     '</div>';
@@ -733,15 +738,17 @@ function _construirPDF(r, imgs) {
   doc.save('Ficha_' + nomArch + '.pdf');
 }
 
-// ── Exportar Excel (recicladores de la asociación abierta, con filtros aplicados) ──
-async function exportarRecicladoresExcel() {
-  if (!RECS_DATA.length) { showToast('No hay datos para exportar.'); return; }
+// ── Exportar Excel — por defecto la asociación abierta (con filtros aplicados);
+// admite un dataset y nombre de archivo explícitos para el export de Nivel 1 (todas). ──
+async function exportarRecicladoresExcel(dataset, nombreArchivo) {
+  const datos = dataset || RECS_DATA;
+  if (!datos.length) { showToast('No hay datos para exportar.'); return; }
   try {
     await cargarSheetJS();
     if (!window.XLSX) { showToast('No se pudo cargar el exportador'); return; }
     const sino = function (b) { return b ? 'Sí' : 'No'; };
     const header = ['Nombres y Apellidos', 'Sexo', 'Cédula', 'Fecha Nacimiento', 'Asociación', 'Provincia', 'Fecha Afiliación', 'Domicilio', 'Celular', 'Cargas Familiares', 'RUC', 'Cuenta Bancaria', 'Certificación SECAP'];
-    const filas = RECS_DATA.map(function (r) {
+    const filas = datos.map(function (r) {
       return [r.nombres_apellidos, r.sexo, r.cedula, r.fecha_nacimiento, r.asociacion_nombre || nombreDeAsociacion(r.id_asociacion),
         provinciaDeReciclador(r), r.fecha_afiliacion, r.domicilio, r.celular, parseFloat(r.cargas_familiares) || 0, sino(r.ruc), sino(r.cuenta_bancaria), sino(r.certificacion_secap)];
     });
@@ -749,11 +756,21 @@ async function exportarRecicladoresExcel() {
     ws['!cols'] = [{ wch: 28 }, { wch: 11 }, { wch: 13 }, { wch: 15 }, { wch: 26 }, { wch: 14 }, { wch: 15 }, { wch: 26 }, { wch: 12 }, { wch: 10 }, { wch: 7 }, { wch: 14 }, { wch: 18 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Recicladores');
-    const asoc = _buscarAsoc(RECS_ASOC_SEL);
-    const nombreArch = (asoc && asoc.nombre ? asoc.nombre : 'Recicladores').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_');
+    let nombreArch = nombreArchivo;
+    if (!nombreArch) {
+      const asoc = _buscarAsoc(RECS_ASOC_SEL);
+      nombreArch = asoc && asoc.nombre ? asoc.nombre : 'Recicladores';
+    }
+    nombreArch = nombreArch.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_');
     XLSX.writeFile(wb, nombreArch + '_' + new Date().toISOString().substring(0, 10) + '.xlsx');
-    showToast('Excel descargado ✓');
+    showToast(datos.length + ' reciclador' + (datos.length !== 1 ? 'es' : '') + ' exportado' + (datos.length !== 1 ? 's' : '') + ' ✓');
   } catch (e) { console.error('export recicladores:', e); showToast('Error al exportar'); }
+}
+
+// Descarga TODOS los recicladores de TODAS las asociaciones (botón de Nivel 1).
+function exportarTodosRecicladoresExcel() {
+  if (!CAT.recicladores.length) { showToast('No hay recicladores para exportar.'); return; }
+  exportarRecicladoresExcel(CAT.recicladores.slice(), 'Recicladores_todas_las_asociaciones');
 }
 
 // ── Estilos propios ──
