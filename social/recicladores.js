@@ -775,6 +775,15 @@ function exportarTodosRecicladoresExcel() {
   exportarRecicladoresExcel(CAT.recicladores.slice(), 'Recicladores_todas_las_asociaciones');
 }
 
+// Normaliza un nombre de asociación para comparar con tolerancia a acentos,
+// mayúsculas y espacios extra/dobles (evita que un simple tilde o doble espacio
+// haga que TODA la importación se salte por "asociación no encontrada").
+function _normalizarNombreAsoc(s) {
+  return String(s || '')
+    .normalize('NFD').replace(new RegExp('[\\u0300-\\u036f]', 'g'), '') // quita tildes/diacríticos
+    .trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
 // ── Importar Excel (Nivel 1): crea un reciclador por fila. Mismas columnas que
 // exportarRecicladoresExcel, para poder exportar → editar → reimportar. Las fotos
 // no se pueden traer por Excel; los importados quedan "incompletos" hasta subirlas. ──
@@ -824,7 +833,8 @@ async function importarRecicladoresExcel(input) {
       const nombreAsocTexto = get(row, 'Asociación', 'Asociacion');
       let asoc = null;
       if (nombreAsocTexto) {
-        asoc = CAT.asocAmbiente.find(function (a) { return (a.nombre || '').trim().toLowerCase() === nombreAsocTexto.toLowerCase(); });
+        const normAsoc = _normalizarNombreAsoc(nombreAsocTexto);
+        asoc = CAT.asocAmbiente.find(function (a) { return _normalizarNombreAsoc(a.nombre) === normAsoc; });
         if (!asoc) { saltados.push('Fila ' + fila + ' (' + nombre + '): asociación "' + nombreAsocTexto + '" no encontrada'); continue; }
       }
       const asocNombre = asoc ? asoc.nombre : '';
