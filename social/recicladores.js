@@ -169,6 +169,8 @@ function renderAsociacionesCards() {
       '<div><div class="page-title">Recicladores</div><div class="page-sub">Elegí una asociación</div></div>' +
       '<div class="hdr-actions">' +
         '<button class="hdr-circle" onclick="exportarTodosRecicladoresExcel()" title="Descargar Excel de todas las asociaciones">' + icoHTML('download') + '</button>' +
+        (add ? '<label class="hdr-circle" title="Importar recicladores desde Excel" style="cursor:pointer">' + icoHTML('cloudUp') +
+          '<input type="file" accept=".xlsx,.xls" style="display:none" onchange="importarRecicladoresExcel(this)"></label>' : '') +
         (add ? '<button class="hdr-circle hdr-circle-primary" onclick="abrirFormReciclador()" title="Nuevo reciclador">' + icoHTML('plus') + '</button>' : '') +
       '</div>' +
     '</div>';
@@ -771,6 +773,110 @@ async function exportarRecicladoresExcel(dataset, nombreArchivo) {
 function exportarTodosRecicladoresExcel() {
   if (!CAT.recicladores.length) { showToast('No hay recicladores para exportar.'); return; }
   exportarRecicladoresExcel(CAT.recicladores.slice(), 'Recicladores_todas_las_asociaciones');
+}
+
+// ── Importar Excel (Nivel 1): crea un reciclador por fila. Mismas columnas que
+// exportarRecicladoresExcel, para poder exportar → editar → reimportar. Las fotos
+// no se pueden traer por Excel; los importados quedan "incompletos" hasta subirlas. ──
+async function importarRecicladoresExcel(input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  input.value = ''; // permite reintentar con el mismo archivo si algo falla
+
+  try {
+    await cargarSheetJS();
+    if (!window.XLSX) { showToast('No se pudo cargar el importador'); return; }
+
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const filas = XLSX.utils.sheet_to_json(ws, { defval: '', raw: false });
+    if (!filas.length) { showToast('El archivo no tiene filas'); return; }
+
+    const get = function (row) {
+      const claves = Array.prototype.slice.call(arguments, 1);
+      for (let i = 0; i < claves.length; i++) {
+        const v = row[claves[i]];
+        if (v != null && String(v).trim() !== '') return String(v).trim();
+      }
+      return '';
+    };
+    const sino = function (v) {
+      const s = String(v || '').trim().toLowerCase();
+      return s === 'sí' || s === 'si' || s === 'true' || s === '1' || s === 'x';
+    };
+
+    showToast('Importando ' + filas.length + ' fila' + (filas.length !== 1 ? 's' : '') + '…', 60000);
+    const tok = driveToken();
+    let creados = 0;
+    const saltados = [];
+
+    for (let i = 0; i < filas.length; i++) {
+      const row = filas[i];
+      const fila = i + 2; // +1 encabezado, +1 base-1
+
+      const nombre = get(row, 'Nombres y Apellidos', 'Nombre', 'Nombres y apellidos');
+      if (!nombre) { saltados.push('Fila ' + fila + ': sin nombre'); continue; }
+
+      const cedula = get(row, 'Cédula', 'Cedula');
+      if (r_cedulaInvalida(cedula)) { saltados.push('Fila ' + fila + ' (' + nombre + '): cédula inválida'); continue; }
+
+      const nombreAsocTexto = get(row, 'Asociación', 'Asociacion');
+      let asoc = null;
+      if (nombreAsocTexto) {
+        asoc = CAT.asocAmbiente.find(function (a) { return (a.nombre || '').trim().toLowerCase() === nombreAsocTexto.toLowerCase(); });
+        if (!asoc) { saltados.push('Fila ' + fila + ' (' + nombre + '): asociación "' + nombreAsocTexto + '" no encontrada'); continue; }
+      }
+      const asocNombre = asoc ? asoc.nombre : '';
+
+      const o = {
+        id_asociacion:           asoc ? asoc._docId : '',
+        asociacion_nombre:       asocNombre,
+        nombres_apellidos:       nombre,
+        sexo:                    get(row, 'Sexo'),
+        cedula:                  cedula,
+        fecha_nacimiento:        get(row, 'Fecha Nacimiento', 'Fecha de nacimiento'),
+        fecha_afiliacion:        get(row, 'Fecha Afiliación', 'Fecha de afiliación'),
+        domicilio:               get(row, 'Domicilio'),
+        celular:                 get(row, 'Celular'),
+        cargas_familiares:       parseFloat(get(row, 'Cargas Familiares')) || 0,
+        ruc:                     sino(get(row, 'RUC')),
+        cuenta_bancaria:         sino(get(row, 'Cuenta Bancaria')),
+        certificacion_secap:     sino(get(row, 'Certificación SECAP')),
+        foto_perfil_url: '', foto_cedula_anverso_url: '', foto_cedula_reverso_url: '',
+        foto_perfil_id: '', foto_cedula_anverso_id: '', foto_cedula_reverso_id: '',
+        carpeta_id: '',
+      };
+
+      if (tok) {
+        try {
+          const carpAsoc = await driveBuscarOCrear(asocNombre || 'Sin asociación', DRIVE_PARENTS.recicladores, tok);
+          o.carpeta_id = await driveBuscarOCrear(nombre, carpAsoc, tok);
+        } catch (e) { console.warn('Drive import reciclador:', e); }
+      }
+
+      const fs = recicladorToFS(o);
+      fs.creado_en = new Date();
+      fs.creado_por = SESSION ? SESSION.email : '';
+      const ref = window.fb.doc(fsCol('recicladores'));
+      const res = await fsWrite(function () { return window.fb.setDoc(ref, fs); });
+      if (res.ok) {
+        CAT.recicladores.push(recicladorFromFS(Object.assign({ _docId: ref.id }, fs)));
+        creados++;
+      } else {
+        saltados.push('Fila ' + fila + ' (' + nombre + '): error al guardar');
+      }
+    }
+
+    renderVistaRecs();
+    let msg = creados + ' reciclador' + (creados !== 1 ? 'es' : '') + ' importado' + (creados !== 1 ? 's' : '') + ' ✓';
+    if (saltados.length) msg += ' — ' + saltados.length + ' omitido' + (saltados.length !== 1 ? 's' : '') + ' (ver consola)';
+    showToast(msg, 6000);
+    if (saltados.length) console.warn('Importación de recicladores — filas omitidas:\n' + saltados.join('\n'));
+  } catch (e) {
+    console.error('importar recicladores:', e);
+    showToast('Error al importar el Excel');
+  }
 }
 
 // ── Estilos propios ──
