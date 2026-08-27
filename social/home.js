@@ -1,11 +1,14 @@
 // ============================================================
 // DASHBOARD SOCIAL — home.js
-// Sección Home: 5 gráficos generados en el frontend.
+// Sección Home: gráficos generados en el frontend.
 //  1) % de alianzas por etapa (Inicial/Intermedia/Final)
 //  2) % de recicladores por provincia
 //  3) % de recicladores por sexo
 //  4) % de recicladores con RUC
 //  5) % de recicladores con cuenta bancaria
+//  6) % de recicladores con certificación SECAP
+//  7) Recicladores CON SECAP por rango etario
+//  8) Recicladores SIN SECAP por rango etario
 // Filtros (drawer): provincia + asociación. Botón para volver al Hub.
 // ============================================================
 
@@ -13,10 +16,81 @@ const HOME = (() => {
 
   let _fProvs = [];
   let _fAsocs = [];
+  let _fSexoEdad = '';   // '' = todos | 'Masculino' | 'Femenino' — solo para los 2 gráficos por rango etario
 
   const ETAPAS = ['Inicial', 'Intermedia', 'Final'];
   const ETAPA_COLORS = ['#F5AD21', '#33A8DE', '#18AE97'];
   const PROV_COLORS = ['#506CFF', '#18AE97', '#F5AD21', '#F82D72', '#FF751F', '#33A8DE', '#9FDA60', '#FF85FF', '#0BC3FF', '#FF376F'];
+
+  // ── Rangos etarios (SECAP por edad) ──
+  const RANGOS_EDAD = [
+    { label: 'Menores de 18', min: 0,  max: 17 },
+    { label: '18 a 29 años',  min: 18, max: 29 },
+    { label: '30 a 44 años',  min: 30, max: 44 },
+    { label: '45 a 64 años',  min: 45, max: 64 },
+    { label: '65 años y más', min: 65, max: 200 },
+  ];
+  const SIN_FECHA = 'Sin fecha de nacimiento';
+  // Mismo color por rango en ambos gráficos, para poder compararlos de un vistazo.
+  const EDAD_COLORS = ['#F82D72', '#7B5CFF', '#33A8DE', '#18AE97', '#F5AD21'];
+
+  // Sexo normalizado a 'Masculino' | 'Femenino' | '' (sin dato). Criterio único
+  // para el gráfico de sexo y para el filtro de los gráficos por rango etario.
+  function _sexoNorm(r) {
+    const s = (r.sexo || '').toLowerCase();
+    if (s.indexOf('masc') === 0) return 'Masculino';
+    if (s.indexOf('fem') === 0) return 'Femenino';
+    return '';
+  }
+
+  // Edad en años cumplidos. Acepta dd/mm/aaaa (formato de la app de Fichas) y
+  // aaaa-mm-dd, igual que fmtFecha. Devuelve null si no hay fecha o es inválida.
+  function _edadDesdeFecha(f) {
+    if (!f) return null;
+    const s = String(f).trim();
+    let a, m, d, mm;
+    if ((mm = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/))) { d = +mm[1]; m = +mm[2]; a = +mm[3]; }
+    else if ((mm = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) { a = +mm[1]; m = +mm[2]; d = +mm[3]; }
+    else return null;
+    if (!a || !m || !d || m < 1 || m > 12 || d < 1 || d > 31) return null;
+    const hoy = new Date();
+    let edad = hoy.getFullYear() - a;
+    const yaCumplio = (hoy.getMonth() + 1 > m) || (hoy.getMonth() + 1 === m && hoy.getDate() >= d);
+    if (!yaCumplio) edad--;
+    return (edad < 0 || edad > 120) ? null : edad;   // descarta fechas corruptas
+  }
+
+  function _contarPorRango(lista) {
+    const cont = {};
+    RANGOS_EDAD.forEach(function (g) { cont[g.label] = 0; });
+    cont[SIN_FECHA] = 0;
+    lista.forEach(function (r) {
+      const e = _edadDesdeFecha(r.fecha_nacimiento);
+      const g = (e == null) ? null : RANGOS_EDAD.find(function (x) { return e >= x.min && e <= x.max; });
+      cont[g ? g.label : SIN_FECHA]++;
+    });
+    return cont;
+  }
+
+  // Rangos con datos en ALGUNO de los dos grupos: así ambos gráficos muestran
+  // las mismas filas (comparables) sin arrastrar rangos vacíos en los dos.
+  function _rangosVisibles(contA, contB) {
+    return RANGOS_EDAD.map(function (g) { return g.label; }).concat([SIN_FECHA])
+      .filter(function (l) { return (contA[l] || 0) > 0 || (contB[l] || 0) > 0; });
+  }
+
+  function _colorRango(label) {
+    const i = RANGOS_EDAD.findIndex(function (g) { return g.label === label; });
+    return i >= 0 ? EDAD_COLORS[i % EDAD_COLORS.length] : '#d7d7e0';
+  }
+
+  // Porcentaje relativo al propio grupo (con/sin SECAP): cada gráfico suma 100%.
+  function _itemsRango(cont, total, etiquetas) {
+    return etiquetas.map(function (l) {
+      const v = cont[l] || 0;
+      return { label: l, value: v, pct: total ? v / total * 100 : 0, color: _colorRango(l) };
+    });
+  }
 
   // ── Conjuntos filtrados ──
   function _recFiltrados() {
@@ -84,8 +158,8 @@ const HOME = (() => {
     // 3) Sexo
     let m = 0, f = 0, sd = 0;
     recs.forEach(function (r) {
-      const s = (r.sexo || '').toLowerCase();
-      if (s.indexOf('masc') === 0) m++; else if (s.indexOf('fem') === 0) f++; else sd++;
+      const s = _sexoNorm(r);
+      if (s === 'Masculino') m++; else if (s === 'Femenino') f++; else sd++;
     });
     const segSexo = [
       { label: 'Masculino', value: m, color: '#33A8DE' },
@@ -114,6 +188,19 @@ const HOME = (() => {
       { label: 'Sin SECAP', value: totR - conSecap, color: '#e6e6ee' },
     ];
 
+    // 7 y 8) SECAP por rango etario (con y sin certificación).
+    // El filtro de sexo (icono en la cabecera) aplica a los DOS para que sigan comparables.
+    const recsEdad = _fSexoEdad
+      ? recs.filter(function (r) { return _sexoNorm(r) === _fSexoEdad; })
+      : recs;
+    const listaCon = recsEdad.filter(function (r) { return !!r.certificacion_secap; });
+    const listaSin = recsEdad.filter(function (r) { return !r.certificacion_secap; });
+    const contCon = _contarPorRango(listaCon);
+    const contSin = _contarPorRango(listaSin);
+    const rangos  = _rangosVisibles(contCon, contSin);
+    const itemsEdadCon = _itemsRango(contCon, listaCon.length, rangos);
+    const itemsEdadSin = _itemsRango(contSin, listaSin.length, rangos);
+
     return '<div class="charts-grid">' +
       _chartCard('Alianzas por etapa', 'users', totA ? _barsBlock(itemsEtapa, totA) : _emptyAlianzas()) +
       _chartCard('Recicladores por provincia', 'mapPin', _barsBlockProv(itemsProv, totR)) +
@@ -121,15 +208,79 @@ const HOME = (() => {
       _chartCard('Recicladores con RUC', 'file', _donutBlock(segRuc, fmtPct(totR ? conRuc / totR * 100 : 0), 'con RUC')) +
       _chartCard('Recicladores con cuenta bancaria', 'wallet', _donutBlock(segCta, fmtPct(totR ? conCta / totR * 100 : 0), 'con cuenta')) +
       _chartCard('Recicladores con certificación SECAP', 'cap', _donutBlock(segSecap, fmtPct(totR ? conSecap / totR * 100 : 0), 'con SECAP')) +
+      _chartCard('CON certificación SECAP · por rango etario', 'cap',
+        _chipSexo() + _barsBlockEdad(itemsEdadCon, listaCon.length, 'con SECAP'), null, _btnSexo()) +
+      _chartCard('SIN certificación SECAP · por rango etario', 'cap',
+        _chipSexo() + _barsBlockEdad(itemsEdadSin, listaSin.length, 'sin SECAP'), 'capOff', _btnSexo()) +
     '</div>';
   }
 
-  function _chartCard(titulo, icono, contenido) {
+  function _chartCard(titulo, icono, contenido, claseIco, accion) {
     return '<div class="chart-card">' +
       '<div class="chart-head">' +
-        '<span class="chart-ico chart-ico-' + icono + '">' + icoHTML(icono) + '</span>' +
+        '<span class="chart-ico chart-ico-' + (claseIco || icono) + '">' + icoHTML(icono) + '</span>' +
         '<div class="chart-title">' + esc(titulo) + '</div>' +
+        (accion || '') +
       '</div>' + contenido + '</div>';
+  }
+
+  // ── Filtro por sexo de los gráficos por rango etario ──
+  // Icono en la cabecera de ambas tarjetas; la selección afecta a las dos.
+  function _btnSexo() {
+    const on = !!_fSexoEdad;
+    return '<button class="chart-act' + (on ? ' chart-act-on' : '') + '" onclick="HOME.abrirFiltroSexo()" ' +
+      'title="Filtrar por sexo' + (on ? ': ' + esc(_fSexoEdad) : '') + '" aria-label="Filtrar por sexo">' +
+      icoHTML('user') + '</button>';
+  }
+
+  // Chip visible sólo cuando hay filtro activo; un clic lo quita.
+  function _chipSexo() {
+    if (!_fSexoEdad) return '';
+    return '<button class="chart-chip" onclick="HOME.limpiarFiltroSexo()" title="Quitar el filtro de sexo">' +
+      icoHTML('user') + ' Solo ' + esc(_fSexoEdad) +
+      '<span class="chart-chip-x">' + icoHTML('close') + '</span></button>';
+  }
+
+  function abrirFiltroSexo() {
+    const opts = [
+      { val: '',          lbl: 'Todos' },
+      { val: 'Masculino', lbl: 'Masculino' },
+      { val: 'Femenino',  lbl: 'Femenino' },
+    ].map(function (o) {
+      return '<label class="filter-opt"><input type="radio" name="home-sexo-edad" value="' + esc(o.val) + '"' +
+        (_fSexoEdad === o.val ? ' checked' : '') + '><span>' + esc(o.lbl) + '</span></label>';
+    }).join('');
+    abrirModal(
+      '<div class="modal" style="max-width:380px">' +
+        '<div class="modal-head">' +
+          '<div><div class="modal-title">Filtrar por sexo</div>' +
+            '<div class="modal-sub">Se aplica a los dos gráficos por rango etario</div></div>' +
+          '<button class="modal-close" onclick="cerrarModal()"></button>' +
+        '</div>' +
+        '<div class="modal-body"><div id="home-sexo-opts">' + opts + '</div></div>' +
+        '<div class="modal-foot">' +
+          '<button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>' +
+          '<button class="btn btn-primary" onclick="HOME.aplicarFiltroSexo()">Aplicar</button>' +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  function _repintar() {
+    const cont = document.getElementById('home-charts');
+    if (cont) cont.innerHTML = _charts();
+  }
+
+  function aplicarFiltroSexo() {
+    const sel = document.querySelector('#home-sexo-opts input[name=home-sexo-edad]:checked');
+    _fSexoEdad = sel ? sel.value : '';
+    cerrarModal();
+    _repintar();
+  }
+
+  function limpiarFiltroSexo() {
+    _fSexoEdad = '';
+    _repintar();
   }
 
   // Estado vacío de "Alianzas por etapa": mensaje + botón a la sección Alianzas
@@ -145,10 +296,12 @@ const HOME = (() => {
   function _barsBlock(items, total) {
     if (!total || !items.length) return '<div class="chart-empty">Sin datos para mostrar</div>';
     return '<div class="bars">' + items.map(function (it) {
+      // Un valor en 0 no debe dibujar barra (si no, 0% aparenta tener algo).
+      const ancho = it.pct > 0 ? Math.max(it.pct, 1.5) : 0;
       return '<div class="bar-row">' +
         '<div class="bar-top"><span class="bar-lbl">' + esc(it.label) + '</span>' +
           '<span class="bar-val">' + fmtPct(it.pct) + ' <em>(' + it.value + ')</em></span></div>' +
-        '<div class="bar-track"><div class="bar-fill" style="width:' + Math.max(it.pct, 1.5) + '%;background:' + it.color + '"></div></div>' +
+        '<div class="bar-track"><div class="bar-fill" style="width:' + ancho + '%;background:' + it.color + '"></div></div>' +
       '</div>';
     }).join('') + '</div>';
   }
@@ -160,6 +313,16 @@ const HOME = (() => {
       '<div class="bars-total">' +
         '<span class="bars-total-lbl">' + icoHTML('mapPin') + ' Total</span>' +
         '<span class="bars-total-val">' + fmtNum(total) + ' <em>recicladores</em></span>' +
+      '</div>';
+  }
+
+  // Barras por rango etario + recuadro "Total" del grupo (con/sin SECAP)
+  function _barsBlockEdad(items, total, sufijo) {
+    if (!total) return '<div class="chart-empty">Sin recicladores en este grupo</div>';
+    return _barsBlock(items, total) +
+      '<div class="bars-total">' +
+        '<span class="bars-total-lbl">' + icoHTML('cap') + ' Total</span>' +
+        '<span class="bars-total-val">' + fmtNum(total) + ' <em>' + esc(sufijo) + '</em></span>' +
       '</div>';
   }
 
@@ -206,14 +369,16 @@ const HOME = (() => {
       ],
       getValue: function (k) { return k === 'prov' ? _fProvs : _fAsocs; },
       setValue: function (k, v) { if (k === 'prov') _fProvs = v; else _fAsocs = v; },
-      apply: function () {
-        const cont = document.getElementById('home-charts');
-        if (cont) cont.innerHTML = _charts();
-      },
+      apply: _repintar,
     });
   }
 
-  return { render: render };
+  return {
+    render: render,
+    abrirFiltroSexo: abrirFiltroSexo,
+    aplicarFiltroSexo: aplicarFiltroSexo,
+    limpiarFiltroSexo: limpiarFiltroSexo,
+  };
 })();
 
 function renderHome() { HOME.render(); }
@@ -235,8 +400,26 @@ function renderHome() { HOME.render(); }
     .chart-ico-file   { background:rgba(24,174,151,.12);  color:#18AE97; }
     .chart-ico-wallet { background:rgba(80,108,255,.12);  color:#506CFF; }
     .chart-ico-cap    { background:rgba(255,117,31,.12);  color:#FF751F; }
-    .chart-title { font-size:14px; font-weight:700; color:var(--text); }
+    .chart-ico-capOff { background:rgba(120,124,140,.13); color:#787c8c; }
+    .chart-title { font-size:14px; font-weight:700; color:var(--text); min-width:0; }
     .chart-empty { text-align:center; padding:34px 0; color:var(--text-dim); font-size:13px; }
+
+    /* Acción pequeña en la cabecera (filtro por sexo) */
+    .chart-act { margin-left:auto; width:30px; height:30px; border-radius:9px; flex-shrink:0;
+      display:inline-flex; align-items:center; justify-content:center; padding:0; cursor:pointer;
+      border:1px solid var(--border); background:var(--surface); color:var(--text-dim); transition:all .15s; }
+    .chart-act svg { width:15px; height:15px; }
+    .chart-act:hover { border-color:#506CFF; color:#506CFF; background:rgba(80,108,255,.06); }
+    .chart-act-on { border-color:#506CFF; background:rgba(80,108,255,.1); color:#506CFF; }
+
+    /* Chip de filtro activo (clic = quitar) */
+    .chart-chip { display:inline-flex; align-items:center; gap:6px; margin:-4px 0 14px; padding:5px 10px;
+      border:none; border-radius:20px; background:rgba(80,108,255,.1); color:#506CFF;
+      font-family:inherit; font-size:11.5px; font-weight:700; cursor:pointer; }
+    .chart-chip svg { width:13px; height:13px; }
+    .chart-chip-x { display:inline-flex; opacity:.65; }
+    .chart-chip:hover { background:rgba(80,108,255,.18); }
+    .chart-chip:hover .chart-chip-x { opacity:1; }
 
     /* Barras */
     .bars { display:flex; flex-direction:column; gap:14px; }
