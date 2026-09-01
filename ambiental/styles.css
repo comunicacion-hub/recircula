@@ -52,6 +52,13 @@
   /* Alto de la nav (referencia para toast y paddings), como Mi RCR */
   --nav-h: 64px;
 
+  /* ── Composición de la página (proporciones de la maqueta) ──
+     La maqueta tiene margen exterior amplio, la nav separada del borde y
+     bastante aire entre la nav y las tarjetas. Sin esto todo "se monta". */
+  --page-pad: 48px;   /* margen exterior de la página */
+  --nav-w:   112px;   /* ancho de la cápsula de nav */
+  --nav-gap:  56px;   /* aire entre la nav y las tarjetas */
+
   /* Colores semánticos para badges */
   --ok:    #18AE97;
   --warn:  #F5AD21;
@@ -117,17 +124,26 @@ body {
 .main-area { display: block; }
 
 .main-content {
-  padding: 22px 24px 80px;
+  padding: 30px var(--page-pad) 90px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  max-width: 1400px;
+  gap: 26px;
+  max-width: 1460px;
   margin: 0 auto;
 }
 
-/* Hueco para la cápsula de nav lateral (mismo valor que Mi RCR) */
+/* En escritorio la topbar va a TODO el ancho (como la maqueta) y solo el
+   contenido de abajo se indenta para librar la cápsula de nav. */
 @media (min-width: 901px) {
-  .main-content { padding-left: 126px; }
+  .main-content > *:not(.page-header) {
+    margin-left: calc(var(--nav-w) + var(--nav-gap));
+  }
+}
+
+/* Escritorio angosto: el margen amplio de la maqueta (pensada a 1366) dejaría
+   las tarjetas demasiado estrechas, así que se aprieta. */
+@media (min-width: 901px) and (max-width: 1200px) {
+  :root { --page-pad: 28px; --nav-gap: 34px; }
 }
 
 /* ============================================================
@@ -141,7 +157,7 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 12px 20px;
+  padding: 16px 26px;
   border-radius: 24px;
   background: var(--glass-bg);
   backdrop-filter: var(--glass-blur);
@@ -188,7 +204,7 @@ body {
    Geometría copiada de la .bottom-nav / .nav-btn de Mi RCR. */
 .bottom-nav {
   position: fixed;
-  left: 22px;
+  left: var(--page-pad);
   top: 50%;
   transform: translateY(-50%);
   bottom: auto;
@@ -208,7 +224,7 @@ body {
 .bn-item {
   width: auto;
   height: auto;
-  min-width: 76px;
+  min-width: calc(var(--nav-w) - 16px);
   border-radius: 16px;
   display: flex;
   flex-direction: column;
@@ -260,7 +276,11 @@ body {
 .fab:active { transform: scale(0.94); }
 /* Escritorio: anclado bajo la cápsula de nav y centrado con ella */
 @media (min-width: 901px) {
-  .fab { left: 22px; right: auto; top: calc(50% + 190px); margin-left: 18px; }
+  .fab {
+    right: auto;
+    top: calc(50% + 190px);
+    left: calc(var(--page-pad) + (var(--nav-w) - 56px) / 2);
+  }
 }
 
 /* ============================================================
@@ -391,7 +411,7 @@ body {
 .card {
   background: var(--white);
   border-radius: var(--r-lg);
-  padding: 22px 24px;
+  padding: 26px 30px;
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--border);
   transition: transform 0.18s, box-shadow 0.18s;
@@ -400,7 +420,7 @@ body {
   font-size: 16px;
   font-weight: 700;
   color: var(--text);
-  margin-bottom: 14px;
+  margin-bottom: 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -819,10 +839,10 @@ body {
    (+ rosa solo para tendencias a la baja)
    ============================================================ */
 
-.g-wrap { display: flex; flex-direction: column; gap: 18px; }
+.g-wrap { display: flex; flex-direction: column; gap: 26px; }
 
 /* ── Fila 1: tres KPI ─────────────────────────────────────── */
-.g-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.g-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; }
 .g-kpi  { display: flex; align-items: center; gap: 18px; }
 .g-kpi-ico {
   width: 56px; height: 56px; border-radius: 16px; flex-shrink: 0;
@@ -837,10 +857,10 @@ body {
 }
 
 /* ── Filas 2 y 3: dos columnas ────────────────────────────── */
-.g-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.g-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
 
 /* ── Impacto Ambiental (CO₂ + agua en una tarjeta) ────────── */
-.g-imp      { display: flex; flex-direction: column; gap: 17px; }
+.g-imp      { display: flex; flex-direction: column; gap: 24px; }
 .g-imp-row  { display: grid; grid-template-columns: 52px 1fr; align-items: center; gap: 12px; }
 .g-imp-lbl  { font-size: 13.5px; font-weight: 700; color: var(--text); }
 .g-imp-bars { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
@@ -869,7 +889,7 @@ body {
    atraviesa las tres barras (left en % del ancho del track). */
 .g-meta-body { position: relative; margin-left: 52px; padding-bottom: 22px; }
 .g-meta-row  { position: relative; }
-.g-meta-row + .g-meta-row { margin-top: 18px; }
+.g-meta-row + .g-meta-row { margin-top: 26px; }
 .g-meta-lbl  {
   position: absolute; left: -52px; bottom: 5px;
   font-size: 13.5px; font-weight: 700; color: var(--text);
@@ -900,8 +920,8 @@ body {
 .g-foot { display: flex; justify-content: flex-end; margin-top: 14px; }
 
 /* ── Evolución por material (slope chart por provincia) ───── */
-.g-evo     { display: flex; flex-direction: column; gap: 13px; }
-.g-evo-row { display: flex; flex-direction: column; gap: 1px; }
+.g-evo     { display: flex; flex-direction: column; gap: 18px; }
+.g-evo-row { display: flex; flex-direction: column; gap: 3px; }
 .g-evo-prov {
   font-size: 10.5px; font-weight: 700; letter-spacing: .7px;
   text-transform: uppercase; color: var(--text-muted);
@@ -934,10 +954,9 @@ body {
 .g-mat-badge.flat { background: var(--surface); color: var(--text-muted); }
 
 /* ── Responsive ───────────────────────────────────────────── */
-@media (max-width: 1100px) {
-  .g-duo  { grid-template-columns: 1fr; }
-  .g-kpis { grid-template-columns: 1fr; }
-}
+/* Las dos tarjetas grandes necesitan ancho; los 3 KPI aguantan bastante más */
+@media (max-width: 1100px) { .g-duo  { grid-template-columns: 1fr; } }
+@media (max-width: 780px)  { .g-kpis { grid-template-columns: 1fr; } }
 @media (max-width: 560px) {
   .g-mats     { columns: 1; }
   .g-kpi-val  { font-size: 26px; }
@@ -1071,6 +1090,11 @@ body {
    los 720px de Mi RCR): ambiental tiene grillas de 2 columnas y una tablet
    en vertical (768-834px) necesita el ancho completo. */
 @media (max-width: 900px) {
+  /* Sin nav lateral: el contenido recupera todo el ancho y baja el margen */
+  .main-content { padding: 22px 22px calc(118px + env(safe-area-inset-bottom)); }
+  .main-content > * { margin-left: 0; }
+  .card { padding: 22px 22px; }
+
   .bottom-nav {
     left: 16px;
     right: 16px;
@@ -1100,11 +1124,12 @@ body {
 
 @media (max-width: 768px) {
   .main-content {
-    padding: 16px 16px calc(112px + env(safe-area-inset-bottom));
+    padding: 16px 16px calc(118px + env(safe-area-inset-bottom));
     gap: 20px;
   }
+  .card { padding: 20px 18px; }
 
-  .page-header { padding: 11px 16px; }
+  .page-header { padding: 13px 18px; }
   .page-header::before,
   .page-header::after { font-size: 13.5px; }
 

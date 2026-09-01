@@ -372,19 +372,23 @@ function gEvolucion(porProvMesMat, meses, material) {
     return '<div class="empty-state"><p>Sin datos de ' + esc(mat) + ' para este filtro</p></div>';
   }
 
-  // Escala compartida entre provincias para que las filas sean comparables
-  let max = 0;
-  provs.forEach(function(p) {
-    meses.forEach(function(m) { max = Math.max(max, valor(p, m)); });
-  });
-  if (max <= 0) max = 1;
-
   const x = function(i) {
     return meses.length === 1 ? 50 : 2 + (i * 96) / (meses.length - 1);
   };
-  const y = function(v) { return 23 - (v / max) * 20; };
 
   const filas = provs.map(function(p) {
+    // Cada fila se normaliza a SU propio rango: la forma muestra la tendencia
+    // de esa provincia, no su magnitud. Con escala global compartida, provincias
+    // de volumen parecido salían todas planas y la tarjeta parecía vacía.
+    // La cifra real de cada punto está en el tooltip.
+    const vals = meses.map(function(m) { return valor(p, m); });
+    const lo = Math.min.apply(null, vals);
+    const hi = Math.max.apply(null, vals);
+    const y = function(v) {
+      if (hi === lo) return 13;                       // sin variación → al centro
+      return 23 - ((v - lo) / (hi - lo)) * 20;
+    };
+
     const pts = meses.map(function(m, i) { return x(i) + ',' + y(valor(p, m)); }).join(' ');
     const dots = meses.map(function(m, i) {
       const v = valor(p, m);
