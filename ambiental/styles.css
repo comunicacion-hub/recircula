@@ -843,140 +843,85 @@ body {
    (+ rosa solo para tendencias a la baja)
    ============================================================ */
 
-.g-wrap { display: flex; flex-direction: column; gap: 26px; }
+.g-wrap { display: flex; flex-direction: column; gap: 24px; }
+.g-duo  { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: stretch; }
+.g-duo > * { min-width: 0; }
+/* Las tarjetas de la fila doble se distribuyen para llenar su altura, así
+   ninguna queda a medio llenar y cada par calza en alto. */
+.g-duo .card { display: flex; flex-direction: column; }
+.g-body { flex: 1; display: flex; flex-direction: column; justify-content: space-between; }
 
-/* ── Fila 1: tres KPI ─────────────────────────────────────── */
-.g-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; }
-/* Las tarjetas KPI son más bajas que las grandes: menos padding vertical */
-.g-kpi  { display: flex; align-items: center; gap: 18px; padding: 24px 30px; }
-.g-kpi-ico {
-  width: 56px; height: 56px; border-radius: 16px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center; color: #fff;
-}
-.g-kpi-ico svg { width: 26px; height: 26px; }
-.g-kpi-txt { min-width: 0; }
-.g-kpi-lbl { font-size: 15px; color: var(--text); margin-bottom: 1px; }
-.g-kpi-val {
-  font-size: 30px; font-weight: 700; line-height: 1.05;
-  letter-spacing: -0.5px; font-variant-numeric: tabular-nums;
-}
+/* ── Totales (una tarjeta, 3 KPI con mini-tendencia) ───────── */
+.g-tot { display: flex; flex-direction: row; align-items: stretch; padding: 22px 6px; }
+.g-tot-seg { flex: 1; display: flex; flex-direction: column; gap: 13px; padding: 2px 26px; min-width: 0; }
+.g-tot-seg + .g-tot-seg { border-left: 1px solid var(--border); }
+.g-tot-top { display: flex; align-items: center; gap: 11px; }
+.g-tot-ic  { width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.g-tot-ic svg { width: 20px; height: 20px; }
+.g-tot-lbl { font-size: 13px; font-weight: 600; color: var(--text-muted); }
+.g-tot-val { font-size: 30px; font-weight: 800; line-height: 1; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
+.g-tot-foot{ display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; }
+.g-pill { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.g-pill.up { background: rgba(24,174,151,.13); color: #0f9b84; }
+.g-pill.down { background: rgba(248,45,114,.12); color: var(--err); }
+.g-pill small { font-weight: 500; color: var(--text-dim); margin-left: 3px; }
+.g-spark { width: 96px; height: 30px; flex-shrink: 0; }
 
-/* ── Filas 2 y 3: dos columnas ────────────────────────────── */
-/* align-items:start — cada tarjeta toma su propia altura. Con stretch, la
-   más corta (materiales) se estiraba a la altura de la más alta (evolución,
-   una fila por provincia) y quedaba medio vacía. */
-.g-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; align-items: start; }
-/* Los hijos de grid traen min-width:auto y desbordarían con contenido largo */
-.g-kpis > *, .g-duo > * { min-width: 0; }
+/* ── Avance vs Meta (línea de meta con zona de excedente) ──── */
+.g-meta { gap: 18px; }
+.g-meta-top { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; gap: 10px; }
+.g-meta-name{ font-size: 13px; font-weight: 700; }
+.g-meta-num { font-size: 11.5px; color: var(--text-muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+.g-meta-num .ok { color: var(--ok); font-weight: 700; }
+.g-meta-track { position: relative; height: 23px; border-radius: 7px; background: #eaedf4; overflow: hidden; }
+.g-meta-over  { position: absolute; top: 0; bottom: 0; right: 0; background: rgba(24,174,151,.11); z-index: 0; }
+.g-meta-fill  { position: relative; z-index: 1; height: 100%; border-radius: 7px; display: flex; align-items: center; padding-left: 11px; color: #fff; font-size: 11.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.g-meta-goal  { position: absolute; z-index: 2; top: 0; bottom: 0; width: 2px; background: #3a3f4c; }
+.g-meta-note  { font-size: 10.5px; color: var(--text-dim); font-weight: 600; margin-top: 12px; display: flex; align-items: center; gap: 7px; }
+.g-meta-note i{ width: 14px; height: 2px; background: #3a3f4c; display: inline-block; }
 
-/* ── Impacto Ambiental (CO₂ + agua en una tarjeta) ──────────
-   Tres columnas: etiqueta de ancho fijo (para que todas las barras
-   arranquen alineadas), pista elástica, y cifra con columna propia
-   alineada a la derecha. */
-.g-imp      { display: flex; flex-direction: column; gap: 28px; }
-.g-imp-row  { display: grid; grid-template-columns: 56px 1fr; align-items: center; gap: 16px; }
-.g-imp-lbl  { font-size: 13.5px; font-weight: 700; color: var(--text); }
-.g-imp-bars { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
-.g-imp-bar  { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 14px; }
-.g-imp-track{ min-width: 0; }
-.g-imp-fill { display: block; height: 11px; border-radius: 6px; }
-.g-imp-val  {
-  min-width: 84px; text-align: right;
-  font-size: 12px; font-weight: 600; color: var(--text-muted);
-  white-space: nowrap; font-variant-numeric: tabular-nums;
-}
-.g-ley {
-  display: flex; justify-content: center; flex-wrap: wrap; gap: 22px;
-  margin-top: 3px; padding-top: 15px; border-top: 1px solid var(--border);
-}
-.g-ley-item {
-  display: inline-flex; align-items: center; gap: 8px;
-  font-size: 12.5px; font-weight: 500; color: var(--text-muted);
-}
-.g-ley-chip { width: 13px; height: 13px; border-radius: 4px; flex-shrink: 0; }
+/* ── Zona de Recuperación (mismo patrón que Avance) ────────── */
+.g-zona { gap: 18px; }
+.g-z-top   { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; gap: 10px; }
+.g-z-name  { font-size: 13px; font-weight: 700; }
+.g-z-val   { font-size: 11.5px; color: var(--text-muted); font-weight: 600; font-variant-numeric: tabular-nums; }
+.g-z-track { height: 23px; border-radius: 7px; background: #eaedf4; overflow: hidden; }
+.g-z-fill  { height: 100%; border-radius: 7px; display: flex; align-items: center; padding-left: 12px; color: #fff; font-size: 11.5px; font-weight: 700; }
+.g-z-note  { font-size: 10.5px; color: var(--text-dim); font-weight: 600; margin-top: 12px; }
 
-/* ── Avance vs Meta ───────────────────────────────────────── */
-/* El cuerpo se desplaza a la derecha para dejar la etiqueta fuera del
-   track; así el 100% puede dibujarse como UNA línea continua que
-   atraviesa las tres barras (left en % del ancho del track). */
-.g-meta-body { position: relative; margin-left: 52px; padding-bottom: 22px; }
-.g-meta-row  { position: relative; }
-.g-meta-row + .g-meta-row { margin-top: 26px; }
-.g-meta-lbl  {
-  position: absolute; left: -52px; bottom: 5px;
-  font-size: 13.5px; font-weight: 700; color: var(--text);
-}
-.g-meta-num  {
-  display: block; text-align: right; margin-bottom: 5px;
-  font-size: 12px; font-weight: 600; color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-.g-meta-track {
-  position: relative; height: 26px; border-radius: 7px;
-  background: #dfe3ea; overflow: hidden;
-}
-.g-meta-fill {
-  height: 100%; border-radius: 7px;
-  display: flex; align-items: center; padding-left: 11px;
-  color: #fff; font-size: 12.5px; font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-.g-meta-line { position: absolute; top: 0; bottom: 22px; width: 2px; background: #2b2b33; }
-.g-meta-100  {
-  position: absolute; bottom: 0; transform: translateX(-50%);
-  font-size: 12px; font-weight: 600; color: var(--text-muted);
-  white-space: nowrap;
-}
+/* ── Impacto Ambiental (barras por material agrupadas) ─────── */
+.g-imp2 { gap: 22px; }
+.g-imp-grp { display: flex; flex-direction: column; }
+.g-imp-gh  { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.g-imp-gh span { font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--text-muted); }
+.g-imp-gh b { font-size: 17px; font-weight: 800; letter-spacing: -.4px; font-variant-numeric: tabular-nums; }
+.g-imp-gh b u { font-size: 11px; font-weight: 600; color: var(--text-dim); font-style: normal; margin-left: 3px; }
+.g-ibar { display: grid; grid-template-columns: 50px 1fr 86px; align-items: center; gap: 12px; padding: 4px 0; }
+.g-ibn  { font-size: 10.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--text-muted); }
+.g-ibt  { height: 11px; border-radius: 6px; background: #eaedf4; overflow: hidden; }
+.g-ibf  { height: 100%; border-radius: 6px; }
+.g-ibv  { text-align: right; font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
-/* Pie con el engranaje (las tarjetas que lo llevan abajo a la derecha) */
-.g-foot { display: flex; justify-content: flex-end; margin-top: 14px; }
+/* ── TN Recuperados por Material (barras horizontales) ─────── */
+.g-mat2 { justify-content: space-between; }
+.g-matrow  { display: grid; grid-template-columns: 74px 1fr 66px; align-items: center; gap: 12px; padding: 5px 0; }
+.g-matname { font-size: 10.5px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g-mattrack{ height: 11px; border-radius: 6px; background: #eaedf4; overflow: hidden; }
+.g-matfill { height: 100%; border-radius: 6px; }
+.g-matval  { text-align: right; font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
 
-/* ── Evolución por material (slope chart por provincia) ───── */
-/* Este gráfico necesita ALTO (una fila por provincia), no ancho: fila más
-   alta y más separación entre provincias para que las líneas respiren. */
-.g-evo     { display: flex; flex-direction: column; gap: 24px; }
-.g-evo-row { display: flex; flex-direction: column; gap: 7px; }
-.g-evo-prov {
-  font-size: 10.5px; font-weight: 700; letter-spacing: .7px;
-  text-transform: uppercase; color: var(--text-muted);
-}
-/* overflow visible: los puntos son trazos con remate redondo y sobresalen */
-.g-evo-svg { display: block; width: 100%; height: 32px; overflow: visible; }
-
-/* ── Materiales (grilla de badges con tendencia) ──────────── */
-/* Dos columnas que se llenan de arriba abajo (la lista va ordenada por
-   volumen, así se lee en orden). Multi-column en vez de grid porque grid
-   llenaría por filas. */
-.g-mats { columns: 2; column-gap: 40px; }
-.g-mat  {
-  display: flex; align-items: center; justify-content: space-between; gap: 16px;
-  break-inside: avoid; margin-bottom: 20px;
-}
-.g-mat:last-child { margin-bottom: 0; }
-.g-mat-nom {
-  font-size: 10.5px; font-weight: 700; letter-spacing: .6px; line-height: 1.25;
-  text-transform: uppercase; color: var(--text-muted);
-}
-.g-mat-badge {
-  display: inline-flex; align-items: center; gap: 7px; flex-shrink: 0;
-  padding: 6px 13px; border-radius: 20px;
-  font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums;
-}
-.g-mat-badge svg { width: 9px; height: 9px; }
-.g-mat-badge.up   { background: #e9ecff; color: #4055d4; }
-.g-mat-badge.down { background: #ffe9f0; color: #d81b60; }
-.g-mat-badge.flat { background: var(--surface); color: var(--text-muted); }
+/* ── Evolución por Material (líneas por material) ──────────── */
+.g-evochart { width: 100%; height: auto; display: block; }
+.g-evoleg   { display: flex; flex-wrap: wrap; justify-content: center; gap: 9px 18px; margin-top: 16px; }
+.g-eleg     { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--text-muted); font-weight: 500; }
+.g-eleg-c   { width: 18px; height: 4px; border-radius: 2px; }
 
 /* ── Responsive ───────────────────────────────────────────── */
-/* Las dos tarjetas grandes necesitan ancho; los 3 KPI aguantan bastante más */
-@media (max-width: 1100px) { .g-duo  { grid-template-columns: 1fr; } }
-@media (max-width: 780px)  { .g-kpis { grid-template-columns: 1fr; } }
-@media (max-width: 560px) {
-  .g-mats     { columns: 1; }
-  .g-kpi-val  { font-size: 26px; }
-  .g-kpi-ico  { width: 48px; height: 48px; border-radius: 14px; }
-  .g-kpi-ico svg { width: 23px; height: 23px; }
-  .g-ley      { gap: 14px; }
+@media (max-width: 1040px) { .g-duo { grid-template-columns: 1fr; } }
+@media (max-width: 620px) {
+  .g-tot { flex-direction: column; gap: 18px; padding: 20px 22px; }
+  .g-tot-seg { padding: 0; }
+  .g-tot-seg + .g-tot-seg { border-left: none; border-top: 1px solid var(--border); padding-top: 18px; }
 }
 
 /* ============================================================

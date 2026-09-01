@@ -24,49 +24,57 @@ const FACTOR_AGUA = { PET: 3000, Suave: 3930, Duro: 4900 };  // litros / TN
 const MATS_TORTA = ['PET','Plástico Duro','Plástico Suave','Cartón','Lata Aluminio','Vidrio'];
 let MATS_FILTRO_ACTIVOS = MATS_TORTA.slice();
 
-// Material mostrado en el gráfico "Evolución por Material" (elegible con el ícono ⚙️)
-let MATERIAL_EVOLUCION = 'PET';
-
-// ── Paleta de la sección Gráficos ──────────────────────────
-// Tres colores + rosa solo para tendencias a la baja. No usa la paleta
-// multicolor por material (esa vive en Pesos).
+// ── Paleta de acento de la sección (índigo / ámbar / teal) ──
 const G_INDIGO = '#506CFF';
 const G_AMBAR  = '#F5AD21';
 const G_TEAL   = '#18AE97';
 
-// Color de cada punto temporal en "Evolución": rampa secuencial de índigo
-// (claro = mes más antiguo → oscuro = mes más reciente). El eje representa
-// un orden, y una escala secuencial es la codificación correcta para eso;
-// interpolar entre los tres colores de marca daba tonos turbios (marrón,
-// oliva) en los meses intermedios.
-const G_EVO_CLARO  = '#B9C4FF';
-const G_EVO_OSCURO = '#2E42C4';
+// El track de "Avance vs meta" llega al 130% de la meta: la línea del 100%
+// queda antes del final y la barra puede pasarse (excedente = zona verde).
+const G_ESCALA_META = 1.3;
+const G_POS_100 = (100 / (100 * G_ESCALA_META)) * 100; // % del track (≈76.9)
 
-function gMezcla(hexA, hexB, t) {
-  const rgb = function(h) {
-    return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
-  };
-  const a = rgb(hexA), b = rgb(hexB);
-  return 'rgb(' + a.map(function(v, i) { return Math.round(v + (b[i] - v) * t); }).join(',') + ')';
-}
-
-function gColorPunto(i, n) {
-  if (n <= 1) return G_INDIGO;
-  return gMezcla(G_EVO_CLARO, G_EVO_OSCURO, i / (n - 1));
-}
-
-// El track de "Avance vs meta" llega al 140% de la meta, así la línea
-// del 100% cae dentro del track y se puede leer el sobrecumplimiento.
-const G_ESCALA_META = 1.4;
-const G_POS_100 = (100 / (100 * G_ESCALA_META)) * 100; // % del track
-
-// Nombres cortos para la grilla de materiales
+// Nombres cortos para la lista de materiales
 const G_MAT_CORTO = {
   'Plástico Suave': 'Suave',
   'Plástico Duro':  'Duro',
-  'Lata Aluminio':  'Lata/Aluminio',
+  'Lata Aluminio':  'Lata',
   'Papel Archivo':  'Papel',
 };
+
+// Color por material (misma paleta que Pesos) para las barras de "TN por
+// material" y las líneas de "Evolución".
+const G_MAT_COLOR = {
+  'PET': '#506CFF', 'Plástico Suave': '#F5AD21', 'Plástico Duro': '#18AE97',
+  'Lata Aluminio': '#EF4444', 'Vidrio': '#33A8DE', 'Cartón': '#C19A6B',
+  'Soplado': '#0BC3FF', 'Papel Archivo': '#7B5CFF', 'Tetrapak': '#0f9b84',
+  'Chatarra': '#8a8a99', 'Cobre': '#B5651D', 'Periódico': '#B8B8C8',
+  'Suela': '#4A4A55', 'Bronce': '#CD7F32', 'Batería': '#9B1C1C', 'Acero': '#A8AEB8',
+  'Otros materiales': '#c3c8d4',
+};
+function gMatColor(n) { return G_MAT_COLOR[n] || '#c3c8d4'; }
+
+function gRgba(hex, a) {
+  let h = String(hex || '').replace('#', '');
+  if (h.length === 3) h = h.split('').map(function(c) { return c + c; }).join('');
+  const n = parseInt(h, 16) || 0;
+  return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+}
+
+// Zona de recuperación: mapea el texto de "Actividad Fuente" a las 3 zonas
+// del gráfico (tolerante a variantes de redacción).
+const G_ZONAS = ['En Relleno', 'Pie de Vereda', 'Punto GIRA', 'Otros'];
+const G_ZONA_COLOR = { 'En Relleno': G_INDIGO, 'Pie de Vereda': G_TEAL, 'Punto GIRA': G_AMBAR, 'Otros': '#c3c8d4' };
+function gZonaDe(act) {
+  const s = String(act || '').toLowerCase();
+  if (s.indexOf('relleno') >= 0) return 'En Relleno';
+  if (s.indexOf('vereda') >= 0 || s.indexOf('fuente') >= 0) return 'Pie de Vereda';
+  if (s.indexOf('gira') >= 0) return 'Punto GIRA';
+  return 'Otros';
+}
+
+// Materiales mostrados en "Evolución" (null = todos los que tengan datos).
+let EVOLUCION_MATS = null;
 
 let DASH_FILTROS = { anio: [], mes: [], provincia: [], asociacion: [] };
 let DASH_DATA    = null;
@@ -160,6 +168,9 @@ function calcularDashboard(entregas) {
   const k = { totalTN: 0, tnPriorizables: 0, ingresosPET: 0, tnPET: 0, tnSuave: 0, tnDuro: 0 };
   const distribucion = {};
   const porProvMesMat = {}; // { provincia: { mes: { material: TN } } }
+  const porMesMat = {};     // { mes: { material: TN } }  (todas las provincias)
+  const porMes = {};        // { mes: { totalTN, prioTN, ingresosPET } }
+  const zonas = {};         // { zona: TN }
   const aniosSet = new Set();
   const mesesSet = new Set();
 
@@ -179,22 +190,41 @@ function calcularDashboard(entregas) {
       }
     });
 
-    k.totalTN        += totalKg / 1000;
+    const totalTN = totalKg / 1000;
+    const petVenta = parseFloat(e['PET Valor Venta']) || 0;
+    k.totalTN        += totalTN;
     k.tnPriorizables += prioKg / 1000;
-    k.ingresosPET    += parseFloat(e['PET Valor Venta']) || 0;
+    k.ingresosPET    += petVenta;
     k.tnPET          += (parseFloat(e['PET Kilos']) || 0) / 1000;
     k.tnSuave        += (parseFloat(e['Plástico Suave Kilos']) || 0) / 1000;
     k.tnDuro         += (parseFloat(e['Plástico Duro Kilos']) || 0) / 1000;
 
+    // Zona de recuperación: el TN de la entrega se reparte entre sus actividades
+    const acts = Array.isArray(e['Actividad Fuente']) ? e['Actividad Fuente']
+               : (e['Actividad Fuente'] ? [e['Actividad Fuente']] : []);
+    if (acts.length && totalTN > 0) {
+      const cuota = totalTN / acts.length;
+      acts.forEach(function(a) { const z = gZonaDe(a); zonas[z] = (zonas[z] || 0) + cuota; });
+    }
+
     const prov = e['Provincia'] || e['_provinciaAsociacion'] || '—';
     const mes  = mesCanon;
     if (mes) {
+      porMes[mes] = porMes[mes] || { totalTN: 0, prioTN: 0, ingresosPET: 0 };
+      porMes[mes].totalTN += totalTN;
+      porMes[mes].prioTN  += prioKg / 1000;
+      porMes[mes].ingresosPET += petVenta;
+
       porProvMesMat[prov] = porProvMesMat[prov] || {};
       porProvMesMat[prov][mes] = porProvMesMat[prov][mes] || {};
+      porMesMat[mes] = porMesMat[mes] || {};
       (CAT.materiales || []).forEach(function(m) {
         const nombre = m['Nombre'];
         const tn = (parseFloat(e[nombre + ' Kilos']) || 0) / 1000;
-        if (tn > 0) porProvMesMat[prov][mes][nombre] = (porProvMesMat[prov][mes][nombre] || 0) + tn;
+        if (tn > 0) {
+          porProvMesMat[prov][mes][nombre] = (porProvMesMat[prov][mes][nombre] || 0) + tn;
+          porMesMat[mes][nombre] = (porMesMat[mes][nombre] || 0) + tn;
+        }
       });
     }
   });
@@ -202,7 +232,11 @@ function calcularDashboard(entregas) {
   const meses = MESES.filter(function(m) { return mesesSet.has(m); });
   const anios = Array.from(aniosSet).filter(function(a) { return a && a !== 'undefined'; }).sort();
 
-  return { kpis: k, distribucion: distribucion, porProvMesMat: porProvMesMat, meses: meses, filtrosDisponibles: { anios: anios } };
+  return {
+    kpis: k, distribucion: distribucion, porProvMesMat: porProvMesMat,
+    porMesMat: porMesMat, porMes: porMes, zonas: zonas,
+    meses: meses, filtrosDisponibles: { anios: anios }
+  };
 }
 
 function poblarFiltrosDisponibles(f) {
@@ -240,274 +274,284 @@ function renderContenidoDashboard() {
   const co2Max  = Math.max(co2.PET,  co2.Suave,  co2.Duro,  1);
   const aguaMax = Math.max(agua.PET, agua.Suave, agua.Duro, 1);
 
+  const co2Total  = co2.PET + co2.Suave + co2.Duro;
+  const aguaTotal = agua.PET + agua.Suave + agua.Duro;
+  const aguaTxt   = aguaTotal >= 1e6 ? fmtNum(aguaTotal / 1e6, 2) + '<u>M litros</u>' : fmtNum(aguaTotal, 0) + '<u>litros</u>';
+
   document.getElementById('dash-content').innerHTML =
     '<div class="g-wrap">' +
 
-      // ── Fila 1: tres KPI ──
-      '<div class="g-kpis">' +
-        gKpi('recycle', 'TN Recuperados',  fmtNum(k.totalTN),             G_INDIGO) +
-        gKpi('star',    'TN Priorizables', fmtNum(k.tnPriorizables),      G_AMBAR) +
-        gKpi('dollar',  'Ingresos PET',    fmtNum(k.ingresosPET, 0),      G_TEAL) +
-      '</div>' +
+      // ── Totales (una sola tarjeta) ──
+      gTotales(k, d.porMes, d.meses) +
 
-      // ── Fila 2: Impacto Ambiental + Avance vs Meta ──
+      // ── Fila: Avance vs Meta | Zona de Recuperación ──
       '<div class="g-duo">' +
 
         '<div class="card">' +
-          '<div class="card-title">Impacto Ambiental</div>' +
-          '<div class="g-imp">' +
-            gImpRow('PET',   co2.PET,   agua.PET,   co2Max, aguaMax) +
-            gImpRow('Suave', co2.Suave, agua.Suave, co2Max, aguaMax) +
-            gImpRow('Duro',  co2.Duro,  agua.Duro,  co2Max, aguaMax) +
-          '</div>' +
-          '<div class="g-ley">' +
-            '<span class="g-ley-item"><span class="g-ley-chip" style="background:' + G_INDIGO + '"></span>CO₂ Evitado</span>' +
-            '<span class="g-ley-item"><span class="g-ley-chip" style="background:' + G_AMBAR + '"></span>Ahorro de agua</span>' +
-          '</div>' +
-        '</div>' +
-
-        '<div class="card">' +
-          '<div class="card-title">Avance vs Meta</div>' +
-          '<div class="g-meta-body">' +
+          '<div class="card-title"><span>Avance vs Meta</span>' +
+            '<button class="icon-btn" onclick="abrirEditarMetas()" title="Editar metas">' + icoHTML('settings') + '</button></div>' +
+          '<div class="g-body g-meta">' +
             gMetaRow('PET',   k.tnPET,   METAS.PET,   G_INDIGO) +
             gMetaRow('Suave', k.tnSuave, METAS.Suave, G_TEAL) +
             gMetaRow('Duro',  k.tnDuro,  METAS.Duro,  G_AMBAR) +
-            '<div class="g-meta-line" style="left:' + G_POS_100 + '%"></div>' +
-            '<div class="g-meta-100" style="left:' + G_POS_100 + '%">100%</div>' +
+            '<div class="g-meta-note"><i></i> La línea marca el 100% de la meta · la zona verde es el excedente</div>' +
           '</div>' +
-          '<div class="g-foot">' +
-            '<button class="icon-btn" onclick="abrirEditarMetas()" title="Editar metas">' + icoHTML('settings') + '</button>' +
-          '</div>' +
+        '</div>' +
+
+        '<div class="card">' +
+          '<div class="card-title">Zona de Recuperación</div>' +
+          '<div class="g-body g-zona">' + gZona(d.zonas, k.totalTN) + '</div>' +
         '</div>' +
 
       '</div>' +
 
-      // ── Fila 3: Evolución + TN por material ──
+      // ── Fila: Impacto Ambiental | TN por Material ──
       '<div class="g-duo">' +
 
         '<div class="card">' +
-          '<div class="card-title"><span>Evolución ' + esc(MATERIAL_EVOLUCION) + '</span>' +
-            '<button class="icon-btn" onclick="abrirSelectorMaterialEvolucion()" title="Elegir material">' + icoHTML('settings') + '</button>' +
+          '<div class="card-title"><span>Impacto Ambiental</span>' +
+            '<span style="font-size:11px;color:var(--text-dim);font-weight:600">por material</span></div>' +
+          '<div class="g-body g-imp2">' +
+            gImpGrupo('CO₂ Evitado', fmtNum(co2Total, 0) + '<u>t CO₂e</u>',
+              [['PET', co2.PET, G_INDIGO], ['Suave', co2.Suave, G_AMBAR], ['Duro', co2.Duro, G_TEAL]],
+              function(v) { return fmtNum(v, 0) + ' t'; }) +
+            gImpGrupo('Ahorro de Agua', aguaTxt,
+              [['PET', agua.PET, G_INDIGO], ['Suave', agua.Suave, G_AMBAR], ['Duro', agua.Duro, G_TEAL]],
+              function(v) { return fmtNum(v, 0) + ' L'; }) +
           '</div>' +
-          gEvolucion(d.porProvMesMat, d.meses, MATERIAL_EVOLUCION) +
         '</div>' +
 
         '<div class="card">' +
-          '<div class="card-title">TN Recuperadas por material</div>' +
-          gMateriales(d.distribucion, d.porProvMesMat, d.meses) +
-          '<div class="g-foot">' +
-            '<button class="icon-btn" onclick="abrirFiltroMateriales()" title="Elegir materiales">' + icoHTML('settings') + '</button>' +
-          '</div>' +
+          '<div class="card-title"><span>TN Recuperados por Material</span>' +
+            '<button class="icon-btn" onclick="abrirFiltroMateriales()" title="Elegir materiales">' + icoHTML('settings') + '</button></div>' +
+          '<div class="g-body g-mat2">' + gMateriales(d.distribucion) + '</div>' +
         '</div>' +
 
+      '</div>' +
+
+      // ── Evolución por Material (ancho completo) ──
+      '<div class="card">' +
+        '<div class="card-title"><span>Evolución por Material</span>' +
+          '<button class="icon-btn" onclick="abrirFiltroEvolucion()" title="Elegir materiales">' + icoHTML('settings') + '</button></div>' +
+        gEvolucionMats(d.porMesMat, d.meses) +
       '</div>' +
 
     '</div>';
 }
 
-// ── KPI ─────────────────────────────────────────────────────
-function gKpi(icono, label, valor, color) {
-  return '<div class="card g-kpi">' +
-    '<div class="g-kpi-ico" style="background:' + color + '">' + icoHTML(icono) + '</div>' +
-    '<div class="g-kpi-txt">' +
-      '<div class="g-kpi-lbl">' + esc(label) + '</div>' +
-      '<div class="g-kpi-val" style="color:' + color + '">' + valor + '</div>' +
-    '</div>' +
+// ── Totales: 3 KPI con pill de tendencia + sparkline ────────
+function gTotales(k, porMes, meses) {
+  const serie = function(campo) { return meses.map(function(m) { return (porMes[m] && porMes[m][campo]) || 0; }); };
+  const seg = function(icono, color, label, valTxt, vals) {
+    return '<div class="g-tot-seg">' +
+      '<div class="g-tot-top"><div class="g-tot-ic" style="background:' + gRgba(color, .13) + ';color:' + color + '">' + icoHTML(icono) + '</div>' +
+        '<span class="g-tot-lbl">' + esc(label) + '</span></div>' +
+      '<div class="g-tot-val" style="color:' + color + '">' + valTxt + '</div>' +
+      '<div class="g-tot-foot">' + gTrend(vals) + gSparkline(vals, color) + '</div>' +
+    '</div>';
+  };
+  return '<div class="card g-tot">' +
+    seg('recycle', G_INDIGO, 'TN Recuperados',  fmtNum(k.totalTN),           serie('totalTN')) +
+    seg('star',    G_AMBAR,  'TN Priorizables', fmtNum(k.tnPriorizables),    serie('prioTN')) +
+    seg('dollar',  G_TEAL,   'Ingresos PET',    '$' + fmtNum(k.ingresosPET, 0), serie('ingresosPET')) +
   '</div>';
 }
 
-// ── Impacto Ambiental: dos barras por material (CO₂ y agua) ──
-// Cada serie se normaliza contra su propio máximo porque las unidades
-// no son comparables (toneladas de CO₂ vs litros de agua).
-function gImpRow(label, co2, agua, co2Max, aguaMax) {
-  return '<div class="g-imp-row">' +
-    '<div class="g-imp-lbl">' + label + '</div>' +
-    '<div class="g-imp-bars">' +
-      gImpBar(co2,  co2Max,  G_INDIGO, fmtNum(co2, 0)  + ' t') +
-      gImpBar(agua, aguaMax, G_AMBAR,  fmtNum(agua, 0) + ' L') +
-    '</div>' +
-  '</div>';
+function gTrend(vals) {
+  if (!vals || vals.length < 2) return '<span class="g-pill up">— <small>sin histórico</small></span>';
+  const cur = vals[vals.length - 1], prev = vals[vals.length - 2];
+  if (prev <= 0) return '<span class="g-pill up">— <small>sin mes previo</small></span>';
+  const ch = ((cur - prev) / prev) * 100;
+  const up = ch >= 0;
+  return '<span class="g-pill ' + (up ? 'up' : 'down') + '">' + (up ? '▲' : '▼') + ' ' + fmtNum(Math.abs(ch), 1) + '% <small>vs. mes ant.</small></span>';
 }
 
-// La cifra tiene su propia columna a la derecha (no va pegada al final de la
-// barra), así los números quedan alineados entre sí y la barra puede usar
-// todo el ancho disponible sin tope artificial.
-function gImpBar(valor, max, color, texto) {
-  const v = valor || 0;
-  const w = v <= 0 ? 0 : Math.max(2, Math.min(100, (v / max) * 100));
-  return '<div class="g-imp-bar">' +
-    '<span class="g-imp-track">' +
-      '<span class="g-imp-fill" style="width:' + w + '%;background:' + color + '"></span>' +
-    '</span>' +
-    '<span class="g-imp-val">' + texto + '</span>' +
-  '</div>';
+function gSparkline(vals, color) {
+  let v = (vals && vals.length) ? vals.slice() : [0];
+  if (v.length === 1) v = [v[0], v[0]];
+  const n = v.length;
+  const lo = Math.min.apply(null, v), hi = Math.max.apply(null, v);
+  const x = function(i) { return (i / (n - 1)) * 100; };
+  const y = function(val) { return hi === lo ? 17 : 30 - ((val - lo) / (hi - lo)) * 24; };
+  const pts = v.map(function(val, i) { return x(i).toFixed(1) + ',' + y(val).toFixed(1); });
+  const last = pts[pts.length - 1].split(',');
+  return '<svg class="g-spark" viewBox="0 0 100 34" preserveAspectRatio="none">' +
+    '<polygon points="' + pts.join(' ') + ' 100,34 0,34" fill="' + gRgba(color, .12) + '"/>' +
+    '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + color + '" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<circle cx="' + last[0] + '" cy="' + last[1] + '" r="2.8" fill="' + color + '"/></svg>';
 }
 
-// ── Avance vs Meta ──────────────────────────────────────────
+// ── Avance vs Meta (línea del 100% antes del final + excedente) ──
 function gMetaRow(nombre, actual, meta, color) {
   const a = actual || 0;
   const pct = meta > 0 ? (a / meta) * 100 : 0;
   const w = meta > 0 ? Math.min(100, pct / G_ESCALA_META) : 0;
-  const wFinal = a > 0 ? Math.max(13, w) : 0;
-  return '<div class="g-meta-row">' +
-    '<div class="g-meta-lbl">' + nombre + '</div>' +
-    '<span class="g-meta-num">' + fmtNum(a) + ' / ' + fmtNum(meta, 0) + ' TN</span>' +
+  const wFinal = a > 0 ? Math.max(11, w) : 0;
+  const num = fmtNum(a) + ' / ' + fmtNum(meta, 0) + ' TN' + (pct >= 100 ? ' · <span class="ok">✓ superada</span>' : '');
+  const over = 'left:' + G_POS_100 + '%';
+  return '<div>' +
+    '<div class="g-meta-top"><span class="g-meta-name">' + nombre + '</span><span class="g-meta-num">' + num + '</span></div>' +
     '<div class="g-meta-track">' +
+      '<div class="g-meta-over" style="' + over + '"></div>' +
       '<div class="g-meta-fill" style="width:' + wFinal + '%;background:' + color + '">' + pct.toFixed(0) + '%</div>' +
+      '<div class="g-meta-goal" style="' + over + '"></div>' +
     '</div>' +
   '</div>';
 }
 
-// ── Evolución por material: un slope chart por provincia ────
-// Los puntos se dibujan como trazos de largo cero con remate redondo y
-// vector-effect="non-scaling-stroke": así quedan circulares aunque el
-// SVG se estire horizontalmente (preserveAspectRatio="none").
-function gEvolucion(porProvMesMat, meses, material) {
-  const mat = material || MATERIAL_EVOLUCION;
-  const valor = function(p, m) {
-    return (porProvMesMat[p] && porProvMesMat[p][m] && porProvMesMat[p][m][mat]) || 0;
-  };
-
-  const provs = PROVINCIAS.filter(function(p) {
-    return meses.some(function(m) { return valor(p, m) > 0; });
-  });
-
-  if (!provs.length || !meses.length) {
-    return '<div class="empty-state"><p>Sin datos de ' + esc(mat) + ' para este filtro</p></div>';
-  }
-
-  const x = function(i) {
-    return meses.length === 1 ? 50 : 2 + (i * 96) / (meses.length - 1);
-  };
-
-  const filas = provs.map(function(p) {
-    // Cada fila se normaliza a SU propio rango: la forma muestra la tendencia
-    // de esa provincia, no su magnitud. Con escala global compartida, provincias
-    // de volumen parecido salían todas planas y la tarjeta parecía vacía.
-    // La cifra real de cada punto está en el tooltip.
-    const vals = meses.map(function(m) { return valor(p, m); });
-    const lo = Math.min.apply(null, vals);
-    const hi = Math.max.apply(null, vals);
-    const y = function(v) {
-      if (hi === lo) return 13;                       // sin variación → al centro
-      return 23 - ((v - lo) / (hi - lo)) * 20;
-    };
-
-    const pts = meses.map(function(m, i) { return x(i) + ',' + y(valor(p, m)); }).join(' ');
-    const dots = meses.map(function(m, i) {
-      const v = valor(p, m);
-      const c = gColorPunto(i, meses.length);
-      return '<line x1="' + x(i) + '" y1="' + y(v) + '" x2="' + x(i) + '" y2="' + y(v) + '" ' +
-             'stroke="' + c + '" stroke-width="9" stroke-linecap="round" vector-effect="non-scaling-stroke">' +
-             '<title>' + esc(m) + ': ' + fmtNum(v) + ' TN</title></line>';
-    }).join('');
-    return '<div class="g-evo-row">' +
-      '<div class="g-evo-prov">' + esc(p) + '</div>' +
-      '<svg class="g-evo-svg" viewBox="0 0 100 26" preserveAspectRatio="none">' +
-        '<polyline points="' + pts + '" fill="none" stroke="#d8dce6" stroke-width="1.5" vector-effect="non-scaling-stroke"/>' +
-        dots +
-      '</svg>' +
+// ── Zona de Recuperación (barras, mismo patrón que Avance) ──
+function gZona(zonas, totalTN) {
+  const items = G_ZONAS.map(function(z) { return { z: z, tn: (zonas && zonas[z]) || 0 }; })
+    .filter(function(i) { return i.tn > 0; });
+  items.sort(function(a, b) { return b.tn - a.tn; });
+  if (!items.length) return '<div class="empty-state"><p>Sin datos de zona para este filtro</p></div>';
+  const total = totalTN > 0 ? totalTN : items.reduce(function(s, i) { return s + i.tn; }, 0) || 1;
+  const rows = items.map(function(i) {
+    const pct = (i.tn / total) * 100;
+    const w = Math.max(6, Math.min(100, pct));
+    const color = G_ZONA_COLOR[i.z] || '#c3c8d4';
+    return '<div>' +
+      '<div class="g-z-top"><span class="g-z-name">' + esc(i.z) + '</span><span class="g-z-val">' + fmtNum(i.tn) + ' TN</span></div>' +
+      '<div class="g-z-track"><div class="g-z-fill" style="width:' + w + '%;background:' + color + '">' + pct.toFixed(0) + '%</div></div>' +
     '</div>';
   }).join('');
-
-  // Leyenda: qué mes es cada color de punto
-  const leyenda = meses.map(function(m, i) {
-    return '<span class="g-ley-item">' +
-      '<span class="g-ley-chip" style="border-radius:50%;background:' + gColorPunto(i, meses.length) + '"></span>' +
-      esc(m) + '</span>';
-  }).join('');
-
-  return '<div class="g-evo">' + filas + '</div>' +
-         '<div class="g-ley">' + leyenda + '</div>';
+  return rows + '<div class="g-z-note">Total recuperado · ' + fmtNum(total) + ' TN en ' +
+    items.length + ' zona' + (items.length !== 1 ? 's' : '') + '</div>';
 }
 
-// ── TN Recuperadas por material ─────────────────────────────
-// Valor = total TN del filtro actual. Flecha = último mes con datos
-// comparado con el mes anterior (si hay al menos dos meses).
-function gMateriales(distribucion, porProvMesMat, meses) {
-  const totalMes = function(mes, mat) {
-    let t = 0;
-    Object.keys(porProvMesMat).forEach(function(p) {
-      const mm = porProvMesMat[p][mes];
-      if (mm && mm[mat]) t += mm[mat];
-    });
-    return t;
-  };
+// ── Impacto Ambiental: un grupo de barras por métrica ──────
+function gImpGrupo(titulo, totalTxt, rows, fmtVal) {
+  const max = Math.max.apply(null, rows.map(function(r) { return r[1]; }).concat([1]));
+  const bars = rows.map(function(r) {
+    const w = r[1] <= 0 ? 0 : Math.max(2, Math.min(100, (r[1] / max) * 100));
+    return '<div class="g-ibar"><span class="g-ibn">' + esc(r[0]) + '</span>' +
+      '<div class="g-ibt"><div class="g-ibf" style="width:' + w + '%;background:' + r[2] + '"></div></div>' +
+      '<span class="g-ibv">' + fmtVal(r[1]) + '</span></div>';
+  }).join('');
+  return '<div class="g-imp-grp">' +
+    '<div class="g-imp-gh"><span>' + esc(titulo) + '</span><b>' + totalTxt + '</b></div>' + bars + '</div>';
+}
 
-  const ult  = meses.length ? meses[meses.length - 1] : null;
-  const prev = meses.length > 1 ? meses[meses.length - 2] : null;
-
+// ── TN Recuperados por Material: barras horizontales ────────
+function gMateriales(distribucion) {
   const items = [];
-  let otros = 0, otrosUlt = 0, otrosPrev = 0;
-
-  Object.keys(distribucion).forEach(function(nombre) {
+  let otros = 0;
+  Object.keys(distribucion || {}).forEach(function(nombre) {
     const val = distribucion[nombre];
     if (!(val > 0)) return;
-    const vUlt  = ult  ? totalMes(ult,  nombre) : 0;
-    const vPrev = prev ? totalMes(prev, nombre) : 0;
-    if (MATS_FILTRO_ACTIVOS.includes(nombre)) {
-      items.push({ nombre: G_MAT_CORTO[nombre] || nombre, val: val, ult: vUlt, prev: vPrev });
-    } else {
-      otros += val; otrosUlt += vUlt; otrosPrev += vPrev;
-    }
+    if (MATS_FILTRO_ACTIVOS.includes(nombre)) items.push({ nombre: nombre, val: val });
+    else otros += val;
   });
-
   items.sort(function(a, b) { return b.val - a.val; });
-  if (otros > 0) items.push({ nombre: 'Otros materiales', val: otros, ult: otrosUlt, prev: otrosPrev });
+  if (otros > 0) items.push({ nombre: 'Otros materiales', val: otros, otros: true });
+  if (!items.length) return '<div class="empty-state"><p>Sin materiales con datos para este filtro</p></div>';
 
-  if (!items.length) {
-    return '<div class="empty-state"><p>Sin materiales con datos para este filtro</p></div>';
+  const max = Math.max.apply(null, items.map(function(i) { return i.val; }).concat([1]));
+  return items.map(function(it) {
+    const w = Math.max(3, Math.min(100, (it.val / max) * 100));
+    const color = it.otros ? '#c3c8d4' : gMatColor(it.nombre);
+    const nom = it.otros ? 'Otros' : (G_MAT_CORTO[it.nombre] || it.nombre);
+    const dim = it.otros ? ' style="color:var(--text-dim)"' : '';
+    return '<div class="g-matrow"><span class="g-matname"' + dim + '>' + esc(nom) + '</span>' +
+      '<div class="g-mattrack"><div class="g-matfill" style="width:' + w + '%;background:' + color + '"></div></div>' +
+      '<span class="g-matval"' + dim + '>' + fmtNum(it.val) + '</span></div>';
+  }).join('');
+}
+
+// ── Evolución por Material: una línea por material sobre los meses ──
+// Todos los materiales con datos se muestran al inicio; el ⚙️ abre un modal
+// para filtrar cuáles ver (EVOLUCION_MATS). Escala Y compartida.
+function gEvolucionMats(porMesMat, meses) {
+  if (!meses.length) return '<div class="empty-state"><p>Sin datos para este filtro</p></div>';
+
+  const valor = function(n, m) { return (porMesMat[m] || {})[n] || 0; };
+  const conDatos = {};
+  meses.forEach(function(m) {
+    const mm = porMesMat[m] || {};
+    Object.keys(mm).forEach(function(n) { if (mm[n] > 0) conDatos[n] = true; });
+  });
+  let mats = Object.keys(conDatos);
+  const totalDe = function(n) { return meses.reduce(function(s, m) { return s + valor(n, m); }, 0); };
+  mats.sort(function(a, b) { return totalDe(b) - totalDe(a); });
+  const shown = EVOLUCION_MATS ? mats.filter(function(n) { return EVOLUCION_MATS.includes(n); }) : mats;
+  if (!shown.length) return '<div class="empty-state"><p>Elige al menos un material (⚙️)</p></div>';
+
+  let yMax = 0;
+  shown.forEach(function(n) { meses.forEach(function(m) { yMax = Math.max(yMax, valor(n, m)); }); });
+  if (yMax <= 0) yMax = 1;
+
+  const padL = 60, padR = 20, padT = 20, padB = 40, innerW = 1000 - padL - padR, innerH = 300 - padT - padB;
+  const x = function(i) { return meses.length === 1 ? (padL + innerW / 2) : padL + (i / (meses.length - 1)) * innerW; };
+  const y = function(v) { return padT + innerH - (v / yMax) * innerH; };
+
+  let grid = '', ylab = '';
+  for (let g = 0; g <= 4; g++) {
+    const val = yMax * g / 4, yy = y(val);
+    grid += '<line x1="' + padL + '" y1="' + yy.toFixed(1) + '" x2="' + (padL + innerW) + '" y2="' + yy.toFixed(1) + '" stroke="#eef1f7" stroke-width="1"/>';
+    ylab += '<text x="' + (padL - 10) + '" y="' + (yy + 4).toFixed(1) + '" text-anchor="end" font-family="Outfit" font-size="11" fill="#a0a0b0">' + fmtNum(val, 0) + '</text>';
   }
-
-  const filas = items.map(function(it) {
-    let cls = 'flat', ico = '', tip = 'Sin mes anterior para comparar';
-    if (prev) {
-      if (it.ult > it.prev)      { cls = 'up';   ico = icoHTML('triUp');   tip = 'Subió vs ' + prev; }
-      else if (it.ult < it.prev) { cls = 'down'; ico = icoHTML('triDown'); tip = 'Bajó vs ' + prev; }
-      else                       { tip = 'Sin cambio vs ' + prev; }
-    }
-    return '<div class="g-mat">' +
-      '<span class="g-mat-nom">' + esc(it.nombre) + '</span>' +
-      '<span class="g-mat-badge ' + cls + '" title="' + esc(tip) + '">' + ico + fmtNum(it.val) + ' TN</span>' +
-    '</div>';
+  const xlab = meses.map(function(m, i) {
+    return '<text x="' + x(i).toFixed(1) + '" y="' + (padT + innerH + 20) + '" text-anchor="middle" font-family="Outfit" font-size="12" font-weight="600" fill="#767c8a">' + esc(m.substring(0, 3)) + '</text>';
   }).join('');
 
-  return '<div class="g-mats">' + filas + '</div>';
+  const lineas = shown.map(function(n) {
+    const c = gMatColor(n);
+    const pts = meses.map(function(m, i) { return x(i).toFixed(1) + ',' + y(valor(n, m)).toFixed(1); }).join(' ');
+    const dots = meses.map(function(m, i) {
+      return '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(valor(n, m)).toFixed(1) + '" r="4" fill="' + c + '" stroke="#fff" stroke-width="1.5">' +
+        '<title>' + esc(n) + ' · ' + esc(m) + ': ' + fmtNum(valor(n, m)) + ' TN</title></circle>';
+    }).join('');
+    return '<polyline points="' + pts + '" fill="none" stroke="' + c + '" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' + dots;
+  }).join('');
+
+  const leg = shown.map(function(n) {
+    return '<span class="g-eleg"><span class="g-eleg-c" style="background:' + gMatColor(n) + '"></span>' + esc(G_MAT_CORTO[n] || n) + '</span>';
+  }).join('');
+
+  return '<svg class="g-evochart" viewBox="0 0 1000 300">' + grid + ylab + '<g>' + xlab + '</g>' + lineas + '</svg>' +
+    '<div class="g-evoleg">' + leg + '</div>';
 }
 
 // ============================================================
-// SELECTOR DE MATERIAL (gráfico "Evolución por Material")
+// FILTRO DE MATERIALES — Evolución (multi-select)
 // ============================================================
 
-function abrirSelectorMaterialEvolucion() {
-  const mats = (CAT.materiales || []).length
-    ? CAT.materiales.map(function(m) { return m['Nombre']; })
-    : ['PET','Plástico Duro','Plástico Suave','Cartón','Lata Aluminio','Vidrio'];
-
-  const opts = mats.map(function(m) {
+function abrirFiltroEvolucion() {
+  const mats = (CAT.materiales || []).map(function(m) { return m['Nombre']; });
+  const checks = mats.map(function(m) {
+    const on = EVOLUCION_MATS ? EVOLUCION_MATS.includes(m) : true;
     return '<label class="filter-opt">' +
-      '<input type="radio" name="mat-evo" value="' + esc(m) + '" ' + (m === MATERIAL_EVOLUCION ? 'checked' : '') + '>' +
+      '<input type="checkbox" value="' + esc(m) + '" ' + (on ? 'checked' : '') + '>' +
       '<span>' + esc(m) + '</span></label>';
   }).join('');
 
   abrirModal(
     '<div class="modal" style="max-width:420px">' +
       '<div class="modal-head">' +
-        '<div><div class="modal-title">Evolución por material</div><div class="modal-sub">Elige el material a mostrar en la gráfica</div></div>' +
+        '<div><div class="modal-title">Materiales</div><div class="modal-sub">Elige cuáles ver en la evolución</div></div>' +
         '<button class="modal-close" onclick="cerrarModal()"></button>' +
       '</div>' +
-      '<div class="modal-body"><div id="mat-evo-opts">' + opts + '</div></div>' +
+      '<div class="modal-body">' +
+        '<div style="display:flex;gap:8px;margin-bottom:14px">' +
+          '<button class="btn btn-glass btn-sm" onclick="selTodosEvo(true)">Todos</button>' +
+          '<button class="btn btn-glass btn-sm" onclick="selTodosEvo(false)">Ninguno</button>' +
+        '</div>' +
+        '<div id="evo-checks">' + checks + '</div>' +
+      '</div>' +
       '<div class="modal-foot">' +
         '<button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>' +
-        '<button class="btn btn-primary" onclick="aplicarMaterialEvolucion()">Aplicar</button>' +
+        '<button class="btn btn-primary" onclick="aplicarFiltroEvolucion()">Aplicar</button>' +
       '</div>' +
     '</div>'
   );
 }
 
-function aplicarMaterialEvolucion() {
-  const sel = document.querySelector('#mat-evo-opts input[name=mat-evo]:checked');
-  if (sel) MATERIAL_EVOLUCION = sel.value;
+function selTodosEvo(todos) {
+  document.querySelectorAll('#evo-checks input[type=checkbox]').forEach(function(cb) { cb.checked = todos; });
+}
+
+function aplicarFiltroEvolucion() {
+  EVOLUCION_MATS = Array.prototype.slice.call(document.querySelectorAll('#evo-checks input:checked')).map(function(cb) { return cb.value; });
   cerrarModal();
   if (DASH_DATA) renderContenidoDashboard();
 }
