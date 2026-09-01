@@ -19,15 +19,54 @@ let METAS = { PET: 811, Suave: 248, Duro: 377 };
 const FACTOR_CO2  = { PET: 2.17, Suave: 1.58, Duro: 1.42 };  // tCO₂e evitadas / TN
 const FACTOR_AGUA = { PET: 3000, Suave: 3930, Duro: 4900 };  // litros / TN
 
-// Materiales en la torta (usan el nombre real del catálogo)
+// Materiales listados individualmente en "TN Recuperadas por material";
+// el resto se agrupa en "Otros materiales" (editable con el ⚙️ de la tarjeta)
 const MATS_TORTA = ['PET','Plástico Duro','Plástico Suave','Cartón','Lata Aluminio','Vidrio'];
 let MATS_FILTRO_ACTIVOS = MATS_TORTA.slice();
 
 // Material mostrado en el gráfico "Evolución por Material" (elegible con el ícono ⚙️)
 let MATERIAL_EVOLUCION = 'PET';
 
-let chartTorta = null;
-let chartLineas = null;
+// ── Paleta de la sección Gráficos ──────────────────────────
+// Tres colores + rosa solo para tendencias a la baja. No usa la paleta
+// multicolor por material (esa vive en Pesos).
+const G_INDIGO = '#506CFF';
+const G_AMBAR  = '#F5AD21';
+const G_TEAL   = '#18AE97';
+
+// Color de cada punto temporal en "Evolución": rampa secuencial de índigo
+// (claro = mes más antiguo → oscuro = mes más reciente). El eje representa
+// un orden, y una escala secuencial es la codificación correcta para eso;
+// interpolar entre los tres colores de marca daba tonos turbios (marrón,
+// oliva) en los meses intermedios.
+const G_EVO_CLARO  = '#B9C4FF';
+const G_EVO_OSCURO = '#2E42C4';
+
+function gMezcla(hexA, hexB, t) {
+  const rgb = function(h) {
+    return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+  };
+  const a = rgb(hexA), b = rgb(hexB);
+  return 'rgb(' + a.map(function(v, i) { return Math.round(v + (b[i] - v) * t); }).join(',') + ')';
+}
+
+function gColorPunto(i, n) {
+  if (n <= 1) return G_INDIGO;
+  return gMezcla(G_EVO_CLARO, G_EVO_OSCURO, i / (n - 1));
+}
+
+// El track de "Avance vs meta" llega al 140% de la meta, así la línea
+// del 100% cae dentro del track y se puede leer el sobrecumplimiento.
+const G_ESCALA_META = 1.4;
+const G_POS_100 = (100 / (100 * G_ESCALA_META)) * 100; // % del track
+
+// Nombres cortos para la grilla de materiales
+const G_MAT_CORTO = {
+  'Plástico Suave': 'Suave',
+  'Plástico Duro':  'Duro',
+  'Lata Aluminio':  'Lata/Aluminio',
+  'Papel Archivo':  'Papel',
+};
 
 let DASH_FILTROS = { anio: [], mes: [], provincia: [], asociacion: [] };
 let DASH_DATA    = null;
@@ -56,15 +95,6 @@ function registerDashboardFilters() {
 // ============================================================
 
 async function renderDashboard() {
-  if (typeof Chart === 'undefined') {
-    await new Promise(function(resolve) {
-      const s = document.createElement('script');
-      s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js';
-      s.onload = resolve;
-      document.head.appendChild(s);
-    });
-  }
-
   registerDashboardFilters();
 
   document.getElementById('main-content').innerHTML =
@@ -75,7 +105,7 @@ async function renderDashboard() {
       '</div>' +
       '<div class="hdr-actions">' +
         '<button class="hdr-circle" onclick="openFilterDrawer(\'dashboard\')" title="Filtros">' +
-          icoHTML('filter') +
+          icoHTML('sliders') +
           '<span class="filter-badge" id="badge-dashboard" style="display:none;">0</span>' +
         '</button>' +
         '<button class="hdr-circle hdr-circle-danger" onclick="cerrarSesion()" title="Volver al Hub">' +
@@ -94,6 +124,15 @@ async function renderDashboard() {
 
 function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
 
+// Los meses llegan de Firestore con mayúsculas inconsistentes ("julio",
+// "Julio"). Todo lo que agrupe o compare por mes pasa por aquí para que
+// coincida con MESES; devuelve '' si no reconoce el valor.
+function mesCanonico(m) {
+  const k = String(m || '').trim().toLowerCase();
+  const i = MESES.findIndex(function(x) { return x.toLowerCase() === k; });
+  return i >= 0 ? MESES[i] : '';
+}
+
 // ============================================================
 // CARGAR + AGREGAR (en el cliente)
 // ============================================================
@@ -102,7 +141,7 @@ async function cargarDashboard() {
   try {
     const filtradas = (CAT.entregas || []).filter(function(e) {
       return pasaFiltro(DASH_FILTROS.anio,       String(e['Año'])) &&
-             pasaFiltro(DASH_FILTROS.mes,        e['Mes']) &&
+             pasaFiltro(DASH_FILTROS.mes,        mesCanonico(e['Mes'])) &&
              pasaFiltro(DASH_FILTROS.provincia,  e['Provincia']) &&
              pasaFiltro(DASH_FILTROS.asociacion, e['ID_Asociacion']);
     });
@@ -126,7 +165,8 @@ function calcularDashboard(entregas) {
 
   entregas.forEach(function(e) {
     if (e['Año'] !== '' && e['Año'] != null) aniosSet.add(String(e['Año']));
-    if (e['Mes']) mesesSet.add(e['Mes']);
+    const mesCanon = mesCanonico(e['Mes']);
+    if (mesCanon) mesesSet.add(mesCanon);
 
     let totalKg = 0, prioKg = 0;
     (CAT.materiales || []).forEach(function(m) {
@@ -147,7 +187,7 @@ function calcularDashboard(entregas) {
     k.tnDuro         += (parseFloat(e['Plástico Duro Kilos']) || 0) / 1000;
 
     const prov = e['Provincia'] || e['_provinciaAsociacion'] || '—';
-    const mes  = e['Mes'] || '';
+    const mes  = mesCanon;
     if (mes) {
       porProvMesMat[prov] = porProvMesMat[prov] || {};
       porProvMesMat[prov][mes] = porProvMesMat[prov][mes] || {};
@@ -187,205 +227,244 @@ function renderContenidoDashboard() {
   const d = DASH_DATA;
   const k = d.kpis;
 
-  const co2PET   = (k.tnPET   || 0) * FACTOR_CO2.PET;
-  const co2Suave = (k.tnSuave || 0) * FACTOR_CO2.Suave;
-  const co2Duro  = (k.tnDuro  || 0) * FACTOR_CO2.Duro;
-  const co2Max   = Math.max(co2PET, co2Suave, co2Duro, 1);
-
-  const aguaPET   = (k.tnPET   || 0) * FACTOR_AGUA.PET;
-  const aguaSuave = (k.tnSuave || 0) * FACTOR_AGUA.Suave;
-  const aguaDuro  = (k.tnDuro  || 0) * FACTOR_AGUA.Duro;
-  const aguaMax   = Math.max(aguaPET, aguaSuave, aguaDuro, 1);
-
-  if (chartTorta)  { chartTorta.destroy();  chartTorta  = null; }
-  if (chartLineas) { chartLineas.destroy(); chartLineas = null; }
+  const co2 = {
+    PET:   (k.tnPET   || 0) * FACTOR_CO2.PET,
+    Suave: (k.tnSuave || 0) * FACTOR_CO2.Suave,
+    Duro:  (k.tnDuro  || 0) * FACTOR_CO2.Duro,
+  };
+  const agua = {
+    PET:   (k.tnPET   || 0) * FACTOR_AGUA.PET,
+    Suave: (k.tnSuave || 0) * FACTOR_AGUA.Suave,
+    Duro:  (k.tnDuro  || 0) * FACTOR_AGUA.Duro,
+  };
+  const co2Max  = Math.max(co2.PET,  co2.Suave,  co2.Duro,  1);
+  const aguaMax = Math.max(agua.PET, agua.Suave, agua.Duro, 1);
 
   document.getElementById('dash-content').innerHTML =
-    '<div class="dash-grid">' +
+    '<div class="g-wrap">' +
 
-      '<div class="card glass dash-card-totales">' +
-        '<div class="card-title">Totales</div>' +
-        '<div class="totales-divider"></div>' +
-        '<div class="totales-list">' +
-          '<div class="totales-row"><span class="totales-label">TN Recuperadas</span><span class="totales-value">' + fmtNum(k.totalTN) + '</span></div>' +
-          '<div class="totales-row"><span class="totales-label">TN Priorizables</span><span class="totales-value">' + fmtNum(k.tnPriorizables) + '</span></div>' +
-          '<div class="totales-row"><span class="totales-label">Ingresos venta PET</span><span class="totales-value">' + fmtMoney(k.ingresosPET) + '</span></div>' +
-        '</div>' +
+      // ── Fila 1: tres KPI ──
+      '<div class="g-kpis">' +
+        gKpi('recycle', 'TN Recuperados',  fmtNum(k.totalTN),             G_INDIGO) +
+        gKpi('star',    'TN Priorizables', fmtNum(k.tnPriorizables),      G_AMBAR) +
+        gKpi('dollar',  'Ingresos PET',    fmtNum(k.ingresosPET, 0),      G_TEAL) +
       '</div>' +
 
-      '<div class="card glass dash-card-torta">' +
-        '<div class="card-title" style="justify-content:flex-end;">TN Recuperadas por material</div>' +
-        '<div class="torta-wrap">' +
-          '<div class="torta-canvas-wrap"><canvas id="chart-torta"></canvas></div>' +
-          '<button class="icon-btn torta-filter-btn" onclick="abrirFiltroMateriales()" title="Filtrar materiales">' + icoHTML('filter') + '</button>' +
+      // ── Fila 2: Impacto Ambiental + Avance vs Meta ──
+      '<div class="g-duo">' +
+
+        '<div class="card">' +
+          '<div class="card-title">Impacto Ambiental</div>' +
+          '<div class="g-imp">' +
+            gImpRow('PET',   co2.PET,   agua.PET,   co2Max, aguaMax) +
+            gImpRow('Suave', co2.Suave, agua.Suave, co2Max, aguaMax) +
+            gImpRow('Duro',  co2.Duro,  agua.Duro,  co2Max, aguaMax) +
+          '</div>' +
+          '<div class="g-ley">' +
+            '<span class="g-ley-item"><span class="g-ley-chip" style="background:' + G_INDIGO + '"></span>CO₂ Evitado</span>' +
+            '<span class="g-ley-item"><span class="g-ley-chip" style="background:' + G_AMBAR + '"></span>Ahorro de agua</span>' +
+          '</div>' +
         '</div>' +
+
+        '<div class="card">' +
+          '<div class="card-title">Avance vs Meta</div>' +
+          '<div class="g-meta-body">' +
+            gMetaRow('PET',   k.tnPET,   METAS.PET,   G_INDIGO) +
+            gMetaRow('Suave', k.tnSuave, METAS.Suave, G_TEAL) +
+            gMetaRow('Duro',  k.tnDuro,  METAS.Duro,  G_AMBAR) +
+            '<div class="g-meta-line" style="left:' + G_POS_100 + '%"></div>' +
+            '<div class="g-meta-100" style="left:' + G_POS_100 + '%">100%</div>' +
+          '</div>' +
+          '<div class="g-foot">' +
+            '<button class="icon-btn" onclick="abrirEditarMetas()" title="Editar metas">' + icoHTML('settings') + '</button>' +
+          '</div>' +
+        '</div>' +
+
       '</div>' +
 
-      '<div class="card glass dash-card-co2">' +
-        '<div class="card-title">CO₂ evitado</div>' +
-        '<div class="bars-list">' +
-          barraHorizontal('PET',   co2PET,   'bar-grad-pet',   't', 0, co2Max) +
-          barraHorizontal('Suave', co2Suave, 'bar-grad-suave', 't', 0, co2Max) +
-          barraHorizontal('Duro',  co2Duro,  'bar-grad-duro',  't', 0, co2Max) +
+      // ── Fila 3: Evolución + TN por material ──
+      '<div class="g-duo">' +
+
+        '<div class="card">' +
+          '<div class="card-title"><span>Evolución ' + esc(MATERIAL_EVOLUCION) + '</span>' +
+            '<button class="icon-btn" onclick="abrirSelectorMaterialEvolucion()" title="Elegir material">' + icoHTML('settings') + '</button>' +
+          '</div>' +
+          gEvolucion(d.porProvMesMat, d.meses, MATERIAL_EVOLUCION) +
         '</div>' +
-        '<div class="card-footnote">CO₂ evitado = Toneladas × Factor de ahorro</div>' +
+
+        '<div class="card">' +
+          '<div class="card-title">TN Recuperadas por material</div>' +
+          gMateriales(d.distribucion, d.porProvMesMat, d.meses) +
+          '<div class="g-foot">' +
+            '<button class="icon-btn" onclick="abrirFiltroMateriales()" title="Elegir materiales">' + icoHTML('settings') + '</button>' +
+          '</div>' +
+        '</div>' +
+
       '</div>' +
 
-      '<div class="card glass dash-card-meta">' +
-        '<div class="card-title"><span>Avance vs meta</span>' +
-          '<button class="icon-btn" onclick="abrirEditarMetas()" title="Editar metas">' + icoHTML('settings') + '</button>' +
-        '</div>' +
-        '<div class="bullet-list">' +
-          bulletRow('PET',   k.tnPET,   METAS.PET,   'linear-gradient(90deg,#18AE97,#506CFF)') +
-          bulletRow('Duro',  k.tnDuro,  METAS.Duro,  'linear-gradient(90deg,#0BC3FF,#506CFF)') +
-          bulletRow('Suave', k.tnSuave, METAS.Suave, 'linear-gradient(90deg,#9FDA60,#506CFF)') +
-        '</div>' +
-      '</div>' +
-
-      '<div class="card glass dash-card-agua">' +
-        '<div class="card-title">Ahorro de agua</div>' +
-        '<div class="bars-list">' +
-          barraHorizontal('PET',   aguaPET,   'bar-grad-pet',   'L', 0, aguaMax) +
-          barraHorizontal('Suave', aguaSuave, 'bar-grad-suave', 'L', 0, aguaMax) +
-          barraHorizontal('Duro',  aguaDuro,  'bar-grad-duro',  'L', 0, aguaMax) +
-        '</div>' +
-        '<div class="card-footnote">Ahorro de agua = Toneladas × Factor</div>' +
-      '</div>' +
-
-    '</div>' +
-
-    '<div class="card glass dash-row-bottom">' +
-      '<div class="card-title"><span>Evolución por Material · ' + esc(MATERIAL_EVOLUCION) + '</span>' +
-        '<button class="icon-btn" onclick="abrirSelectorMaterialEvolucion()" title="Elegir material">' + icoHTML('settings') + '</button>' +
-      '</div>' +
-      '<div style="position:relative;height:280px"><canvas id="chart-lineas"></canvas></div>' +
     '</div>';
-
-  setTimeout(function() {
-    initChartTorta(d.distribucion);
-    initChartLineas(d.porProvMesMat, d.meses, MATERIAL_EVOLUCION);
-  }, 50);
 }
 
-function barraHorizontal(label, valor, gradClass, unidad, dec, max) {
-  if (dec === undefined) dec = 0;
-  if (max === undefined) max = 1;
-  const v = valor || 0;
-  const ancho = v <= 0 ? 0 : Math.max(6, Math.min(100, (v / max) * 100));
-  const valFmt = dec === 0 ? fmtNum(v, 0) : fmtNum(v, dec);
-  return '<div class="bars-row"><span>' + label + '</span>' +
-    '<div class="bars-bar-track"><div class="bars-bar-fill ' + gradClass + '" style="width:' + ancho + '%;">' + valFmt + ' ' + unidad + '</div></div>' +
-  '</div>';
-}
-
-function bulletRow(nombre, actual, meta, gradient) {
-  const pct = meta > 0 ? (actual / meta) * 100 : 0;
-  const widthPct = meta > 0 ? Math.min(100, (actual / (meta * 1.2)) * 100) : 0;
-  const finalWidth = actual > 0 ? Math.max(8, widthPct) : 0;
-  return '<div class="bullet-row">' +
-    '<div class="bullet-head"><span>' + nombre + '</span>' +
-      '<span class="bullet-meta-num">' + fmtNum(actual) + ' / ' + meta + ' TN</span></div>' +
-    '<div class="bullet-track"><div class="bullet-meta-marker"></div>' +
-      '<div class="bullet-fill" style="width:' + finalWidth + '%;background:' + gradient + '">' + pct.toFixed(0) + '%</div>' +
+// ── KPI ─────────────────────────────────────────────────────
+function gKpi(icono, label, valor, color) {
+  return '<div class="card g-kpi">' +
+    '<div class="g-kpi-ico" style="background:' + color + '">' + icoHTML(icono) + '</div>' +
+    '<div class="g-kpi-txt">' +
+      '<div class="g-kpi-lbl">' + esc(label) + '</div>' +
+      '<div class="g-kpi-val" style="color:' + color + '">' + valor + '</div>' +
     '</div>' +
   '</div>';
 }
 
-// ============================================================
-// CHART: TORTA
-// ============================================================
-
-function initChartTorta(distribucion) {
-  const ctx = document.getElementById('chart-torta');
-  if (!ctx) return;
-
-  const colores = {
-    'PET': '#18AE97', 'Plástico Duro': '#506CFF', 'Plástico Suave': '#7B5CFF',
-    'Cartón': '#F5AD21', 'Lata Aluminio': '#0BC3FF', 'Vidrio': '#9FDA60',
-    'Otros materiales': '#D0D0D8',
-  };
-
-  const labels = [], datos = [], bgs = [];
-  let otros = 0;
-
-  Object.entries(distribucion).forEach(function(par) {
-    const nombre = par[0], val = par[1];
-    if (val <= 0) return;
-    if (MATS_FILTRO_ACTIVOS.includes(nombre)) {
-      labels.push(nombre);
-      datos.push(parseFloat(val.toFixed(2)));
-      bgs.push(colores[nombre] || '#ccc');
-    } else {
-      otros += val;
-    }
-  });
-
-  if (otros > 0) {
-    labels.push('Otros materiales');
-    datos.push(parseFloat(otros.toFixed(2)));
-    bgs.push(colores['Otros materiales']);
-  }
-
-  chartTorta = new Chart(ctx, {
-    type: 'doughnut',
-    data: { labels: labels, datasets: [{ data: datos, backgroundColor: bgs, borderWidth: 2, borderColor: '#fff' }] },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { position: 'right', labels: { font: { family: 'Outfit', size: 11 }, padding: 10, boxWidth: 10, boxHeight: 10 } },
-        tooltip: { callbacks: { label: function(c) { return ' ' + c.label + ': ' + fmtNum(c.raw) + ' TN'; } } }
-      },
-      cutout: '62%',
-    }
-  });
+// ── Impacto Ambiental: dos barras por material (CO₂ y agua) ──
+// Cada serie se normaliza contra su propio máximo porque las unidades
+// no son comparables (toneladas de CO₂ vs litros de agua).
+function gImpRow(label, co2, agua, co2Max, aguaMax) {
+  return '<div class="g-imp-row">' +
+    '<div class="g-imp-lbl">' + label + '</div>' +
+    '<div class="g-imp-bars">' +
+      gImpBar(co2,  co2Max,  G_INDIGO, fmtNum(co2, 0)  + ' t') +
+      gImpBar(agua, aguaMax, G_AMBAR,  fmtNum(agua, 0) + ' L') +
+    '</div>' +
+  '</div>';
 }
 
-// ============================================================
-// CHART: LÍNEAS
-// ============================================================
+function gImpBar(valor, max, color, texto) {
+  const v = valor || 0;
+  // Tope en 82% para que la cifra al final de la barra siempre quepa.
+  const w = v <= 0 ? 0 : Math.max(3, Math.min(82, (v / max) * 82));
+  return '<div class="g-imp-bar">' +
+    '<div class="g-imp-fill" style="width:' + w + '%;background:' + color + '"></div>' +
+    '<span class="g-imp-val">' + texto + '</span>' +
+  '</div>';
+}
 
-function initChartLineas(porProvMesMat, meses, material) {
-  const ctx = document.getElementById('chart-lineas');
-  if (!ctx) return;
+// ── Avance vs Meta ──────────────────────────────────────────
+function gMetaRow(nombre, actual, meta, color) {
+  const a = actual || 0;
+  const pct = meta > 0 ? (a / meta) * 100 : 0;
+  const w = meta > 0 ? Math.min(100, pct / G_ESCALA_META) : 0;
+  const wFinal = a > 0 ? Math.max(13, w) : 0;
+  return '<div class="g-meta-row">' +
+    '<div class="g-meta-lbl">' + nombre + '</div>' +
+    '<span class="g-meta-num">' + fmtNum(a) + ' / ' + fmtNum(meta, 0) + ' TN</span>' +
+    '<div class="g-meta-track">' +
+      '<div class="g-meta-fill" style="width:' + wFinal + '%;background:' + color + '">' + pct.toFixed(0) + '%</div>' +
+    '</div>' +
+  '</div>';
+}
 
+// ── Evolución por material: un slope chart por provincia ────
+// Los puntos se dibujan como trazos de largo cero con remate redondo y
+// vector-effect="non-scaling-stroke": así quedan circulares aunque el
+// SVG se estire horizontalmente (preserveAspectRatio="none").
+function gEvolucion(porProvMesMat, meses, material) {
   const mat = material || MATERIAL_EVOLUCION;
   const valor = function(p, m) {
     return (porProvMesMat[p] && porProvMesMat[p][m] && porProvMesMat[p][m][mat]) || 0;
   };
 
-  const provConDatos = PROVINCIAS.filter(function(p) {
+  const provs = PROVINCIAS.filter(function(p) {
     return meses.some(function(m) { return valor(p, m) > 0; });
   });
-  if (!provConDatos.length) {
-    ctx.parentElement.innerHTML = '<div class="empty-state"><p>Sin datos de ' + esc(mat) + ' para este filtro</p></div>';
-    return;
+
+  if (!provs.length || !meses.length) {
+    return '<div class="empty-state"><p>Sin datos de ' + esc(mat) + ' para este filtro</p></div>';
   }
 
-  const datasets = provConDatos.map(function(p) {
-    return {
-      label: p,
-      data: meses.map(function(m) { return parseFloat(valor(p, m).toFixed(2)); }),
-      borderColor: COLORES_PROV[p],
-      backgroundColor: COLORES_PROV[p] + '20',
-      borderWidth: 2.5, tension: 0.35, pointRadius: 3.5, pointHoverRadius: 6, fill: false,
-    };
+  // Escala compartida entre provincias para que las filas sean comparables
+  let max = 0;
+  provs.forEach(function(p) {
+    meses.forEach(function(m) { max = Math.max(max, valor(p, m)); });
   });
+  if (max <= 0) max = 1;
 
-  chartLineas = new Chart(ctx, {
-    type: 'line',
-    data: { labels: meses.map(function(m) { return m.substring(0, 3); }), datasets: datasets },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { position: 'bottom', labels: { font: { family: 'Outfit', size: 11 }, padding: 12, boxWidth: 12, usePointStyle: false } },
-        tooltip: { callbacks: { label: function(c) { return ' ' + c.dataset.label + ': ' + fmtNum(c.raw) + ' TN'; } } }
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { font: { family: 'Outfit', size: 11 } } },
-        y: { grid: { color: '#f0f4f8' }, ticks: { font: { family: 'Outfit', size: 11 } } }
-      }
+  const x = function(i) {
+    return meses.length === 1 ? 50 : 2 + (i * 96) / (meses.length - 1);
+  };
+  const y = function(v) { return 23 - (v / max) * 20; };
+
+  const filas = provs.map(function(p) {
+    const pts = meses.map(function(m, i) { return x(i) + ',' + y(valor(p, m)); }).join(' ');
+    const dots = meses.map(function(m, i) {
+      const v = valor(p, m);
+      const c = gColorPunto(i, meses.length);
+      return '<line x1="' + x(i) + '" y1="' + y(v) + '" x2="' + x(i) + '" y2="' + y(v) + '" ' +
+             'stroke="' + c + '" stroke-width="9" stroke-linecap="round" vector-effect="non-scaling-stroke">' +
+             '<title>' + esc(m) + ': ' + fmtNum(v) + ' TN</title></line>';
+    }).join('');
+    return '<div class="g-evo-row">' +
+      '<div class="g-evo-prov">' + esc(p) + '</div>' +
+      '<svg class="g-evo-svg" viewBox="0 0 100 26" preserveAspectRatio="none">' +
+        '<polyline points="' + pts + '" fill="none" stroke="#d8dce6" stroke-width="1.5" vector-effect="non-scaling-stroke"/>' +
+        dots +
+      '</svg>' +
+    '</div>';
+  }).join('');
+
+  // Leyenda: qué mes es cada color de punto
+  const leyenda = meses.map(function(m, i) {
+    return '<span class="g-ley-item">' +
+      '<span class="g-ley-chip" style="border-radius:50%;background:' + gColorPunto(i, meses.length) + '"></span>' +
+      esc(m) + '</span>';
+  }).join('');
+
+  return '<div class="g-evo">' + filas + '</div>' +
+         '<div class="g-ley">' + leyenda + '</div>';
+}
+
+// ── TN Recuperadas por material ─────────────────────────────
+// Valor = total TN del filtro actual. Flecha = último mes con datos
+// comparado con el mes anterior (si hay al menos dos meses).
+function gMateriales(distribucion, porProvMesMat, meses) {
+  const totalMes = function(mes, mat) {
+    let t = 0;
+    Object.keys(porProvMesMat).forEach(function(p) {
+      const mm = porProvMesMat[p][mes];
+      if (mm && mm[mat]) t += mm[mat];
+    });
+    return t;
+  };
+
+  const ult  = meses.length ? meses[meses.length - 1] : null;
+  const prev = meses.length > 1 ? meses[meses.length - 2] : null;
+
+  const items = [];
+  let otros = 0, otrosUlt = 0, otrosPrev = 0;
+
+  Object.keys(distribucion).forEach(function(nombre) {
+    const val = distribucion[nombre];
+    if (!(val > 0)) return;
+    const vUlt  = ult  ? totalMes(ult,  nombre) : 0;
+    const vPrev = prev ? totalMes(prev, nombre) : 0;
+    if (MATS_FILTRO_ACTIVOS.includes(nombre)) {
+      items.push({ nombre: G_MAT_CORTO[nombre] || nombre, val: val, ult: vUlt, prev: vPrev });
+    } else {
+      otros += val; otrosUlt += vUlt; otrosPrev += vPrev;
     }
   });
+
+  items.sort(function(a, b) { return b.val - a.val; });
+  if (otros > 0) items.push({ nombre: 'Otros materiales', val: otros, ult: otrosUlt, prev: otrosPrev });
+
+  if (!items.length) {
+    return '<div class="empty-state"><p>Sin materiales con datos para este filtro</p></div>';
+  }
+
+  const filas = items.map(function(it) {
+    let cls = 'flat', ico = '', tip = 'Sin mes anterior para comparar';
+    if (prev) {
+      if (it.ult > it.prev)      { cls = 'up';   ico = icoHTML('triUp');   tip = 'Subió vs ' + prev; }
+      else if (it.ult < it.prev) { cls = 'down'; ico = icoHTML('triDown'); tip = 'Bajó vs ' + prev; }
+      else                       { tip = 'Sin cambio vs ' + prev; }
+    }
+    return '<div class="g-mat">' +
+      '<span class="g-mat-nom">' + esc(it.nombre) + '</span>' +
+      '<span class="g-mat-badge ' + cls + '" title="' + esc(tip) + '">' + ico + fmtNum(it.val) + ' TN</span>' +
+    '</div>';
+  }).join('');
+
+  return '<div class="g-mats">' + filas + '</div>';
 }
 
 // ============================================================
@@ -468,10 +547,7 @@ function selTodosMats(todos) {
 function aplicarFiltroMateriales() {
   MATS_FILTRO_ACTIVOS = Array.prototype.slice.call(document.querySelectorAll('#mats-checks input:checked')).map(function(cb) { return cb.value; });
   cerrarModal();
-  if (DASH_DATA) {
-    if (chartTorta) { chartTorta.destroy(); chartTorta = null; }
-    initChartTorta(DASH_DATA.distribucion);
-  }
+  if (DASH_DATA) renderContenidoDashboard();
 }
 
 // ============================================================

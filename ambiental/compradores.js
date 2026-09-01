@@ -36,7 +36,7 @@ function renderCompradores() {
       </div>
       <div class="hdr-actions">
         <button class="hdr-circle" onclick="openFilterDrawer('compradores')" title="Filtros">
-          ${icoHTML('filter')}
+          ${icoHTML('sliders')}
           <span class="filter-badge" id="badge-compradores" style="display:none;">0</span>
         </button>
         <button class="hdr-circle" onclick="exportarCompradoresExcel()" title="Descargar Excel">
@@ -57,11 +57,12 @@ function renderCompradores() {
 // TABLA
 // ============================================================
 
-// Columnas fijas por nivel (los "Transformador" y otros no estándar caen en Nivel 3)
+// Un bloque por nivel (los "Transformador" y otros no estándar caen en Nivel 3).
+// Colores de la maqueta: la misma tríada índigo / ámbar / teal del resto de la app.
 const CMP_NIVELES = [
   { label: 'Nivel 1', color: '#506CFF' },
-  { label: 'Nivel 2', color: '#0BC3FF' },
-  { label: 'Nivel 3', color: '#7B5CFF' },
+  { label: 'Nivel 2', color: '#F5AD21' },
+  { label: 'Nivel 3', color: '#18AE97' },
 ];
 function _colDeNivel(nivel) {
   const n = String(nivel || '').trim();
@@ -94,47 +95,42 @@ function renderTablaCompradores() {
 
   const edit = puedeEditar();
 
-  const tarjeta = (c, color) => {
+  // Fila de comprador: punto del color del nivel + nombre + acciones.
+  // La provincia y el estado no se muestran en la fila (la maqueta deja solo
+  // el nombre); van en el title, y los inactivos se atenúan.
+  const fila = (c, color) => {
     const id     = jsEsc(c['ID_Comprador'] || '');
     const activo = c['Activo'] === true;
-    return `<div class="cmp-card" onclick="verComprador('${id}')">
-      <span class="cmp-ico" style="background:${_rgbaCmp(color, 0.13)};color:${color}">${icoHTML('store')}</span>
-      <div class="cmp-info">
-        <div class="cmp-nom">${esc(c['Nombre'] || '—')}</div>
-        <div class="cmp-loc">${icoHTML('mapPin')} ${esc(c['Provincia'] || 'Sin provincia')}</div>
-      </div>
-      <div class="cmp-right" onclick="event.stopPropagation()">
-        <span class="cmp-estado ${activo ? 'on' : 'off'}">${activo ? 'Activo' : 'Inactivo'}</span>
-        <div class="cmp-acts td-actions">
-          <button class="icon-btn" onclick="verComprador('${id}')" title="Ver">${icoHTML('view')}</button>
-          ${edit ? `
-            <button class="icon-btn primary" onclick="abrirFormComprador('${id}')" title="Editar">${icoHTML('edit')}</button>
-            <button class="icon-btn del" onclick="confirmarEliminarComprador('${id}')" title="Eliminar">${icoHTML('trash')}</button>
-          ` : ''}
-        </div>
-      </div>
+    const tip    = `${c['Nombre'] || ''} · ${c['Provincia'] || 'Sin provincia'} · ${activo ? 'Activo' : 'Inactivo'}`;
+    return `<div class="cmp-fila${activo ? '' : ' cmp-inactivo'}">
+      <span class="cmp-dot" style="background:${color}"></span>
+      <button class="cmp-nom" onclick="verComprador('${id}')" title="${esc(tip)}">${esc(c['Nombre'] || '—')}</button>
+      <span class="cmp-acts td-actions">
+        <button class="icon-btn" onclick="verComprador('${id}')" title="Ver">${icoHTML('view')}</button>
+        ${edit ? `
+          <button class="icon-btn primary" onclick="abrirFormComprador('${id}')" title="Editar">${icoHTML('edit')}</button>
+          <button class="icon-btn del" onclick="confirmarEliminarComprador('${id}')" title="Eliminar">${icoHTML('close')}</button>
+        ` : ''}
+      </span>
     </div>`;
   };
 
-  const columnas = CMP_NIVELES.map((niv, i) => {
+  const bloques = CMP_NIVELES.map((niv, i) => {
     const lista = cols[i];
     const cuerpo = lista.length
-      ? lista.map(c => tarjeta(c, niv.color)).join('')
+      ? `<div class="cmp-lista">${lista.map(c => fila(c, niv.color)).join('')}</div>`
       : `<div class="cmp-empty">
-           <span class="cmp-empty-ico">${icoHTML('cart')}</span>
-           <div class="cmp-empty-tit">Aún no hay compradores<br>en este nivel</div>
-           <div class="cmp-empty-sub">Agrega un nuevo comprador<br>o cambia su nivel.</div>
+           <span class="cmp-empty-ico" style="background:${_rgbaCmp(niv.color, 0.1)};color:${niv.color}">${icoHTML('cart')}</span>
+           <div class="cmp-empty-tit">Aún no hay compradores en este nivel</div>
+           <div class="cmp-empty-sub">Agrega un nuevo comprador o cambia su nivel.</div>
          </div>`;
-    return `<div class="cmp-col">
-      <div class="cmp-col-head">
-        <span class="cmp-col-badge" style="background:${niv.color}">${niv.label}</span>
-        <span class="cmp-col-count">${lista.length} comprador${lista.length !== 1 ? 'es' : ''}</span>
-      </div>
-      <div class="cmp-col-body">${cuerpo}</div>
+    return `<div class="card cmp-nivel">
+      <div class="cmp-nivel-tit">${esc(niv.label)}</div>
+      ${cuerpo}
     </div>`;
   }).join('');
 
-  wrap.innerHTML = `<div class="cmp-board">${columnas}</div>`;
+  wrap.innerHTML = `<div class="cmp-board">${bloques}</div>`;
 }
 
 // ============================================================
@@ -375,36 +371,35 @@ async function exportarCompradoresExcel() {
   const s = document.createElement('style');
   s.id = 'compradores-styles';
   s.textContent = `
-    .cmp-board { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; align-items:start; }
-    .cmp-col { background:rgba(0,0,0,.018); border:1px solid var(--border); border-radius:20px; padding:16px 14px; }
-    .cmp-col-head { display:flex; align-items:center; gap:10px; padding:2px 4px 14px; }
-    .cmp-col-badge { font-size:12px; font-weight:700; color:#fff; padding:5px 14px; border-radius:20px; }
-    .cmp-col-count { font-size:12.5px; color:var(--text-muted); font-weight:500; }
-    .cmp-col-body { display:flex; flex-direction:column; gap:11px; }
+    /* Un bloque apilado por nivel; los compradores van en 2 columnas dentro */
+    .cmp-board { display:flex; flex-direction:column; gap:18px; }
+    .cmp-nivel { padding:26px 30px; }
+    .cmp-nivel-tit { font-size:17px; font-weight:700; letter-spacing:1.4px; text-transform:uppercase; color:var(--text); margin-bottom:22px; }
 
-    .cmp-card { display:flex; align-items:flex-start; gap:12px; background:var(--surface); border:1px solid var(--border); border-radius:15px; padding:14px; cursor:pointer; transition:box-shadow .15s,transform .12s,border-color .15s; }
-    .cmp-card:hover { box-shadow:0 6px 18px rgba(0,0,0,.08); transform:translateY(-2px); border-color:transparent; }
-    .cmp-ico { width:42px; height:42px; border-radius:12px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
-    .cmp-ico svg { width:21px; height:21px; }
-    .cmp-info { flex:1; min-width:0; }
-    .cmp-nom { font-size:14px; font-weight:700; color:var(--text); line-height:1.3; }
-    .cmp-loc { display:flex; align-items:center; gap:5px; font-size:12.5px; color:var(--text-muted); margin-top:5px; }
-    .cmp-loc svg { width:14px; height:14px; color:var(--text-dim); flex-shrink:0; }
-    .cmp-right { display:flex; flex-direction:column; align-items:flex-end; gap:10px; flex-shrink:0; }
-    .cmp-estado { font-size:11px; font-weight:700; padding:3px 10px; border-radius:20px; white-space:nowrap; }
-    .cmp-estado.on { color:#0f9b84; background:rgba(24,174,151,.14); }
-    .cmp-estado.off { color:var(--text-dim); background:rgba(0,0,0,.05); }
-    .cmp-acts { display:flex; gap:5px; }
+    /* columns (no grid) para que la lista se llene de arriba abajo */
+    .cmp-lista { columns:2; column-gap:44px; }
+    .cmp-fila { display:flex; align-items:center; gap:14px; break-inside:avoid; margin-bottom:16px; }
+    .cmp-fila:last-child { margin-bottom:0; }
+    .cmp-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+    .cmp-nom { flex:1; min-width:0; text-align:left; background:none; border:none; padding:0; cursor:pointer; font-family:inherit; font-size:14px; font-weight:400; color:var(--text); line-height:1.35; }
+    .cmp-nom:hover { color:var(--blue2); }
+    .cmp-acts { flex-shrink:0; display:flex; gap:8px; }
+    /* Los tres botones vienen con su fondo tintado, como en la maqueta */
+    .cmp-acts .icon-btn.primary { background:rgba(80,108,255,.1); }
+    .cmp-acts .icon-btn.del { background:rgba(248,45,114,.1); color:#F82D72; }
+    .cmp-inactivo { opacity:.55; }
 
-    .cmp-empty { display:flex; flex-direction:column; align-items:center; text-align:center; padding:34px 10px; }
-    .cmp-empty-ico { width:56px; height:56px; border-radius:16px; display:flex; align-items:center; justify-content:center; background:rgba(123,92,255,.09); color:#7B5CFF; margin-bottom:14px; }
-    .cmp-empty-ico svg { width:26px; height:26px; opacity:.85; }
+    .cmp-empty { display:flex; flex-direction:column; align-items:center; text-align:center; padding:20px 10px 8px; }
+    .cmp-empty-ico { width:52px; height:52px; border-radius:15px; display:flex; align-items:center; justify-content:center; margin-bottom:12px; }
+    .cmp-empty-ico svg { width:25px; height:25px; opacity:.85; }
     .cmp-empty-tit { font-size:14px; font-weight:700; color:var(--text-muted); line-height:1.4; }
     .cmp-empty-sub { font-size:12px; color:var(--text-dim); margin-top:6px; line-height:1.5; }
 
-    @media (max-width:900px) {
-      .cmp-board { grid-template-columns:1fr; gap:16px; }
-      .cmp-empty { padding:24px 10px; }
+    @media (max-width:820px) {
+      .cmp-nivel { padding:20px 18px; }
+      .cmp-nivel-tit { font-size:15px; margin-bottom:16px; }
+      .cmp-lista { columns:1; }
+      .cmp-empty { padding:14px 10px 4px; }
     }
   `;
   document.head.appendChild(s);

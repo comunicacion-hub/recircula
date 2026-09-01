@@ -11,10 +11,15 @@ const PRECIOS = (() => {
   const MESES_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
   // Meses que NO se muestran en Precios (0=Ene … 11=Dic). Oculta Enero–Abril
-  // en gráfico, tabla, tarjetas, detalle y exportación (aunque estén vacíos).
+  // en gráfico, tabla, tarjetas, detalle y exportación (aunque tengan datos).
   const PR_MESES_OCULTOS = [0, 1, 2, 3];
-  const PR_MESES_VIS = Array.from({ length: 12 }, (_, i) => i)
+  const PR_MESES_PERMITIDOS = Array.from({ length: 12 }, (_, i) => i)
     .filter(i => !PR_MESES_OCULTOS.includes(i));
+
+  // Meses realmente visibles = permitidos ∩ con algún precio registrado bajo
+  // los filtros activos. Se recalcula al procesar y al aplicar filtros, así
+  // las columnas/puntos de meses sin registrar no aparecen.
+  let PR_MESES_VIS = PR_MESES_PERMITIDOS.slice();
 
   // Gradientes idénticos a styles.css (A–E). Stroke por url(#id); leyenda por var(--grad-*).
   const GRADS = [
@@ -29,7 +34,6 @@ const PRECIOS = (() => {
   const PRIORIDAD_KEYS = ['pet', 'plastico_suave', 'plastico_duro'];
 
   // Íconos (trazo Outfit/Lucide, mismo estilo que el resto del shell)
-  const ICO_FUNNEL   = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z"/></svg>';
   const ICO_DOWNLOAD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
 
   // Estado
@@ -56,6 +60,7 @@ const PRECIOS = (() => {
       _registrarFiltros();
       _matsActivos = _resolverMats();
       if (!_matsActivos.includes(_matGrafico)) _matGrafico = _matsActivos[0] ?? null;
+      _recalcMesesVis();
       _renderUI();
       if (typeof updateFilterBadge === 'function') updateFilterBadge('precios');
     } catch (e) {
@@ -129,6 +134,23 @@ const PRECIOS = (() => {
     return sel.filter(m => conDatos.has(m));
   }
 
+  // Recalcula PR_MESES_VIS: de los meses permitidos, deja solo los que tienen
+  // al menos un precio registrado con los filtros de año/provincia activos y
+  // en alguno de los materiales mostrados. Si no queda ninguno, se conserva el
+  // set permitido para no dejar el gráfico/tabla sin eje.
+  function _recalcMesesVis() {
+    const mats = new Set(_matsActivos);
+    const conDato = new Set();
+    _datos.forEach(r => {
+      if (!mats.has(r.material)) return;
+      if (!pasaFiltro(_fAnios, String(r.anio))) return;
+      if (!pasaFiltro(_fProvs, r.provincia)) return;
+      conDato.add(r.mes);
+    });
+    const vis = PR_MESES_PERMITIDOS.filter(i => conDato.has(i));
+    PR_MESES_VIS = vis.length ? vis : PR_MESES_PERMITIDOS.slice();
+  }
+
   // Convierte el campo Mes a índice 0–11. Acepta número (4 / "04") o
   // nombre en español, completo o abreviado, tolerante a acentos y mayúsculas.
   function _mesAIndice(raw) {
@@ -178,6 +200,7 @@ const PRECIOS = (() => {
   function _aplicarFiltros() {
     _matsActivos = _resolverMats();
     if (!_matsActivos.includes(_matGrafico)) _matGrafico = _matsActivos[0] ?? null;
+    _recalcMesesVis();
     const t = document.getElementById('pr-mat-tabs');     if (t) t.innerHTML = _buildTabs();
     const c = document.getElementById('pr-chart-container'); if (c) c.innerHTML = _buildChart();
     const k = document.getElementById('pr-comparativa');  if (k) k.innerHTML = _buildComparativa();
@@ -235,7 +258,7 @@ const PRECIOS = (() => {
         </div>
         <div class="hdr-actions">
           <button class="hdr-circle" onclick="openFilterDrawer('precios')" title="Filtros" aria-label="Filtros">
-            ${ICO_FUNNEL}<span class="filter-badge" id="pr-filter-badge" style="display:none"></span>
+            ${icoHTML('sliders')}<span class="filter-badge" id="pr-filter-badge" style="display:none"></span>
           </button>
           <button class="hdr-circle" onclick="PRECIOS._exportar()" title="Descargar Excel" aria-label="Descargar Excel">
             ${ICO_DOWNLOAD}

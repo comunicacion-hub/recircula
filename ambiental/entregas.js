@@ -19,6 +19,7 @@ let ENT_EVIDENCIA_FORM = null;
 // ── Navegación de dos niveles ──
 let ENT_VISTA = 'asociaciones';   // 'asociaciones' | 'lista'
 let ENT_ASOC_SEL = null;          // ID_Asociacion abierta
+let ENT_FILTROS_N1 = { provincia: [], asociacion: [] };
 let ENT_FILTROS_N2 = { material: [], anio: [], mes: [] };
 
 // Opciones de Actividad Fuente — selección múltiple (una entrega puede combinar varias).
@@ -70,6 +71,23 @@ function _statCardEnt(icono, color, valor, titulo, sub) {
 
 function registerEntregasFilters() {
   const anios = Array.from(new Set((CAT.entregas || []).map(e => String(e['Año'] || '')).filter(Boolean))).sort((a, b) => b.localeCompare(a));
+
+  // Nivel 1: filtra qué provincias/asociaciones se listan
+  registerFilterConfig('entregas-n1', {
+    badgeId: 'badge-entregas-n1',
+    sections: [
+      { key: 'provincia',  title: 'Provincias',   type: 'options',
+        options: Array.from(new Set((CAT.asociaciones || []).map(a => a['Provincia']).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es')),
+        allLabel: 'Todas las provincias' },
+      { key: 'asociacion', title: 'Asociaciones', type: 'options',
+        options: (CAT.asociaciones || []).map(a => ({ val: a['ID_Asociacion'], lbl: a['Nombre'] })),
+        allLabel: 'Todas las asociaciones' },
+    ],
+    getValue: (k) => ENT_FILTROS_N1[k] || [],
+    setValue: (k, v) => { ENT_FILTROS_N1[k] = v; },
+    apply: () => { renderProvinciasEnt(); updateFilterBadge('entregas-n1'); },
+  });
+
   registerFilterConfig('entregas', {
     badgeId: 'badge-entregas',
     sections: [
@@ -89,34 +107,38 @@ function _kilosAsoc(idAsoc) {
     .reduce((a, e) => a + _kilosEntrega(e), 0);
 }
 
-// Paleta fija de MATERIALES para "Pesos" — independiente de la rotación global
-// de color y de ENT_PROV_PAL. Único mapa reusable: úsalo en vez de colores
-// sueltos repetidos por función. Los 12 últimos (desde Vidrio) no fueron
-// confirmados por el usuario; son una elección razonable para completar el
-// catálogo dinámico de 16 materiales.
+// Paleta fija de MATERIALES para "Pesos" — propia de esta sección.
+// Los cuatro primeros vienen de la maqueta (PET índigo, Suave ámbar,
+// Duro teal, Lata rojo); los otros 12 los elegí yo para completar el
+// catálogo dinámico de 16, cuidando que no se repita ningún tono.
 const ENT_MAT_PAL = {
   'PET':            '#506CFF',
-  'Plástico Suave': '#FF751F',
+  'Plástico Suave': '#F5AD21',
   'Plástico Duro':  '#18AE97',
-  'Lata Aluminio':  '#F82D72',
+  'Lata Aluminio':  '#EF4444',
   'Vidrio':         '#33A8DE',
   'Cartón':         '#C19A6B',
   'Chatarra':       '#8a8a99',
   'Cobre':          '#B5651D',
-  'Papel Archivo':  '#F5AD21',
+  'Papel Archivo':  '#7B5CFF',
   'Periódico':      '#B8B8C8',
   'Soplado':        '#0BC3FF',
-  'Tetrapak':       '#7B5CFF',
+  'Tetrapak':       '#0f9b84',
   'Suela':          '#4A4A55',
   'Bronce':         '#CD7F32',
-  'Batería':        '#DC2626',
+  'Batería':        '#9B1C1C',
   'Acero':          '#A8AEB8',
 };
 function _colorMaterialEnt(nombre) { return ENT_MAT_PAL[nombre] || '#8a8a99'; }
 
-// Estilo por provincia (ícono + color) para el Nivel 1
-const ENT_PROV_PAL = ['#506CFF', '#18AE97', '#F5AD21', '#F82D72', '#FF751F', '#33A8DE', '#7B5CFF', '#0BC3FF'];
+// Color por provincia para el Nivel 1. Se asigna por posición en la lista
+// conocida de provincias (así El Oro sale índigo y Guayas ámbar, como la
+// maqueta); una provincia fuera de la lista cae al hash de su nombre.
+const ENT_PROV_PAL   = ['#506CFF', '#F5AD21', '#18AE97', '#EF4444', '#7B5CFF', '#33A8DE', '#0BC3FF', '#FF751F'];
+const ENT_PROV_ORDEN = ['El Oro', 'Guayas', 'Manabí', 'Sucumbíos', 'Pichincha', 'Chimborazo'];
 function _provEstiloEnt(prov) {
+  const idx = ENT_PROV_ORDEN.indexOf(String(prov || '').trim());
+  if (idx >= 0) return { color: ENT_PROV_PAL[idx % ENT_PROV_PAL.length] };
   const k = String(prov || '').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   let h = 0; for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) >>> 0;
   return { ico: 'mapPin', color: ENT_PROV_PAL[h % ENT_PROV_PAL.length] };
@@ -149,6 +171,9 @@ function renderNivelAsociaciones() {
         <div class="page-sub">Registro por asociación</div>
       </div>
       <div class="hdr-actions">
+        <button class="hdr-circle" onclick="openFilterDrawer('entregas-n1')" title="Filtros">
+          ${icoHTML('sliders')}<span class="filter-badge" id="badge-entregas-n1" style="display:none;">0</span>
+        </button>
         <button class="hdr-circle" onclick="exportarMatrizEntregas()" title="Descargar toda la matriz">${icoHTML('download')}</button>
       </div>
     </div>
@@ -156,42 +181,49 @@ function renderNivelAsociaciones() {
 
   if (add) mostrarFAB('plus', abrirFormEntrega, 'Nueva entrega');
 
-  const wrap = document.getElementById('ent-n1-wrap');
+  renderProvinciasEnt();
+  updateFilterBadge('entregas-n1');
+}
 
-  // Agrupar asociaciones por provincia
+// Grid de tarjetas por provincia. Separado del header para que el drawer
+// de filtros pueda repintar solo esta parte.
+function renderProvinciasEnt() {
+  const wrap = document.getElementById('ent-n1-wrap');
+  if (!wrap) return;
+
   const grupos = {};
   (CAT.asociaciones || []).forEach(a => {
+    if (!pasaFiltro(ENT_FILTROS_N1.provincia,  a['Provincia'])) return;
+    if (!pasaFiltro(ENT_FILTROS_N1.asociacion, a['ID_Asociacion'])) return;
     const prov = a['Provincia'] || 'Sin provincia';
     (grupos[prov] = grupos[prov] || []).push(a);
   });
+
   const provs = Object.keys(grupos).sort((a, b) => a.localeCompare(b, 'es'));
   if (!provs.length) {
-    wrap.innerHTML = `<div class="empty-state">${icoHTML('recycle').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"')}<p>No hay asociaciones</p></div>`;
+    wrap.innerHTML = `<div class="empty-state">${icoHTML('recycle').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"')}<p>No hay asociaciones con estos filtros</p></div>`;
     return;
   }
 
-  const CHEV = icoHTML('chevRight');
+  const FLECHA = icoHTML('arrowRight');
   wrap.innerHTML = '<div class="ent-provs">' + provs.map(prov => {
-    const est = _provEstiloEnt(prov);
+    const color = _provEstiloEnt(prov).color;
     const lista = grupos[prov].slice().sort((a, b) => (a['Nombre'] || '').localeCompare(b['Nombre'] || '', 'es'));
-    const totalProvTn = lista.reduce((s, a) => s + _kilosAsoc(a['ID_Asociacion']), 0) / 1000;
+    const totalTn = lista.reduce((s, a) => s + _kilosAsoc(a['ID_Asociacion']), 0) / 1000;
+
     const filas = lista.map(a => {
-      const kg = _kilosAsoc(a['ID_Asociacion']);
-      const vacia = kg <= 0;
-      return `<button class="ent-asoc-row${vacia ? ' ent-asoc-vacia' : ''}" onclick="abrirAsociacionEntregas('${jsEsc(a['ID_Asociacion'])}')">
-        <span class="ent-asoc-dot" style="background:${est.color}"></span>
+      const vacia = _kilosAsoc(a['ID_Asociacion']) <= 0;
+      return `<button class="ent-asoc${vacia ? ' ent-asoc-vacia' : ''}" onclick="abrirAsociacionEntregas('${jsEsc(a['ID_Asociacion'])}')" title="Ver entregas de ${esc(a['Nombre'] || '')}">
+        <span class="ent-asoc-dot" style="background:${color}"></span>
         <span class="ent-asoc-nom">${esc(a['Nombre'] || '—')}</span>
-        <span class="ent-asoc-chev">${CHEV}</span>
+        <span class="ent-asoc-go" style="background:${color}">${FLECHA}</span>
       </button>`;
     }).join('');
-    return `<div class="ent-prov-grupo">
-      <div class="ent-prov-titulo">
-        <span class="ent-prov-ico" style="background:${_rgbaEnt(est.color, 0.14)};color:${est.color}">${icoHTML(est.ico)}</span>
-        <div class="ent-prov-tit-tx">
-          <span class="ent-prov-nom">${esc(prov)}</span>
-          <span class="ent-prov-count">${lista.length} asociaci${lista.length !== 1 ? 'ones' : 'ón'}</span>
-        </div>
-        <span class="ent-prov-total" style="color:${est.color}">${fmtNum(totalProvTn)}<small>TN</small></span>
+
+    return `<div class="card ent-prov">
+      <div class="ent-prov-head">
+        <span class="ent-prov-nom">${esc(prov)}</span>
+        <span class="ent-prov-total" style="background:${_rgbaEnt(color, 0.16)};color:${color}">${fmtNum(totalTn)} TN</span>
       </div>
       <div class="ent-prov-lista">${filas}</div>
     </div>`;
@@ -215,7 +247,6 @@ function renderNivelLista() {
   const add = puedeEditar();
   const aso = (CAT.asociaciones || []).find(a => a['ID_Asociacion'] === ENT_ASOC_SEL);
   const nombre = aso ? (aso['Nombre'] || '') : '';
-  const BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>';
 
   document.getElementById('main-content').innerHTML = `
     <div class="page-header">
@@ -224,13 +255,14 @@ function renderNivelLista() {
         <div class="page-sub">${esc(nombre)}</div>
       </div>
       <div class="hdr-actions">
-        <button class="hdr-circle" onclick="volverAsociacionesEnt()" title="Volver a asociaciones">${BACK}</button>
+        <button class="hdr-circle" onclick="volverAsociacionesEnt()" title="Volver a asociaciones">${icoHTML('arrowLeft')}</button>
         <button class="hdr-circle" onclick="openFilterDrawer('entregas')" title="Filtros">
-          ${icoHTML('filter')}<span class="filter-badge" id="badge-entregas" style="display:none;">0</span>
+          ${icoHTML('sliders')}<span class="filter-badge" id="badge-entregas" style="display:none;">0</span>
         </button>
         <button class="hdr-circle" onclick="exportarEntregasExcel()" title="Descargar Excel">${icoHTML('download')}</button>
       </div>
     </div>
+    <div class="ent-eyebrow">${esc(nombre)}</div>
     <div id="entregas-table-wrap"></div>`;
 
   if (add) mostrarFAB('plus', abrirFormEntrega, 'Nueva entrega');
@@ -273,7 +305,7 @@ async function cargarEntregas() {
   ENTREGAS_DATA = (CAT.entregas || []).filter(e =>
     e['ID_Asociacion'] === ENT_ASOC_SEL &&
     pasaFiltro(ENT_FILTROS_N2.anio, String(e['Año'])) &&
-    pasaFiltro(ENT_FILTROS_N2.mes, e['Mes']) &&
+    pasaFiltro(ENT_FILTROS_N2.mes, mesCanonico(e['Mes'])) &&
     tieneMaterial(e)
   ).sort((a, b) => {
     const dif = _periodoOrden(b) - _periodoOrden(a);
@@ -345,42 +377,39 @@ function renderTablaEntregas() {
   // Agrupar por entrega (ID_Grupo_Entrega), uniendo compradores como en la ficha
   const grupos = _agruparEntregasVista(ENTREGAS_DATA);
 
-  // Un material por línea: punto de color + nombre + kg (dinámico, en TN, sin barra).
-  const matChip = (nombre, kg) => {
+  // Cada material: etiqueta arriba y el peso en negrita abajo, en TN y con el
+  // color del material. Dinámico: solo los que tienen kg>0 en el grupo.
+  const matBloque = (nombre, kg) => {
     const color = _colorMaterialEnt(nombre);
-    return `<span class="ent-mat-chip">
-      <span class="ent-mat-dot" style="background:${color}"></span>
-      <span class="ent-mat-nom" style="color:${color}">${esc(nombre)}</span>
-      <strong>${fmtNum(kg / 1000)} TN</strong>
+    return `<span class="ent-mat">
+      <span class="ent-mat-lbl">${esc(_matCortoEnt(nombre))}</span>
+      <span class="ent-mat-val" style="color:${color}">${fmtNum(kg / 1000)} TN</span>
     </span>`;
   };
 
   const cards = grupos.map(g => {
-    const e       = g.rep;
-    const idEnt   = jsEsc(e['ID_Entrega'] || '');
-    const docId   = jsEsc(e['_docId'] || '');
-    const col     = _mesColor(e['Mes']);
+    const e     = g.rep;
+    const idEnt = jsEsc(e['ID_Entrega'] || '');
+    const docId = jsEsc(e['_docId'] || '');
     const nBuyers = g.n > 1
-      ? `<span style="display:block;font-size:10.5px;font-weight:600;color:var(--text-dim);margin-top:2px">${g.n} compradores</span>`
+      ? `<span class="ent-c-buyers">${g.n} compradores</span>`
       : '';
     const matsNombres = Object.keys(g.matsKg);
     const matsHtml = matsNombres.length
-      ? matsNombres.map(n => matChip(n, g.matsKg[n])).join('')
-      : '<span style="font-size:12px;color:var(--text-dim)">Sin materiales</span>';
+      ? matsNombres.map(n => matBloque(n, g.matsKg[n])).join('')
+      : '<span class="ent-mat-vacio">Sin materiales</span>';
 
     return `
       <div class="ent-card" onclick="verEntrega('${idEnt}')">
         <div class="ent-c-per">
-          <span class="ent-cal" style="background:${_rgbaEnt(col, 0.14)};color:${col}">${icoHTML('calendar')}</span>
-          <span class="ent-cal-txt">${esc(e['Mes'] || '')} ${esc(e['Año'] || '')}${nBuyers}</span>
+          <span class="ent-c-mes">${esc(capMes(e['Mes']))} ${esc(e['Año'] || '')}</span>${nBuyers}
         </div>
         <div class="ent-c-mats">${matsHtml}</div>
-        <div class="ent-c-val">${fmtMoney(g.total)}</div>
         <div class="ent-c-acts td-actions" onclick="event.stopPropagation()">
           <button class="icon-btn" onclick="verEntrega('${idEnt}')" title="Ver">${icoHTML('view')}</button>
           ${puedeEditar() ? `
             <button class="icon-btn primary" onclick="editarEntrega('${idEnt}')" title="Editar">${icoHTML('edit')}</button>
-            <button class="icon-btn del" onclick="confirmarEliminarEntrega('${docId}')" title="Eliminar">${icoHTML('trash')}</button>
+            <button class="icon-btn del" onclick="confirmarEliminarEntrega('${docId}')" title="Eliminar">${icoHTML('close')}</button>
           ` : ''}
         </div>
       </div>`;
@@ -394,17 +423,21 @@ function renderTablaEntregas() {
   `;
 }
 
-// Color por mes (para el ícono de período)
-function _mesColor(mes) {
-  const ORD = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-  // Rotación global 33A8DE→18AE97→506CFF aplicada. Colisión: el índice 1 (antes
-  // #18AE97) rotaba a #506CFF, ya ocupado por el índice 0 (destino, sin rotar) —
-  // se resolvió con #0f9b84 (teal ya presente en compradores.js), distinto de
-  // cualquier otro valor de esta misma paleta.
-  const pal = ['#506CFF', '#0f9b84', '#F5AD21', '#F82D72', '#FF751F', '#18AE97', '#7B5CFF', '#0BC3FF', '#9FDA60', '#FF376F', '#FF85FF', '#0a9e83'];
-  const i = ORD.indexOf(String(mes || '').toLowerCase());
-  return pal[(i >= 0 ? i : 0) % pal.length];
+// "julio" → "Julio" (los meses vienen en minúscula desde Firestore)
+function capMes(mes) {
+  const m = String(mes || '');
+  return m ? m.charAt(0).toUpperCase() + m.slice(1) : '';
 }
+
+// Etiqueta corta del material para la fila de la entrega (la maqueta usa
+// SUAVE / DURO / LATA en vez del nombre completo del catálogo).
+const ENT_MAT_CORTO = {
+  'Plástico Suave': 'Suave',
+  'Plástico Duro':  'Duro',
+  'Lata Aluminio':  'Lata',
+  'Papel Archivo':  'Papel',
+};
+function _matCortoEnt(nombre) { return ENT_MAT_CORTO[nombre] || nombre; }
 
 
 // ============================================================
@@ -1610,45 +1643,43 @@ function exportarMatrizEntregas() {
   const s = document.createElement('style');
   s.id = 'entregas-styles';
   s.textContent = `
-    /* Tarjetas-fila de entregas */
+    /* ── Nivel 2: eyebrow + tarjetas-fila de entregas ── */
+    .ent-eyebrow { font-size:12.5px; font-weight:600; letter-spacing:1.3px; text-transform:uppercase; color:var(--text-muted); margin-bottom:-8px; }
+
     .ent-cards { display:flex; flex-direction:column; gap:14px; }
-    .ent-card { display:flex; align-items:center; gap:20px; background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px 20px; cursor:pointer; transition:box-shadow .15s,transform .12s,border-color .15s; }
-    .ent-card:hover { box-shadow:0 6px 20px rgba(0,0,0,.08); transform:translateY(-2px); border-color:transparent; }
+    .ent-card { display:flex; align-items:center; gap:28px; background:var(--white); border:1px solid var(--border); border-radius:var(--r-md); padding:18px 24px; cursor:pointer; transition:box-shadow .15s,transform .12s; }
+    .ent-card:hover { box-shadow:var(--shadow-md); transform:translateY(-2px); }
 
-    .ent-c-per { display:flex; align-items:center; gap:11px; width:150px; flex-shrink:0; }
-    .ent-cal { width:40px; height:40px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
-    .ent-cal svg { width:20px; height:20px; }
-    .ent-cal-txt { font-size:13px; font-weight:700; color:var(--text); line-height:1.3; }
+    .ent-c-per { flex-shrink:0; min-width:118px; }
+    .ent-c-mes { font-size:16px; font-weight:700; color:var(--text); }
+    .ent-c-buyers { display:block; font-size:10.5px; font-weight:600; color:var(--text-dim); margin-top:2px; }
 
-    .ent-c-mats { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; flex:1; min-width:0; }
-    .ent-mat-chip { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; white-space:nowrap; }
-    .ent-mat-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
-    .ent-mat-nom { font-size:10.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; }
-    .ent-mat-chip strong { font-size:13px; font-weight:800; color:var(--text); }
+    .ent-c-mats { display:flex; flex-wrap:wrap; align-items:flex-start; gap:12px 30px; flex:1; min-width:0; }
+    .ent-mat { display:flex; flex-direction:column; gap:3px; white-space:nowrap; }
+    .ent-mat-lbl { font-size:11px; font-weight:600; letter-spacing:1px; text-transform:uppercase; color:var(--text-muted); }
+    .ent-mat-val { font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; }
+    .ent-mat-vacio { font-size:12px; color:var(--text-dim); }
 
-    .ent-c-val { width:100px; flex-shrink:0; text-align:right; font-size:15px; font-weight:800; color:#0a9e83; }
-    .ent-c-acts { flex-shrink:0; display:flex; gap:6px; }
+    .ent-c-acts { flex-shrink:0; display:flex; gap:8px; margin-left:auto; }
+    /* En la maqueta los tres botones ya vienen con su fondo tintado, no solo al hover */
+    .ent-c-acts .icon-btn.primary { background:rgba(80,108,255,.1); }
+    .ent-c-acts .icon-btn.del { background:rgba(248,45,114,.1); color:#F82D72; }
 
-    /* ── Nivel 1: provincias (grid de tarjetas) + asociaciones ── */
-    .ent-provs { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; align-items:start; }
-    .ent-prov-grupo { background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px 18px; }
-    .ent-prov-titulo { display:flex; align-items:flex-start; gap:10px; margin-bottom:14px; }
-    .ent-prov-ico { width:36px; height:36px; border-radius:10px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
-    .ent-prov-ico svg { width:19px; height:19px; }
-    .ent-prov-tit-tx { display:flex; flex-direction:column; gap:2px; flex:1; min-width:0; }
-    .ent-prov-nom { font-size:14.5px; font-weight:800; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .ent-prov-count { font-size:11px; font-weight:600; color:var(--text-dim); }
-    .ent-prov-total { font-size:15px; font-weight:800; white-space:nowrap; flex-shrink:0; }
-    .ent-prov-total small { font-size:10px; font-weight:700; opacity:.7; margin-left:2px; text-transform:uppercase; }
-    .ent-prov-lista { display:flex; flex-direction:column; gap:8px; }
+    /* ── Nivel 1: grid de tarjetas por provincia ── */
+    .ent-provs { display:grid; grid-template-columns:repeat(auto-fill,minmax(420px,1fr)); gap:18px; align-items:start; }
+    .ent-prov-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; }
+    .ent-prov-nom { font-size:21px; font-weight:700; letter-spacing:.3px; text-transform:uppercase; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ent-prov-total { flex-shrink:0; padding:6px 14px; border-radius:20px; font-size:13px; font-weight:700; white-space:nowrap; font-variant-numeric:tabular-nums; }
+    .ent-prov-lista { display:flex; flex-direction:column; gap:14px; }
 
-    .ent-asoc-row { display:flex; align-items:center; gap:11px; width:100%; text-align:left; background:transparent; border:1px solid var(--border); border-radius:12px; padding:10px 13px; cursor:pointer; font-family:inherit; transition:background .15s,border-color .15s; }
-    .ent-asoc-row:hover { background:var(--surface-hover); border-color:transparent; }
+    .ent-asoc { display:flex; align-items:center; gap:14px; width:100%; text-align:left; background:transparent; border:none; padding:0; cursor:pointer; font-family:inherit; }
     .ent-asoc-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
-    .ent-asoc-nom { flex:1; min-width:0; font-size:13.5px; font-weight:700; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .ent-asoc-chev { color:var(--text-dim); display:flex; flex-shrink:0; }
-    .ent-asoc-chev svg { width:17px; height:17px; }
-    .ent-asoc-vacia { opacity:.6; }
+    .ent-asoc-nom { flex:1; min-width:0; font-size:14px; font-weight:400; color:var(--text); line-height:1.35; }
+    .ent-asoc-go { flex-shrink:0; width:56px; height:26px; border-radius:7px; display:inline-flex; align-items:center; justify-content:center; color:#fff; transition:filter .15s, transform .12s; }
+    .ent-asoc-go svg { width:17px; height:17px; }
+    .ent-asoc:hover .ent-asoc-go { filter:brightness(1.12); transform:translateX(2px); }
+    .ent-asoc:active .ent-asoc-go { transform:scale(.94); }
+    .ent-asoc-vacia { opacity:.55; }
 
     /* Verificables: visto (disponible) */
     .ent-visto { display:inline-flex; align-items:center; gap:6px; }
@@ -1706,11 +1737,14 @@ function exportarMatrizEntregas() {
     .ent-doc-chip-off { color:var(--text-dim); background:transparent; cursor:default; }
 
     @media (max-width:820px) {
-      .ent-card { flex-wrap:wrap; gap:12px 16px; }
-      .ent-c-per { width:auto; order:1; }
-      .ent-c-val { order:2; margin-left:auto; }
-      .ent-c-mats { width:100%; order:4; gap:14px; }
-      .ent-c-acts { width:100%; order:5; justify-content:flex-end; border-top:1px solid var(--border); padding-top:12px; }
+      .ent-card { flex-wrap:wrap; gap:14px 18px; padding:16px 18px; }
+      .ent-c-per { order:1; min-width:0; }
+      .ent-c-acts { order:2; }
+      /* flex-basis, no width: el flex:1 de la regla base tiene basis 0% y
+         gana sobre width, así que la fila no bajaría de línea. */
+      .ent-c-mats { flex:1 1 100%; order:3; gap:12px 22px; }
+      .ent-provs { grid-template-columns:1fr; }
+      .ent-prov-nom { font-size:18px; }
     }
   `;
   document.head.appendChild(s);
