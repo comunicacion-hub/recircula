@@ -329,12 +329,16 @@ function gImpRow(label, co2, agua, co2Max, aguaMax) {
   '</div>';
 }
 
+// La cifra tiene su propia columna a la derecha (no va pegada al final de la
+// barra), así los números quedan alineados entre sí y la barra puede usar
+// todo el ancho disponible sin tope artificial.
 function gImpBar(valor, max, color, texto) {
   const v = valor || 0;
-  // Tope en 82% para que la cifra al final de la barra siempre quepa.
-  const w = v <= 0 ? 0 : Math.max(3, Math.min(82, (v / max) * 82));
+  const w = v <= 0 ? 0 : Math.max(2, Math.min(100, (v / max) * 100));
   return '<div class="g-imp-bar">' +
-    '<div class="g-imp-fill" style="width:' + w + '%;background:' + color + '"></div>' +
+    '<span class="g-imp-track">' +
+      '<span class="g-imp-fill" style="width:' + w + '%;background:' + color + '"></span>' +
+    '</span>' +
     '<span class="g-imp-val">' + texto + '</span>' +
   '</div>';
 }

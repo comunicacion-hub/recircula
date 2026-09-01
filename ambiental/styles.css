@@ -862,19 +862,26 @@ body {
 }
 
 /* ── Filas 2 y 3: dos columnas ────────────────────────────── */
-.g-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; }
+/* align-items:start — cada tarjeta toma su propia altura. Con stretch, la
+   más corta (materiales) se estiraba a la altura de la más alta (evolución,
+   una fila por provincia) y quedaba medio vacía. */
+.g-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; align-items: start; }
+/* Los hijos de grid traen min-width:auto y desbordarían con contenido largo */
+.g-kpis > *, .g-duo > * { min-width: 0; }
 
-/* ── Impacto Ambiental (CO₂ + agua en una tarjeta) ────────── */
-.g-imp      { display: flex; flex-direction: column; gap: 24px; }
-.g-imp-row  { display: grid; grid-template-columns: 52px 1fr; align-items: center; gap: 12px; }
+/* ── Impacto Ambiental (CO₂ + agua en una tarjeta) ──────────
+   Tres columnas: etiqueta de ancho fijo (para que todas las barras
+   arranquen alineadas), pista elástica, y cifra con columna propia
+   alineada a la derecha. */
+.g-imp      { display: flex; flex-direction: column; gap: 28px; }
+.g-imp-row  { display: grid; grid-template-columns: 56px 1fr; align-items: center; gap: 16px; }
 .g-imp-lbl  { font-size: 13.5px; font-weight: 700; color: var(--text); }
-.g-imp-bars { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
-.g-imp-bar  { display: flex; align-items: center; gap: 10px; min-width: 0; }
-/* La barra puede encogerse (flex-shrink por defecto) para que la cifra
-   nunca se recorte en pantallas angostas; la cifra no cede espacio. */
-.g-imp-fill { height: 11px; border-radius: 6px; }
+.g-imp-bars { display: flex; flex-direction: column; gap: 9px; min-width: 0; }
+.g-imp-bar  { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 14px; }
+.g-imp-track{ min-width: 0; }
+.g-imp-fill { display: block; height: 11px; border-radius: 6px; }
 .g-imp-val  {
-  flex-shrink: 0;
+  min-width: 84px; text-align: right;
   font-size: 12px; font-weight: 600; color: var(--text-muted);
   white-space: nowrap; font-variant-numeric: tabular-nums;
 }
@@ -925,23 +932,25 @@ body {
 .g-foot { display: flex; justify-content: flex-end; margin-top: 14px; }
 
 /* ── Evolución por material (slope chart por provincia) ───── */
-.g-evo     { display: flex; flex-direction: column; gap: 18px; }
-.g-evo-row { display: flex; flex-direction: column; gap: 3px; }
+/* Este gráfico necesita ALTO (una fila por provincia), no ancho: fila más
+   alta y más separación entre provincias para que las líneas respiren. */
+.g-evo     { display: flex; flex-direction: column; gap: 24px; }
+.g-evo-row { display: flex; flex-direction: column; gap: 7px; }
 .g-evo-prov {
   font-size: 10.5px; font-weight: 700; letter-spacing: .7px;
   text-transform: uppercase; color: var(--text-muted);
 }
 /* overflow visible: los puntos son trazos con remate redondo y sobresalen */
-.g-evo-svg { display: block; width: 100%; height: 26px; overflow: visible; }
+.g-evo-svg { display: block; width: 100%; height: 32px; overflow: visible; }
 
 /* ── Materiales (grilla de badges con tendencia) ──────────── */
 /* Dos columnas que se llenan de arriba abajo (la lista va ordenada por
    volumen, así se lee en orden). Multi-column en vez de grid porque grid
    llenaría por filas. */
-.g-mats { columns: 2; column-gap: 26px; }
+.g-mats { columns: 2; column-gap: 40px; }
 .g-mat  {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  break-inside: avoid; margin-bottom: 13px;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  break-inside: avoid; margin-bottom: 20px;
 }
 .g-mat:last-child { margin-bottom: 0; }
 .g-mat-nom {
