@@ -7,7 +7,7 @@ const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
                'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const PROVINCIAS = ['El Oro','Guayas','Manabí','Sucumbíos','Pichincha','Chimborazo'];
 const COLORES_PROV = {
-  'El Oro':     '#33A8DE', 'Guayas':    '#00bda4',
+  'El Oro':     '#18AE97', 'Guayas':    '#00bda4',
   'Manabí':     '#506CFF', 'Sucumbíos': '#F5AD21',
   'Pichincha':  '#9FDA60', 'Chimborazo':'#FF376F',
 };
@@ -70,7 +70,7 @@ async function renderDashboard() {
   document.getElementById('main-content').innerHTML =
     '<div class="page-header">' +
       '<div>' +
-        '<div class="page-title">Dashboard Ambiental</div>' +
+        '<div class="page-title">Gráficos</div>' +
         '<div class="page-sub" id="dash-fecha">' + capitalize(fmtFechaLarga(new Date())) + '</div>' +
       '</div>' +
       '<div class="hdr-actions">' +
@@ -203,7 +203,7 @@ function renderContenidoDashboard() {
   document.getElementById('dash-content').innerHTML =
     '<div class="dash-grid">' +
 
-      '<div class="card dash-card-totales">' +
+      '<div class="card glass dash-card-totales">' +
         '<div class="card-title">Totales</div>' +
         '<div class="totales-divider"></div>' +
         '<div class="totales-list">' +
@@ -213,7 +213,7 @@ function renderContenidoDashboard() {
         '</div>' +
       '</div>' +
 
-      '<div class="card dash-card-torta">' +
+      '<div class="card glass dash-card-torta">' +
         '<div class="card-title" style="justify-content:flex-end;">TN Recuperadas por material</div>' +
         '<div class="torta-wrap">' +
           '<div class="torta-canvas-wrap"><canvas id="chart-torta"></canvas></div>' +
@@ -221,7 +221,7 @@ function renderContenidoDashboard() {
         '</div>' +
       '</div>' +
 
-      '<div class="card dash-card-co2">' +
+      '<div class="card glass dash-card-co2">' +
         '<div class="card-title">CO₂ evitado</div>' +
         '<div class="bars-list">' +
           barraHorizontal('PET',   co2PET,   'bar-grad-pet',   't', 0, co2Max) +
@@ -231,18 +231,18 @@ function renderContenidoDashboard() {
         '<div class="card-footnote">CO₂ evitado = Toneladas × Factor de ahorro</div>' +
       '</div>' +
 
-      '<div class="card dash-card-meta">' +
+      '<div class="card glass dash-card-meta">' +
         '<div class="card-title"><span>Avance vs meta</span>' +
           '<button class="icon-btn" onclick="abrirEditarMetas()" title="Editar metas">' + icoHTML('settings') + '</button>' +
         '</div>' +
         '<div class="bullet-list">' +
-          bulletRow('PET',   k.tnPET,   METAS.PET,   'linear-gradient(90deg,#33A8DE,#506CFF)') +
-          bulletRow('Duro',  k.tnDuro,  METAS.Duro,  'linear-gradient(90deg,#0BC3FF,#18AE97)') +
-          bulletRow('Suave', k.tnSuave, METAS.Suave, 'linear-gradient(90deg,#9FDA60,#18AE97)') +
+          bulletRow('PET',   k.tnPET,   METAS.PET,   'linear-gradient(90deg,#18AE97,#506CFF)') +
+          bulletRow('Duro',  k.tnDuro,  METAS.Duro,  'linear-gradient(90deg,#0BC3FF,#506CFF)') +
+          bulletRow('Suave', k.tnSuave, METAS.Suave, 'linear-gradient(90deg,#9FDA60,#506CFF)') +
         '</div>' +
       '</div>' +
 
-      '<div class="card dash-card-agua">' +
+      '<div class="card glass dash-card-agua">' +
         '<div class="card-title">Ahorro de agua</div>' +
         '<div class="bars-list">' +
           barraHorizontal('PET',   aguaPET,   'bar-grad-pet',   'L', 0, aguaMax) +
@@ -254,7 +254,7 @@ function renderContenidoDashboard() {
 
     '</div>' +
 
-    '<div class="card dash-row-bottom">' +
+    '<div class="card glass dash-row-bottom">' +
       '<div class="card-title"><span>Evolución por Material · ' + esc(MATERIAL_EVOLUCION) + '</span>' +
         '<button class="icon-btn" onclick="abrirSelectorMaterialEvolucion()" title="Elegir material">' + icoHTML('settings') + '</button>' +
       '</div>' +
@@ -300,7 +300,7 @@ function initChartTorta(distribucion) {
   if (!ctx) return;
 
   const colores = {
-    'PET': '#33A8DE', 'Plástico Duro': '#506CFF', 'Plástico Suave': '#18AE97',
+    'PET': '#18AE97', 'Plástico Duro': '#506CFF', 'Plástico Suave': '#7B5CFF',
     'Cartón': '#F5AD21', 'Lata Aluminio': '#0BC3FF', 'Vidrio': '#9FDA60',
     'Otros materiales': '#D0D0D8',
   };

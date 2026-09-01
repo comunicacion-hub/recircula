@@ -18,8 +18,8 @@ const PRECIOS = (() => {
 
   // Gradientes idénticos a styles.css (A–E). Stroke por url(#id); leyenda por var(--grad-*).
   const GRADS = [
-    { id:'prGradB', from:'#33A8DE', to:'#506CFF', varName:'--grad-b' },
-    { id:'prGradC', from:'#18AE97', to:'#0BC3FF', varName:'--grad-c' },
+    { id:'prGradB', from:'#18AE97', to:'#506CFF', varName:'--grad-b' },
+    { id:'prGradC', from:'#506CFF', to:'#0BC3FF', varName:'--grad-c' },
     { id:'prGradD', from:'#F5AD21', to:'#9FDA60', varName:'--grad-d' },
     { id:'prGradE', from:'#F82D72', to:'#FF85FF', varName:'--grad-e' },
     { id:'prGradA', from:'#FF751F', to:'#FF376F', varName:'--grad-a' },

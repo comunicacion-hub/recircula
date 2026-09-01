@@ -4,12 +4,12 @@
    ============================================================ */
 
 :root {
-  /* Gradientes idénticos a Bienestar360 (A–E) */
-  --grad-a: linear-gradient(135deg, #FF751F, #FF376F); /* coral-magenta */
-  --grad-b: linear-gradient(135deg, #33A8DE, #506CFF); /* azul */
-  --grad-c: linear-gradient(135deg, #18AE97, #0BC3FF); /* teal-cyan */
-  --grad-d: linear-gradient(135deg, #F5AD21, #9FDA60); /* amarillo-verde */
-  --grad-e: linear-gradient(135deg, #F82D72, #FF85FF); /* rosa-magenta */
+  /* Gradientes idénticos a Bienestar360 (A–E) — rotación de color: azul→teal, teal→índigo */
+  --grad-a: linear-gradient(135deg, #FF751F, #FF376F); /* coral-magenta (sin cambio) */
+  --grad-b: linear-gradient(135deg, #18AE97, #506CFF); /* antes azul, ahora teal→índigo */
+  --grad-c: linear-gradient(135deg, #506CFF, #0BC3FF); /* antes teal-cyan, ahora índigo→cyan */
+  --grad-d: linear-gradient(135deg, #F5AD21, #9FDA60); /* amarillo-verde (sin cambio) */
+  --grad-e: linear-gradient(135deg, #F82D72, #FF85FF); /* rosa-magenta (sin cambio) */
 
   /* Texto */
   --text:        #1b1b1b;
@@ -21,8 +21,17 @@
   --surface-hover: #f3f3f7;
   --border:        rgba(0,0,0,0.09);
 
-  /* Fondo */
-  --bg: linear-gradient(135deg, #e8f4fd, #eef0ff, #e8faf7);
+  /* Fondo — "tono único" (índigo tenue), reemplaza el pastel de 3 colores */
+  --bg:
+    radial-gradient(900px 620px at 26% 0%,   rgba(80,108,255,.16), transparent 60%),
+    radial-gradient(900px 680px at 100% 100%, rgba(80,108,255,.12), transparent 60%),
+    linear-gradient(160deg, #eef1fb, #e4e9fa);
+
+  /* Vidrio (liquid glass) */
+  --glass-bg:     rgba(255,255,255,.84);
+  --glass-border: rgba(255,255,255,.65);
+  --glass-blur:   blur(20px) saturate(170%);
+  --glass-shadow: 0 6px 24px rgba(20,30,55,.10), inset 0 1px 0 rgba(255,255,255,.7);
 
   /* Radios */
   --radius-sm: 10px;
@@ -72,6 +81,15 @@ body {
 .grad-d-text { background: var(--grad-d); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
 .grad-a-text { background: var(--grad-a); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
 
+/* Vidrio (liquid glass) — utilitario reusable */
+.glass {
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
 /* ============================================================
    APP SHELL
    ============================================================ */
@@ -86,7 +104,7 @@ body {
 .main-area { display: block; }
 
 .main-content {
-  padding: 36px 48px 120px;
+  padding: 28px 48px 140px 132px;
   display: flex;
   flex-direction: column;
   gap: 28px;
@@ -94,25 +112,32 @@ body {
   margin: 0 auto;
 }
 
-/* ── Page header (cada sección) ─────────────────────────── */
+/* ── Page header (cada sección) — cápsula de vidrio ───────── */
 .page-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
+  padding: 16px 24px;
+  border-radius: var(--radius-xl);
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
 }
 .page-title {
-  font-size: 34px;
+  font-size: 22px;
   font-weight: 700;
-  letter-spacing: -1px;
+  letter-spacing: -0.5px;
   color: var(--text);
   line-height: 1.1;
 }
 .page-sub {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-muted);
-  margin-top: 6px;
+  margin-top: 4px;
 }
 .hdr-actions {
   display: flex;
@@ -127,46 +152,75 @@ body {
 
 .bottom-nav {
   position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
+  left: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  bottom: auto;
   z-index: 100;
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 14px;
-  background: rgba(255,255,255,0.95);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255,255,255,0.8);
-  border-radius: 100px;
-  box-shadow: 0 8px 32px rgba(31,38,135,0.12), 0 2px 8px rgba(0,0,0,0.04);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  padding: 14px 10px;
+  background: var(--glass-bg);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 26px;
+  box-shadow: var(--glass-shadow);
 }
 .bn-item {
-  width: 46px;
-  height: 46px;
-  border-radius: 50%;
+  width: 100%;
+  height: auto;
+  border-radius: 16px;
   display: flex;
+  flex-direction: row;
   align-items: center;
-  justify-content: center;
+  gap: 10px;
+  padding: 11px 14px;
   cursor: pointer;
   transition: all 0.2s;
   color: #8a8a99;
   background: transparent;
   border: none;
   flex-shrink: 0;
-  padding: 0;
 }
-.bn-item svg { width: 22px; height: 22px; transition: transform 0.2s; }
+.bn-item svg { width: 20px; height: 20px; flex-shrink: 0; transition: transform 0.2s; }
+.bn-label { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
 .bn-item:hover { background: rgba(0,0,0,0.04); color: var(--text); }
 .bn-item:hover svg { transform: scale(1.08); }
 .bn-item.active {
   background: var(--grad-b);
   color: #fff;
-  box-shadow: 0 4px 14px rgba(80,108,255,0.4);
+  box-shadow: 0 4px 14px rgba(80,108,255,0.35);
 }
 .bn-item.active:hover { color: #fff; }
-.bn-item:active { transform: scale(0.92); }
+.bn-item:active { transform: scale(0.96); }
+
+/* ============================================================
+   FAB — botón flotante de acción primaria
+   ============================================================ */
+.fab {
+  position: fixed;
+  left: 24px;
+  top: calc(50% + 132px);
+  z-index: 100;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: none;
+  color: #fff;
+  background: var(--grad-b);
+  box-shadow: 0 8px 24px rgba(80,108,255,0.4), 0 2px 8px rgba(0,0,0,0.06);
+  transition: all 0.18s;
+}
+.fab svg { width: 24px; height: 24px; }
+.fab:hover { transform: translateY(-2px) scale(1.04); box-shadow: 0 10px 28px rgba(80,108,255,0.48); }
+.fab:active { transform: scale(0.94); }
 
 /* ============================================================
    HEADER CIRCULAR BUTTONS
@@ -177,8 +231,10 @@ body {
   width: 46px;
   height: 46px;
   border-radius: 50%;
-  background: #fff;
-  border: none;
+  background: rgba(255,255,255,.55);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1095,20 +1151,44 @@ body {
 
 @media (max-width: 768px) {
   .main-content {
-    padding: 20px 16px calc(110px + env(safe-area-inset-bottom));
+    padding: 16px 16px calc(122px + env(safe-area-inset-bottom));
     gap: 22px;
   }
 
-  .page-title { font-size: 26px; }
-  .page-sub   { font-size: 13px; }
+  .page-title { font-size: 19px; }
+  .page-sub   { font-size: 12px; }
 
   .bottom-nav {
+    left: 50%;
+    top: auto;
     bottom: calc(14px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    flex-direction: row;
+    align-items: center;
     padding: 8px 10px;
     gap: 2px;
+    border-radius: 100px;
   }
-  .bn-item { width: 42px; height: 42px; }
+  .bn-item {
+    width: 58px;
+    height: auto;
+    flex-direction: column;
+    gap: 3px;
+    padding: 8px 4px;
+    border-radius: 14px;
+  }
   .bn-item svg { width: 20px; height: 20px; }
+  .bn-label { font-size: 9.5px; }
+
+  .fab {
+    left: auto;
+    right: 18px;
+    top: auto;
+    bottom: calc(96px + env(safe-area-inset-bottom));
+    width: 50px;
+    height: 50px;
+  }
+  .fab svg { width: 22px; height: 22px; }
 
   .hdr-circle { width: 42px; height: 42px; }
   .hdr-circle svg { width: 18px; height: 18px; }

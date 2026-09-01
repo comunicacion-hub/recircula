@@ -302,16 +302,33 @@ async function iniciarApp() {
 
 function pintarIconosNav() {
   const map = {
-    'nav-dashboard':   'home',
+    'nav-dashboard':   'barChart',
     'nav-entregas':    'recycle',
     'nav-compradores': 'cart',
+    'nav-precios':     'tag',
   };
   Object.entries(map).forEach(function(pair) {
     const el = document.getElementById(pair[0]);
-    if (el && !el.innerHTML.trim()) el.innerHTML = icoHTML(pair[1]);
+    if (el && !el.querySelector('svg')) el.insertAdjacentHTML('afterbegin', icoHTML(pair[1]));
   });
   const dc = document.querySelector('.filter-drawer-head .modal-close');
   if (dc && !dc.innerHTML.trim()) dc.innerHTML = icoHTML('close');
+}
+
+// FAB flotante — acción primaria de la sección activa (Mi RCR style)
+function mostrarFAB(icono, onclick, label) {
+  const fab = document.getElementById('fab');
+  if (!fab) return;
+  fab.innerHTML = icoHTML(icono);
+  fab.title = label || '';
+  fab.onclick = onclick;
+  fab.classList.remove('hidden');
+}
+function ocultarFAB() {
+  const fab = document.getElementById('fab');
+  if (!fab) return;
+  fab.classList.add('hidden');
+  fab.onclick = null;
 }
 
 // ============================================================
@@ -548,6 +565,7 @@ function navTo(seccion) {
 
   closeFilterDrawer();
   document.getElementById('main-content').innerHTML = '';
+  ocultarFAB();
 
   switch (seccion) {
     case 'dashboard':   if (typeof renderDashboard === 'function')   renderDashboard();   break;

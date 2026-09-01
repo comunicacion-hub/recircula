@@ -31,7 +31,7 @@ function renderCompradores() {
   document.getElementById('main-content').innerHTML = `
     <div class="page-header">
       <div>
-        <div class="page-title">Compradores</div>
+        <div class="page-title">Comprador</div>
         <div class="page-sub">Registro</div>
       </div>
       <div class="hdr-actions">
@@ -42,16 +42,14 @@ function renderCompradores() {
         <button class="hdr-circle" onclick="exportarCompradoresExcel()" title="Descargar Excel">
           ${icoHTML('download')}
         </button>
-        ${puedeEditar() ? `
-        <button class="hdr-circle hdr-circle-primary" onclick="abrirFormComprador()" title="Nuevo comprador">
-          ${icoHTML('plus')}
-        </button>
-        ` : ''}
       </div>
     </div>
 
     <div id="compradores-table-wrap"></div>
   `;
+  if (puedeEditar()) {
+    mostrarFAB('plus', abrirFormComprador, 'Nuevo comprador');
+  }
   renderTablaCompradores();
 }
 
@@ -62,7 +60,7 @@ function renderCompradores() {
 // Columnas fijas por nivel (los "Transformador" y otros no estándar caen en Nivel 3)
 const CMP_NIVELES = [
   { label: 'Nivel 1', color: '#506CFF' },
-  { label: 'Nivel 2', color: '#18AE97' },
+  { label: 'Nivel 2', color: '#0BC3FF' },
   { label: 'Nivel 3', color: '#7B5CFF' },
 ];
 function _colDeNivel(nivel) {

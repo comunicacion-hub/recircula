@@ -89,6 +89,31 @@ function _kilosAsoc(idAsoc) {
     .reduce((a, e) => a + _kilosEntrega(e), 0);
 }
 
+// Paleta fija de MATERIALES para "Pesos" — independiente de la rotación global
+// de color y de ENT_PROV_PAL. Único mapa reusable: úsalo en vez de colores
+// sueltos repetidos por función. Los 12 últimos (desde Vidrio) no fueron
+// confirmados por el usuario; son una elección razonable para completar el
+// catálogo dinámico de 16 materiales.
+const ENT_MAT_PAL = {
+  'PET':            '#506CFF',
+  'Plástico Suave': '#FF751F',
+  'Plástico Duro':  '#18AE97',
+  'Lata Aluminio':  '#F82D72',
+  'Vidrio':         '#33A8DE',
+  'Cartón':         '#C19A6B',
+  'Chatarra':       '#8a8a99',
+  'Cobre':          '#B5651D',
+  'Papel Archivo':  '#F5AD21',
+  'Periódico':      '#B8B8C8',
+  'Soplado':        '#0BC3FF',
+  'Tetrapak':       '#7B5CFF',
+  'Suela':          '#4A4A55',
+  'Bronce':         '#CD7F32',
+  'Batería':        '#DC2626',
+  'Acero':          '#A8AEB8',
+};
+function _colorMaterialEnt(nombre) { return ENT_MAT_PAL[nombre] || '#8a8a99'; }
+
 // Estilo por provincia (ícono + color) para el Nivel 1
 const ENT_PROV_PAL = ['#506CFF', '#18AE97', '#F5AD21', '#F82D72', '#FF751F', '#33A8DE', '#7B5CFF', '#0BC3FF'];
 function _provEstiloEnt(prov) {
@@ -120,15 +145,16 @@ function renderNivelAsociaciones() {
   document.getElementById('main-content').innerHTML = `
     <div class="page-header">
       <div>
-        <div class="page-title">Entregas</div>
+        <div class="page-title">Pesos</div>
         <div class="page-sub">Registro por asociación</div>
       </div>
       <div class="hdr-actions">
         <button class="hdr-circle" onclick="exportarMatrizEntregas()" title="Descargar toda la matriz">${icoHTML('download')}</button>
-        ${add ? `<button class="hdr-circle hdr-circle-primary" onclick="abrirFormEntrega()" title="Nueva entrega">${icoHTML('plus')}</button>` : ''}
       </div>
     </div>
     <div id="ent-n1-wrap"></div>`;
+
+  if (add) mostrarFAB('plus', abrirFormEntrega, 'Nueva entrega');
 
   const wrap = document.getElementById('ent-n1-wrap');
 
@@ -148,23 +174,24 @@ function renderNivelAsociaciones() {
   wrap.innerHTML = '<div class="ent-provs">' + provs.map(prov => {
     const est = _provEstiloEnt(prov);
     const lista = grupos[prov].slice().sort((a, b) => (a['Nombre'] || '').localeCompare(b['Nombre'] || '', 'es'));
+    const totalProvTn = lista.reduce((s, a) => s + _kilosAsoc(a['ID_Asociacion']), 0) / 1000;
     const filas = lista.map(a => {
       const kg = _kilosAsoc(a['ID_Asociacion']);
       const vacia = kg <= 0;
-      const pill = vacia
-        ? '<span class="ent-asoc-pill ent-asoc-pill-0">0 kg</span>'
-        : `<span class="ent-asoc-pill" style="background:${_rgbaEnt(est.color, 0.13)};color:${est.color}">${fmtNum(kg)} kg</span>`;
       return `<button class="ent-asoc-row${vacia ? ' ent-asoc-vacia' : ''}" onclick="abrirAsociacionEntregas('${jsEsc(a['ID_Asociacion'])}')">
-        <span class="ent-asoc-ico" style="background:${_rgbaEnt(est.color, 0.12)};color:${est.color}">${icoHTML('users')}</span>
+        <span class="ent-asoc-dot" style="background:${est.color}"></span>
         <span class="ent-asoc-nom">${esc(a['Nombre'] || '—')}</span>
-        <span class="ent-asoc-right">${pill}<span class="ent-asoc-chev">${CHEV}</span></span>
+        <span class="ent-asoc-chev">${CHEV}</span>
       </button>`;
     }).join('');
     return `<div class="ent-prov-grupo">
       <div class="ent-prov-titulo">
         <span class="ent-prov-ico" style="background:${_rgbaEnt(est.color, 0.14)};color:${est.color}">${icoHTML(est.ico)}</span>
-        <span class="ent-prov-nom">${esc(prov)}</span>
-        <span class="ent-prov-count">${lista.length} asociaci${lista.length !== 1 ? 'ones' : 'ón'}</span>
+        <div class="ent-prov-tit-tx">
+          <span class="ent-prov-nom">${esc(prov)}</span>
+          <span class="ent-prov-count">${lista.length} asociaci${lista.length !== 1 ? 'ones' : 'ón'}</span>
+        </div>
+        <span class="ent-prov-total" style="color:${est.color}">${fmtNum(totalProvTn)}<small>TN</small></span>
       </div>
       <div class="ent-prov-lista">${filas}</div>
     </div>`;
@@ -193,23 +220,20 @@ function renderNivelLista() {
   document.getElementById('main-content').innerHTML = `
     <div class="page-header">
       <div>
-        <div class="ent-title-row">
-          <button class="ent-back" onclick="volverAsociacionesEnt()" title="Volver a asociaciones">${BACK}</button>
-          <div>
-            <div class="page-title">Entregas</div>
-            <div class="page-sub">${esc(nombre)}</div>
-          </div>
-        </div>
+        <div class="page-title">Pesos</div>
+        <div class="page-sub">${esc(nombre)}</div>
       </div>
       <div class="hdr-actions">
+        <button class="hdr-circle" onclick="volverAsociacionesEnt()" title="Volver a asociaciones">${BACK}</button>
         <button class="hdr-circle" onclick="openFilterDrawer('entregas')" title="Filtros">
           ${icoHTML('filter')}<span class="filter-badge" id="badge-entregas" style="display:none;">0</span>
         </button>
         <button class="hdr-circle" onclick="exportarEntregasExcel()" title="Descargar Excel">${icoHTML('download')}</button>
-        ${add ? `<button class="hdr-circle hdr-circle-primary" onclick="abrirFormEntrega()" title="Nueva entrega">${icoHTML('plus')}</button>` : ''}
       </div>
     </div>
     <div id="entregas-table-wrap"></div>`;
+
+  if (add) mostrarFAB('plus', abrirFormEntrega, 'Nueva entrega');
 
   cargarEntregas();
   updateFilterBadge('entregas');
@@ -280,14 +304,18 @@ function _agruparEntregasVista(lista) {
     const hermanos = e['ID_Grupo_Entrega']
       ? (CAT.entregas || []).filter(r => r['ID_Grupo_Entrega'] === e['ID_Grupo_Entrega'])
       : [e];
-    let petKg = 0, suaveKg = 0, duroKg = 0, total = 0;
+    // Kilos por material, dinámico: solo materiales con kg>0 en el grupo (igual criterio que verEntrega).
+    const matsKg = {};
+    let total = 0;
     hermanos.forEach(h => {
-      petKg   += parseFloat(h['PET Kilos'] || 0) || 0;
-      suaveKg += parseFloat(h['Plástico Suave Kilos'] || 0) || 0;
-      duroKg  += parseFloat(h['Plástico Duro Kilos'] || 0) || 0;
-      total   += parseFloat(h['Valor Total'] || 0) || 0;
+      (CAT.materiales || []).forEach(m => {
+        const nombre = m['Nombre'];
+        const kg = parseFloat(h[nombre + ' Kilos'] || 0) || 0;
+        if (kg > 0) matsKg[nombre] = (matsKg[nombre] || 0) + kg;
+      });
+      total += parseFloat(h['Valor Total'] || 0) || 0;
     });
-    grupos.push({ rep: e, hermanos: hermanos, petKg: petKg, suaveKg: suaveKg, duroKg: duroKg, total: total, n: hermanos.length });
+    grupos.push({ rep: e, hermanos: hermanos, matsKg: matsKg, total: total, n: hermanos.length });
   });
   return grupos;
 }
@@ -317,19 +345,15 @@ function renderTablaEntregas() {
   // Agrupar por entrega (ID_Grupo_Entrega), uniendo compradores como en la ficha
   const grupos = _agruparEntregasVista(ENTREGAS_DATA);
 
-  // Máximo de kilos (entre los TOTALES PET/Suave/Duro de cada entrega) para escalar las barras
-  let maxKg = 0;
-  grupos.forEach(g => { [g.petKg, g.suaveKg, g.duroKg].forEach(v => { if (v > maxKg) maxKg = v; }); });
-  const barra = (kg, color) => {
-    const pct = maxKg > 0 ? Math.max((kg / maxKg) * 100, kg > 0 ? 4 : 0) : 0;
-    return `<div class="ent-bar"><div class="ent-bar-fill" style="width:${pct}%;background:${color}"></div></div>`;
+  // Un material por línea: punto de color + nombre + kg (dinámico, en TN, sin barra).
+  const matChip = (nombre, kg) => {
+    const color = _colorMaterialEnt(nombre);
+    return `<span class="ent-mat-chip">
+      <span class="ent-mat-dot" style="background:${color}"></span>
+      <span class="ent-mat-nom" style="color:${color}">${esc(nombre)}</span>
+      <strong>${fmtNum(kg / 1000)} TN</strong>
+    </span>`;
   };
-  const mat = (lbl, kg, color) => `
-    <div class="ent-mat">
-      <div class="ent-mat-lbl">${lbl}</div>
-      <div class="ent-mat-kg">${fmtNum(kg)} kg</div>
-      ${barra(kg, color)}
-    </div>`;
 
   const cards = grupos.map(g => {
     const e       = g.rep;
@@ -339,6 +363,10 @@ function renderTablaEntregas() {
     const nBuyers = g.n > 1
       ? `<span style="display:block;font-size:10.5px;font-weight:600;color:var(--text-dim);margin-top:2px">${g.n} compradores</span>`
       : '';
+    const matsNombres = Object.keys(g.matsKg);
+    const matsHtml = matsNombres.length
+      ? matsNombres.map(n => matChip(n, g.matsKg[n])).join('')
+      : '<span style="font-size:12px;color:var(--text-dim)">Sin materiales</span>';
 
     return `
       <div class="ent-card" onclick="verEntrega('${idEnt}')">
@@ -346,11 +374,7 @@ function renderTablaEntregas() {
           <span class="ent-cal" style="background:${_rgbaEnt(col, 0.14)};color:${col}">${icoHTML('calendar')}</span>
           <span class="ent-cal-txt">${esc(e['Mes'] || '')} ${esc(e['Año'] || '')}${nBuyers}</span>
         </div>
-        <div class="ent-c-mats">
-          ${mat('PET', g.petKg, '#506CFF')}
-          ${mat('SUAVE', g.suaveKg, '#18AE97')}
-          ${mat('DURO', g.duroKg, '#F5AD21')}
-        </div>
+        <div class="ent-c-mats">${matsHtml}</div>
         <div class="ent-c-val">${fmtMoney(g.total)}</div>
         <div class="ent-c-acts td-actions" onclick="event.stopPropagation()">
           <button class="icon-btn" onclick="verEntrega('${idEnt}')" title="Ver">${icoHTML('view')}</button>
@@ -373,7 +397,11 @@ function renderTablaEntregas() {
 // Color por mes (para el ícono de período)
 function _mesColor(mes) {
   const ORD = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-  const pal = ['#506CFF', '#18AE97', '#F5AD21', '#F82D72', '#FF751F', '#33A8DE', '#7B5CFF', '#0BC3FF', '#9FDA60', '#FF376F', '#FF85FF', '#0a9e83'];
+  // Rotación global 33A8DE→18AE97→506CFF aplicada. Colisión: el índice 1 (antes
+  // #18AE97) rotaba a #506CFF, ya ocupado por el índice 0 (destino, sin rotar) —
+  // se resolvió con #0f9b84 (teal ya presente en compradores.js), distinto de
+  // cualquier otro valor de esta misma paleta.
+  const pal = ['#506CFF', '#0f9b84', '#F5AD21', '#F82D72', '#FF751F', '#18AE97', '#7B5CFF', '#0BC3FF', '#9FDA60', '#FF376F', '#FF85FF', '#0a9e83'];
   const i = ORD.indexOf(String(mes || '').toLowerCase());
   return pal[(i >= 0 ? i : 0) % pal.length];
 }
@@ -1592,46 +1620,39 @@ function exportarMatrizEntregas() {
     .ent-cal svg { width:20px; height:20px; }
     .ent-cal-txt { font-size:13px; font-weight:700; color:var(--text); line-height:1.3; }
 
-    .ent-c-mats { display:flex; gap:22px; flex:1; min-width:0; }
-    .ent-mat { flex:1; min-width:0; }
-    .ent-mat-lbl { font-size:10.5px; font-weight:700; color:var(--text-dim); letter-spacing:.5px; }
-    .ent-mat-kg { font-size:13px; font-weight:700; color:var(--text); margin:3px 0 7px; }
-    .ent-bar { height:6px; background:#eef0f4; border-radius:20px; overflow:hidden; }
-    .ent-bar-fill { height:100%; border-radius:20px; transition:width .5s ease; }
+    .ent-c-mats { display:flex; flex-wrap:wrap; align-items:center; gap:8px 16px; flex:1; min-width:0; }
+    .ent-mat-chip { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; white-space:nowrap; }
+    .ent-mat-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+    .ent-mat-nom { font-size:10.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; }
+    .ent-mat-chip strong { font-size:13px; font-weight:800; color:var(--text); }
 
     .ent-c-val { width:100px; flex-shrink:0; text-align:right; font-size:15px; font-weight:800; color:#0a9e83; }
     .ent-c-acts { flex-shrink:0; display:flex; gap:6px; }
 
-    /* ── Nivel 1: provincias + asociaciones ── */
-    .ent-provs { display:flex; flex-direction:column; gap:22px; }
-    .ent-prov-titulo { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+    /* ── Nivel 1: provincias (grid de tarjetas) + asociaciones ── */
+    .ent-provs { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:16px; align-items:start; }
+    .ent-prov-grupo { background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px 18px; }
+    .ent-prov-titulo { display:flex; align-items:flex-start; gap:10px; margin-bottom:14px; }
     .ent-prov-ico { width:36px; height:36px; border-radius:10px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
     .ent-prov-ico svg { width:19px; height:19px; }
-    .ent-prov-nom { font-size:15px; font-weight:800; color:var(--text); }
-    .ent-prov-count { font-size:11.5px; font-weight:600; color:var(--text-dim); background:rgba(0,0,0,.04); padding:3px 10px; border-radius:20px; }
-    .ent-prov-lista { display:flex; flex-direction:column; gap:10px; }
+    .ent-prov-tit-tx { display:flex; flex-direction:column; gap:2px; flex:1; min-width:0; }
+    .ent-prov-nom { font-size:14.5px; font-weight:800; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ent-prov-count { font-size:11px; font-weight:600; color:var(--text-dim); }
+    .ent-prov-total { font-size:15px; font-weight:800; white-space:nowrap; flex-shrink:0; }
+    .ent-prov-total small { font-size:10px; font-weight:700; opacity:.7; margin-left:2px; text-transform:uppercase; }
+    .ent-prov-lista { display:flex; flex-direction:column; gap:8px; }
 
-    .ent-asoc-row { display:flex; align-items:center; gap:14px; width:100%; text-align:left; background:var(--surface); border:1px solid var(--border); border-radius:15px; padding:14px 18px; cursor:pointer; font-family:inherit; transition:box-shadow .15s,transform .12s,border-color .15s; }
-    .ent-asoc-row:hover { box-shadow:0 6px 18px rgba(0,0,0,.08); transform:translateY(-2px); border-color:transparent; }
-    .ent-asoc-ico { width:40px; height:40px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
-    .ent-asoc-ico svg { width:20px; height:20px; }
-    .ent-asoc-nom { flex:1; min-width:0; font-size:14px; font-weight:700; color:var(--text); }
-    .ent-asoc-right { display:flex; align-items:center; gap:10px; flex-shrink:0; }
-    .ent-asoc-pill { font-size:12.5px; font-weight:700; padding:5px 12px; border-radius:20px; white-space:nowrap; }
-    .ent-asoc-pill-0 { color:var(--text-dim); background:rgba(0,0,0,.05); }
-    .ent-asoc-chev { color:var(--text-dim); display:flex; }
-    .ent-asoc-chev svg { width:18px; height:18px; }
+    .ent-asoc-row { display:flex; align-items:center; gap:11px; width:100%; text-align:left; background:transparent; border:1px solid var(--border); border-radius:12px; padding:10px 13px; cursor:pointer; font-family:inherit; transition:background .15s,border-color .15s; }
+    .ent-asoc-row:hover { background:var(--surface-hover); border-color:transparent; }
+    .ent-asoc-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+    .ent-asoc-nom { flex:1; min-width:0; font-size:13.5px; font-weight:700; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .ent-asoc-chev { color:var(--text-dim); display:flex; flex-shrink:0; }
+    .ent-asoc-chev svg { width:17px; height:17px; }
     .ent-asoc-vacia { opacity:.6; }
-
-    /* Título con botón volver (Nivel 2) */
-    .ent-title-row { display:flex; align-items:center; gap:12px; }
-    .ent-back { width:38px; height:38px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:var(--surface); border:1px solid var(--border); color:var(--text); cursor:pointer; transition:background .15s; }
-    .ent-back:hover { background:var(--surface-hover); }
-    .ent-back svg { width:19px; height:19px; }
 
     /* Verificables: visto (disponible) */
     .ent-visto { display:inline-flex; align-items:center; gap:6px; }
-    .ent-visto-ic { width:22px; height:22px; border-radius:50%; background:#18AE97; color:#fff; display:inline-flex; align-items:center; justify-content:center; }
+    .ent-visto-ic { width:22px; height:22px; border-radius:50%; background:#506CFF; color:#fff; display:inline-flex; align-items:center; justify-content:center; }
     .ent-visto-ic svg { width:13px; height:13px; }
     .ent-visto-no { color:var(--text-dim); font-weight:600; }
 
