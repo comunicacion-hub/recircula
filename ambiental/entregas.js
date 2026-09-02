@@ -144,6 +144,42 @@ function _provEstiloEnt(prov) {
   return { ico: 'mapPin', color: ENT_PROV_PAL[h % ENT_PROV_PAL.length] };
 }
 
+// ── Totales por PLÁSTICOS PRIORIZABLES (PET · Suave · Duro) ──
+// Toda la sección Pesos totaliza SOLO estos tres materiales (decisión de
+// producto): así las cajas de cada entrega siempre suman su total y los
+// números de Nivel 1 y Nivel 2 coinciden. El resto de materiales de una
+// entrega sigue visible en su ficha de detalle (verEntrega).
+const ENT_PRIORIDAD = ['PET', 'Plástico Suave', 'Plástico Duro'];
+
+// TN priorizables de un documento de entrega.
+function _tnPrioridadEnt(e) {
+  let kg = 0;
+  ENT_PRIORIDAD.forEach(m => { kg += parseFloat(e[m + ' Kilos'] || 0) || 0; });
+  return kg / 1000;
+}
+
+// Índice por asociación calculado una vez por render de Nivel 1:
+// TN priorizables, nº de entregas (agrupadas por ID_Grupo_Entrega) y la
+// entrega más reciente (para la línea "última MES AÑO").
+function _indiceAsociacionesEnt() {
+  const idx = {};
+  (CAT.entregas || []).forEach(e => {
+    const id = e['ID_Asociacion']; if (!id) return;
+    const a = idx[id] || (idx[id] = { tn: 0, grupos: new Set(), ordUlt: -1, ult: null });
+    a.tn += _tnPrioridadEnt(e);
+    a.grupos.add(e['ID_Grupo_Entrega'] || e['_docId']);
+    const ord = _periodoOrden(e);
+    if (ord > a.ordUlt) { a.ordUlt = ord; a.ult = e; }
+  });
+  return idx;
+}
+
+// "agosto" → "Ago" (etiqueta corta de mes para las sublíneas).
+function _mesAbr3(mes) {
+  const m = capMes(mes);
+  return m ? m.slice(0, 3) : '';
+}
+
 // ============================================================
 // RENDER PRINCIPAL
 // ============================================================
@@ -191,6 +227,8 @@ function renderProvinciasEnt() {
   const wrap = document.getElementById('ent-n1-wrap');
   if (!wrap) return;
 
+  const idx = _indiceAsociacionesEnt();
+
   const grupos = {};
   (CAT.asociaciones || []).forEach(a => {
     if (!pasaFiltro(ENT_FILTROS_N1.provincia,  a['Provincia'])) return;
@@ -205,27 +243,49 @@ function renderProvinciasEnt() {
     return;
   }
 
-  const FLECHA = icoHTML('arrowRight');
-  wrap.innerHTML = '<div class="ent-provs">' + provs.map(prov => {
+  // TN priorizables por provincia y total general (para el % de participación).
+  const provTot = {};
+  provs.forEach(p => { provTot[p] = grupos[p].reduce((s, a) => s + ((idx[a['ID_Asociacion']] || {}).tn || 0), 0); });
+  const granTotal = provs.reduce((s, p) => s + provTot[p], 0) || 1;
+
+  wrap.innerHTML = '<div class="prov-grid">' + provs.map(prov => {
     const color = _provEstiloEnt(prov).color;
     const lista = grupos[prov].slice().sort((a, b) => (a['Nombre'] || '').localeCompare(b['Nombre'] || '', 'es'));
-    const totalTn = lista.reduce((s, a) => s + _kilosAsoc(a['ID_Asociacion']), 0) / 1000;
+    const tot   = provTot[prov];
+    const share = tot / granTotal * 100;
 
     const filas = lista.map(a => {
-      const vacia = _kilosAsoc(a['ID_Asociacion']) <= 0;
-      return `<button class="ent-asoc${vacia ? ' ent-asoc-vacia' : ''}" onclick="abrirAsociacionEntregas('${jsEsc(a['ID_Asociacion'])}')" title="Ver entregas de ${esc(a['Nombre'] || '')}">
-        <span class="ent-asoc-dot" style="background:${color}"></span>
-        <span class="ent-asoc-nom">${esc(a['Nombre'] || '—')}</span>
-        <span class="ent-asoc-go" style="background:${color}">${FLECHA}</span>
+      const id    = a['ID_Asociacion'];
+      const info  = idx[id] || { tn: 0, grupos: new Set(), ult: null };
+      const nEnt  = info.grupos ? info.grupos.size : 0;
+      const vacia = nEnt === 0;
+      const sub   = vacia
+        ? 'Sin entregas'
+        : `${nEnt} entrega${nEnt !== 1 ? 's' : ''} · última ${_mesAbr3(info.ult['Mes'])} ${esc(info.ult['Año'] || '')}`;
+      return `<button class="arow${vacia ? ' arow-vacia' : ''}" onclick="abrirAsociacionEntregas('${jsEsc(id)}')" title="Ver entregas de ${esc(a['Nombre'] || '')}">
+        <span class="aname"><b>${esc(a['Nombre'] || '—')}</b><span>${sub}</span></span>
+        <span class="atn">${fmtNum(info.tn)}<small>TN</small></span>
+        <span class="achev">${icoHTML('chevRight')}</span>
       </button>`;
     }).join('');
 
-    return `<div class="card ent-prov">
-      <div class="ent-prov-head">
-        <span class="ent-prov-nom">${esc(prov)}</span>
-        <span class="ent-prov-total" style="background:${_rgbaEnt(color, 0.16)};color:${color}">${fmtNum(totalTn)} TN</span>
+    return `<div class="card pcard">
+      <div class="pcard-head">
+        <div class="pg-badge">
+          <span class="pg-accent" style="background:${color}"></span>
+          <div>
+            <div class="pname">${esc(prov)}</div>
+            <div class="pcount">${lista.length} asociaci${lista.length !== 1 ? 'ones' : 'ón'}</div>
+          </div>
+        </div>
+        <span></span>
+        <div class="ptot">
+          <b style="color:${color}">${fmtNum(tot)}<small>TN</small></b>
+          <span class="pshare">${share.toFixed(0)}% del total</span>
+        </div>
       </div>
-      <div class="ent-prov-lista">${filas}</div>
+      <div class="pbar"><div style="width:${share.toFixed(1)}%;background:${color}"></div></div>
+      <div class="plist">${filas}</div>
     </div>`;
   }).join('') + '</div>';
 }
@@ -248,6 +308,9 @@ function renderNivelLista() {
   const aso = (CAT.asociaciones || []).find(a => a['ID_Asociacion'] === ENT_ASOC_SEL);
   const nombre = aso ? (aso['Nombre'] || '') : '';
 
+  const prov  = aso ? (aso['Provincia'] || '') : '';
+  const color = _provEstiloEnt(prov).color;
+
   document.getElementById('main-content').innerHTML = `
     <div class="page-header">
       <div>
@@ -262,8 +325,16 @@ function renderNivelLista() {
         <button class="hdr-circle" onclick="exportarEntregasExcel()" title="Descargar Excel">${icoHTML('download')}</button>
       </div>
     </div>
-    <div class="ent-eyebrow">${esc(nombre)}</div>
-    <div id="entregas-table-wrap"></div>`;
+    <div class="ent-n2">
+      <div class="n2-title">
+        <div class="n2-eye"><i style="background:${color}"></i><span>${esc(String(prov).toUpperCase())}</span></div>
+        <div class="n2-h">${esc(nombre)}</div>
+        <div class="n2-sub" id="ent-n2-sub"></div>
+      </div>
+      <div class="hito-tl hito-desk" id="entregas-desk"></div>
+      <div class="pmob" id="entregas-mob"></div>
+      <div class="n2-foot"><span>Total del período (PET · Suave · Duro)</span><b id="ent-sum"></b></div>
+    </div>`;
 
   if (add) mostrarFAB('plus', abrirFormEntrega, 'Nueva entrega');
 
@@ -293,8 +364,7 @@ function _periodoOrden(e) {
 }
 
 async function cargarEntregas() {
-  const wrap = document.getElementById('entregas-table-wrap');
-  if (!wrap) return;
+  if (!document.getElementById('entregas-desk')) return;
 
   const fMat = ENT_FILTROS_N2.material || [];
   const tieneMaterial = (e) => {
@@ -362,65 +432,86 @@ function _hermanosPorDocId(docId) {
 }
 
 function renderTablaEntregas() {
-  const wrap = document.getElementById('entregas-table-wrap');
-  if (!wrap) return;
+  const desk  = document.getElementById('entregas-desk');
+  const mob   = document.getElementById('entregas-mob');
+  const foot  = document.querySelector('.ent-n2 .n2-foot');
+  const subEl = document.getElementById('ent-n2-sub');
+  if (!desk) return;
 
   if (!ENTREGAS_DATA.length) {
-    wrap.innerHTML = `
-      <div class="empty-state">
-        ${icoHTML('recycle').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"')}
-        <p>No hay entregas con estos filtros</p>
-      </div>`;
+    desk.innerHTML = `<div class="empty-state">${icoHTML('recycle').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"')}<p>No hay entregas con estos filtros</p></div>`;
+    if (mob)  mob.innerHTML = '';
+    if (foot) foot.style.display = 'none';
+    if (subEl) subEl.textContent = '0 entregas';
     return;
   }
+  if (foot) foot.style.display = '';
 
-  // Agrupar por entrega (ID_Grupo_Entrega), uniendo compradores como en la ficha
+  // Agrupar por entrega (ID_Grupo_Entrega), uniendo compradores como en la ficha.
   const grupos = _agruparEntregasVista(ENTREGAS_DATA);
 
-  // Cada material: etiqueta arriba y el peso en negrita abajo, en TN y con el
-  // color del material. Dinámico: solo los que tienen kg>0 en el grupo.
-  const matBloque = (nombre, kg) => {
-    const color = _colorMaterialEnt(nombre);
-    return `<span class="ent-mat">
-      <span class="ent-mat-lbl">${esc(_matCortoEnt(nombre))}</span>
-      <span class="ent-mat-val" style="color:${color}">${fmtNum(kg / 1000)} TN</span>
-    </span>`;
-  };
+  // Caja de material priorizable: etiqueta + peso en TN, con su color.
+  const box = (label, color, kg) =>
+    `<div class="mbox"><span class="mbox-dot" style="background:${color}"></span><span class="mbox-tx"><small>${label}</small><b>${fmtNum(kg / 1000)}</b></span></div>`;
 
-  const cards = grupos.map(g => {
+  let sum = 0;
+  const deskRows = [], mobRows = [];
+
+  grupos.forEach(g => {
     const e     = g.rep;
     const idEnt = jsEsc(e['ID_Entrega'] || '');
     const docId = jsEsc(e['_docId'] || '');
-    const nBuyers = g.n > 1
-      ? `<span class="ent-c-buyers">${g.n} compradores</span>`
-      : '';
-    const matsNombres = Object.keys(g.matsKg);
-    const matsHtml = matsNombres.length
-      ? matsNombres.map(n => matBloque(n, g.matsKg[n])).join('')
-      : '<span class="ent-mat-vacio">Sin materiales</span>';
+    const pet   = g.matsKg['PET'] || 0;
+    const suave = g.matsKg['Plástico Suave'] || 0;
+    const duro  = g.matsKg['Plástico Duro'] || 0;
+    const tn    = (pet + suave + duro) / 1000;
+    sum += tn;
 
-    return `
-      <div class="ent-card" onclick="verEntrega('${idEnt}')">
-        <div class="ent-c-per">
-          <span class="ent-c-mes">${esc(capMes(e['Mes']))} ${esc(e['Año'] || '')}</span>${nBuyers}
-        </div>
-        <div class="ent-c-mats">${matsHtml}</div>
-        <div class="ent-c-acts td-actions" onclick="event.stopPropagation()">
-          <button class="icon-btn" onclick="verEntrega('${idEnt}')" title="Ver">${icoHTML('view')}</button>
-          ${puedeEditar() ? `
-            <button class="icon-btn primary" onclick="editarEntrega('${idEnt}')" title="Editar">${icoHTML('edit')}</button>
-            <button class="icon-btn del" onclick="confirmarEliminarEntrega('${docId}')" title="Eliminar">${icoHTML('close')}</button>
-          ` : ''}
-        </div>
-      </div>`;
-  }).join('');
+    const boxes  = box('PET', '#506CFF', pet) + box('Suave', '#F5AD21', suave) + box('Duro', '#18AE97', duro);
+    const mesTit = `${esc(capMes(e['Mes']))} ${esc(e['Año'] || '')}`;
+    const btns   =
+      `<button class="abtn" onclick="event.stopPropagation();verEntrega('${idEnt}')" title="Ver">${icoHTML('view')}</button>` +
+      (puedeEditar()
+        ? `<button class="abtn" onclick="event.stopPropagation();editarEntrega('${idEnt}')" title="Editar">${icoHTML('edit')}</button>` +
+          `<button class="abtn del" onclick="event.stopPropagation();confirmarEliminarEntrega('${docId}')" title="Eliminar">${icoHTML('trash')}</button>`
+        : '');
 
-  wrap.innerHTML = `
-    <div class="ent-cards">${cards}</div>
-    <div style="font-size:12px;color:var(--text-dim);text-align:center;margin-top:14px">
-      ${grupos.length} entrega${grupos.length !== 1 ? 's' : ''}
-    </div>
-  `;
+    deskRows.push(`<div class="hito-tl-row">
+      <div class="hito-tl-side"><div class="hito-tl-dot"></div></div>
+      <div class="hito-tl-card" onclick="verEntrega('${idEnt}')">
+        <div class="hito-c-main">
+          <div class="hito-c-id">
+            <div class="hito-nombre">${mesTit}</div>
+            <div class="hito-c-prov">${fmtNum(tn)} TN recuperadas</div>
+          </div>
+        </div>
+        <div class="hito-c-docs">${boxes}</div>
+        <div class="hito-c-acts">${btns}</div>
+      </div>
+    </div>`);
+
+    mobRows.push(`<div class="pmob-card" onclick="verEntrega('${idEnt}')">
+      <div class="pmob-top">
+        <div class="pmob-id"><div class="hito-nombre">${mesTit}</div></div>
+        <span class="pmob-chip">${fmtNum(tn)} TN</span>
+      </div>
+      <div class="pmob-docs">${boxes}</div>
+      <div class="pmob-foot">${btns}</div>
+    </div>`);
+  });
+
+  desk.innerHTML = deskRows.join('');
+  if (mob) mob.innerHTML = mobRows.join('');
+  const sumEl = document.getElementById('ent-sum');
+  if (sumEl) sumEl.innerHTML = fmtNum(sum) + ' TN';
+
+  // Sublínea del título: nº de entregas · rango de meses · total priorizable.
+  const nG = grupos.length;
+  const nuevo = grupos[0].rep, viejo = grupos[nG - 1].rep;
+  const rango = nG > 1
+    ? `${_mesAbr3(viejo['Mes'])} ${viejo['Año'] || ''} – ${_mesAbr3(nuevo['Mes'])} ${nuevo['Año'] || ''}`
+    : `${_mesAbr3(nuevo['Mes'])} ${nuevo['Año'] || ''}`;
+  if (subEl) subEl.textContent = `${nG} entrega${nG !== 1 ? 's' : ''} · ${rango} · ${fmtNum(sum)} TN`;
 }
 
 // "julio" → "Julio" (los meses vienen en minúscula desde Firestore)
@@ -1643,43 +1734,77 @@ function exportarMatrizEntregas() {
   const s = document.createElement('style');
   s.id = 'entregas-styles';
   s.textContent = `
-    /* ── Nivel 2: eyebrow + tarjetas-fila de entregas ── */
-    .ent-eyebrow { font-size:12.5px; font-weight:600; letter-spacing:1.3px; text-transform:uppercase; color:var(--text-muted); margin-bottom:-8px; }
+    /* ══ NIVEL 1: una tarjeta por provincia (con su detalle) ══ */
+    .prov-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(420px,1fr)); gap:18px; align-items:start; }
+    .pcard { padding:20px 22px; }
+    .pcard-head { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:12px; }
+    .pg-badge { display:flex; align-items:center; gap:10px; }
+    .pg-accent { width:4px; height:22px; border-radius:3px; flex-shrink:0; }
+    .pname { font-size:14.5px; font-weight:700; letter-spacing:.2px; color:var(--text); }
+    .pcount { font-size:11.5px; color:var(--text-muted); font-weight:600; }
+    .ptot { text-align:right; }
+    .ptot b { font-size:16px; font-weight:800; letter-spacing:-.3px; }
+    .ptot b small { font-size:10.5px; color:var(--text-dim); font-weight:700; margin-left:2px; }
+    .pshare { display:block; font-size:10.5px; color:var(--text-dim); font-weight:600; margin-top:1px; }
+    .pbar { height:4px; background:#edf0f6; border-radius:20px; overflow:hidden; margin:14px 0 6px; }
+    .pbar > div { height:100%; border-radius:20px; }
+    .plist { margin-top:8px; }
+    .arow { display:grid; grid-template-columns:1fr auto 18px; align-items:center; gap:16px; padding:11px 4px; cursor:pointer; transition:background .13s; width:100%; text-align:left; background:none; border:none; font-family:inherit; color:var(--text); border-radius:10px; }
+    .arow + .arow { border-top:1px solid #eef1f6; }
+    .arow:hover { background:#f7f9fc; }
+    .arow-vacia { opacity:.55; }
+    .aname { min-width:0; }
+    .aname b { display:block; font-size:13.5px; font-weight:600; color:#565c6b; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .aname span { font-size:11px; color:var(--text-muted); font-weight:500; }
+    .atn { font-size:13.5px; font-weight:800; letter-spacing:-.2px; white-space:nowrap; color:var(--text); }
+    .atn small { font-size:10px; font-weight:700; color:var(--text-dim); margin-left:2px; }
+    .achev { color:var(--text-dim); display:flex; }
+    .achev svg { width:16px; height:16px; }
+    .arow:hover .achev { color:var(--text-muted); }
 
-    .ent-cards { display:flex; flex-direction:column; gap:14px; }
-    .ent-card { display:flex; align-items:center; gap:28px; background:var(--white); border:1px solid var(--border); border-radius:var(--r-md); padding:18px 24px; cursor:pointer; transition:box-shadow .15s,transform .12s; }
-    .ent-card:hover { box-shadow:var(--shadow-md); transform:translateY(-2px); }
+    /* ══ NIVEL 2: título simple + timeline estilo "hito social" ══ */
+    .ent-n2 { display:flex; flex-direction:column; gap:18px; }
+    .n2-title { padding:2px 4px 4px; }
+    .n2-eye { display:flex; align-items:center; gap:7px; font-size:10.5px; font-weight:700; letter-spacing:.7px; text-transform:uppercase; color:var(--text-muted); margin-bottom:4px; }
+    .n2-eye i { width:7px; height:7px; border-radius:50%; display:inline-block; flex-shrink:0; }
+    .n2-h { font-size:19px; font-weight:700; letter-spacing:-.3px; line-height:1.2; color:var(--text); }
+    .n2-sub { font-size:12px; color:var(--text-muted); font-weight:500; margin-top:4px; }
 
-    .ent-c-per { flex-shrink:0; min-width:118px; }
-    .ent-c-mes { font-size:16px; font-weight:700; color:var(--text); }
-    .ent-c-buyers { display:block; font-size:10.5px; font-weight:600; color:var(--text-dim); margin-top:2px; }
+    .hito-tl { display:flex; flex-direction:column; gap:16px; }
+    .hito-tl-row { display:flex; gap:16px; align-items:stretch; }
+    .hito-tl-side { width:22px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+    .hito-tl-dot { width:14px; height:14px; border-radius:50%; background:linear-gradient(135deg,#7B5CFF,#506CFF); }
+    .hito-tl-card { flex:1; min-width:0; background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px 18px; display:flex; flex-wrap:wrap; align-items:center; gap:18px; cursor:pointer; transition:box-shadow .15s,transform .12s,border-color .15s; }
+    .hito-tl-card:hover { box-shadow:0 6px 20px rgba(0,0,0,.08); transform:translateY(-2px); border-color:transparent; }
+    .hito-c-main { display:flex; align-items:center; gap:14px; flex:1 1 200px; min-width:0; }
+    .hito-c-id { min-width:0; }
+    .hito-nombre { font-weight:700; color:var(--text); font-size:15px; line-height:1.3; }
+    .hito-c-prov { font-size:12.5px; color:var(--text-muted); margin-top:6px; }
+    .hito-c-docs { display:flex; flex-wrap:wrap; gap:10px; }
+    .mbox { display:flex; align-items:center; gap:9px; padding:10px 13px; border-radius:12px; background:rgba(0,0,0,.03); min-width:104px; }
+    .mbox-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
+    .mbox-tx { display:flex; flex-direction:column; line-height:1.2; }
+    .mbox-tx small { font-size:10.5px; color:var(--text-muted); font-weight:600; text-transform:uppercase; letter-spacing:.3px; }
+    .mbox-tx b { font-size:14px; font-weight:700; color:var(--text); }
+    .hito-c-acts { flex-shrink:0; display:flex; gap:4px; }
+    .abtn { width:34px; height:34px; border-radius:9px; border:none; background:#eef1f6; color:var(--text-muted); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:.14s; }
+    .abtn svg { width:16px; height:16px; }
+    .abtn:hover { background:#e2e7f0; color:var(--text); }
+    .abtn.del { color:#EF4444; background:rgba(239,68,68,.09); }
+    .abtn.del:hover { background:rgba(239,68,68,.16); }
+    .n2-foot { display:flex; align-items:center; justify-content:space-between; padding:4px 6px 0; font-size:11.5px; color:var(--text-muted); font-weight:600; }
+    .n2-foot b { color:var(--text); font-weight:800; font-size:13px; }
 
-    .ent-c-mats { display:flex; flex-wrap:wrap; align-items:flex-start; gap:12px 30px; flex:1; min-width:0; }
-    .ent-mat { display:flex; flex-direction:column; gap:3px; white-space:nowrap; }
-    .ent-mat-lbl { font-size:11px; font-weight:600; letter-spacing:1px; text-transform:uppercase; color:var(--text-muted); }
-    .ent-mat-val { font-size:15px; font-weight:700; font-variant-numeric:tabular-nums; }
-    .ent-mat-vacio { font-size:12px; color:var(--text-dim); }
-
-    .ent-c-acts { flex-shrink:0; display:flex; gap:8px; margin-left:auto; }
-    /* En la maqueta los tres botones ya vienen con su fondo tintado, no solo al hover */
-    .ent-c-acts .icon-btn.primary { background:rgba(80,108,255,.1); }
-    .ent-c-acts .icon-btn.del { background:rgba(248,45,114,.1); color:#F82D72; }
-
-    /* ── Nivel 1: grid de tarjetas por provincia ── */
-    .ent-provs { display:grid; grid-template-columns:repeat(auto-fill,minmax(420px,1fr)); gap:18px; align-items:start; }
-    .ent-prov-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; }
-    .ent-prov-nom { font-size:21px; font-weight:700; letter-spacing:.3px; text-transform:uppercase; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .ent-prov-total { flex-shrink:0; padding:6px 14px; border-radius:20px; font-size:13px; font-weight:700; white-space:nowrap; font-variant-numeric:tabular-nums; }
-    .ent-prov-lista { display:flex; flex-direction:column; gap:14px; }
-
-    .ent-asoc { display:flex; align-items:center; gap:14px; width:100%; text-align:left; background:transparent; border:none; padding:0; cursor:pointer; font-family:inherit; }
-    .ent-asoc-dot { width:9px; height:9px; border-radius:50%; flex-shrink:0; }
-    .ent-asoc-nom { flex:1; min-width:0; font-size:14px; font-weight:400; color:var(--text); line-height:1.35; }
-    .ent-asoc-go { flex-shrink:0; width:56px; height:26px; border-radius:7px; display:inline-flex; align-items:center; justify-content:center; color:#fff; transition:filter .15s, transform .12s; }
-    .ent-asoc-go svg { width:17px; height:17px; }
-    .ent-asoc:hover .ent-asoc-go { filter:brightness(1.12); transform:translateX(2px); }
-    .ent-asoc:active .ent-asoc-go { transform:scale(.94); }
-    .ent-asoc-vacia { opacity:.55; }
+    /* Nivel 2 móvil: tarjetas apiladas (réplica de "hito social") */
+    .pmob { display:none; flex-direction:column; gap:12px; }
+    .pmob-card { background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px; cursor:pointer; transition:box-shadow .15s,transform .12s; }
+    .pmob-card:hover { box-shadow:0 6px 20px rgba(0,0,0,.08); transform:translateY(-2px); }
+    .pmob-top { display:flex; align-items:flex-start; gap:12px; }
+    .pmob-id { flex:1; min-width:0; }
+    .pmob-chip { font-size:11px; font-weight:800; color:var(--blue2); background:rgba(80,108,255,.1); padding:5px 10px; border-radius:20px; white-space:nowrap; flex-shrink:0; }
+    .pmob-docs { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+    .pmob-docs .mbox { flex:1; min-width:90px; padding:10px; }
+    .pmob-foot { display:flex; justify-content:flex-end; gap:4px; margin-top:12px; padding-top:12px; border-top:1px solid var(--border); }
 
     /* Verificables: visto (disponible) */
     .ent-visto { display:inline-flex; align-items:center; gap:6px; }
@@ -1736,15 +1861,13 @@ function exportarMatrizEntregas() {
     .ent-doc-chip:hover { background:rgba(80,108,255,.14); }
     .ent-doc-chip-off { color:var(--text-dim); background:transparent; cursor:default; }
 
-    @media (max-width:820px) {
-      .ent-card { flex-wrap:wrap; gap:14px 18px; padding:16px 18px; }
-      .ent-c-per { order:1; min-width:0; }
-      .ent-c-acts { order:2; }
-      /* flex-basis, no width: el flex:1 de la regla base tiene basis 0% y
-         gana sobre width, así que la fila no bajaría de línea. */
-      .ent-c-mats { flex:1 1 100%; order:3; gap:12px 22px; }
-      .ent-provs { grid-template-columns:1fr; }
-      .ent-prov-nom { font-size:18px; }
+    /* Swap timeline (escritorio) ↔ tarjetas (móvil) al colapsar la nav (900px) */
+    @media (max-width:900px) {
+      .hito-desk { display:none; }
+      .pmob { display:flex; }
+    }
+    @media (max-width:620px) {
+      .prov-grid { grid-template-columns:1fr; }
     }
   `;
   document.head.appendChild(s);
