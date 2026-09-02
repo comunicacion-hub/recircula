@@ -21,14 +21,14 @@ const PRECIOS = (() => {
   // las columnas/puntos de meses sin registrar no aparecen.
   let PR_MESES_VIS = PR_MESES_PERMITIDOS.slice();
 
-  // Gradientes idénticos a styles.css (A–E). Stroke por url(#id); leyenda por var(--grad-*).
-  const GRADS = [
-    { id:'prGradB', from:'#18AE97', to:'#506CFF', varName:'--grad-b' },
-    { id:'prGradC', from:'#506CFF', to:'#0BC3FF', varName:'--grad-c' },
-    { id:'prGradD', from:'#F5AD21', to:'#9FDA60', varName:'--grad-d' },
-    { id:'prGradE', from:'#F82D72', to:'#FF85FF', varName:'--grad-e' },
-    { id:'prGradA', from:'#FF751F', to:'#FF376F', varName:'--grad-a' },
-  ];
+  // Paleta consistente por provincia (misma tríada índigo/ámbar/teal/violeta/rojo
+  // que usan Pesos y Comprador). El color se asigna por orden alfabético de provincia
+  // y es idéntico en gráfico, leyenda y tabla comparativa.
+  const PALETA = ['#506CFF', '#F5AD21', '#18AE97', '#7B5CFF', '#EF4444', '#0BC3FF', '#FF751F'];
+  const _colorProv = (prov) => {
+    const i = _provincias.indexOf(prov);
+    return PALETA[(i < 0 ? 0 : i) % PALETA.length];
+  };
 
   // Nombres prioritarios por defecto, comparados con normKey() (tolera acentos/mayúsculas)
   const PRIORIDAD_KEYS = ['pet', 'plastico_suave', 'plastico_duro'];
@@ -230,9 +230,10 @@ const PRECIOS = (() => {
     return stats;
   }
 
-  function _calcResumen() {
+  function _calcResumen(mats) {
+    const lista = mats || _matsActivos;
     const rows = [];
-    _matsActivos.forEach(mat => {
+    lista.forEach(mat => {
       const stats = _calcStats(mat);
       const provs = Object.keys(stats).sort((a, b) => _provincias.indexOf(a) - _provincias.indexOf(b));
       provs.forEach(prov => {
@@ -309,10 +310,6 @@ const PRECIOS = (() => {
     const xS = pos => PAD.l + (nVis > 1 ? (pos / (nVis - 1)) : 0.5) * innerW;
     const yS = v => PAD.t + innerH - ((v - yMin) / ((yMax - yMin) || 1)) * innerH;
 
-    const defs = `<defs>${GRADS.map(g =>
-      `<linearGradient id="${g.id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${g.from}"/><stop offset="100%" stop-color="${g.to}"/></linearGradient>`
-    ).join('')}</defs>`;
-
     const grid = Array.from({ length: 5 }, (_, i) => {
       const v = yMin + (i / 4) * (yMax - yMin), y = yS(v);
       return `<line x1="${PAD.l}" y1="${y}" x2="${PAD.l + innerW}" y2="${y}" stroke="rgba(0,0,0,0.06)"/>
@@ -324,8 +321,7 @@ const PRECIOS = (() => {
     ).join('');
 
     const lines = provs.map(prov => {
-      const gi = _provincias.indexOf(prov);
-      const g = GRADS[(gi < 0 ? 0 : gi) % GRADS.length];
+      const c = _colorProv(prov);
       const pts = PR_MESES_VIS.map((mi, pos) => {
         const s = stats[prov][mi];
         return s ? { x: xS(pos), y: yS(s.avg), s, m: mi } : null;
@@ -335,21 +331,19 @@ const PRECIOS = (() => {
       const top  = pts.map((p, i) => `${i ? 'L' : 'M'} ${p.x.toFixed(1)} ${yS(p.s.min).toFixed(1)}`).join(' ');
       const bot  = [...pts].reverse().map(p => `L ${p.x.toFixed(1)} ${yS(p.s.max).toFixed(1)}`).join(' ');
       const dots = pts.map(p =>
-        `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4" fill="url(#${g.id})" stroke="#fff" stroke-width="1.5">
+        `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4" fill="${c}" stroke="#fff" stroke-width="1.5">
           <title>${esc(prov)} — ${MESES[p.m]}: Prom $${p.s.avg} · Mín $${p.s.min} · Máx $${p.s.max} (n=${p.s.n})</title>
         </circle>`
       ).join('');
-      return `<path d="${top} ${bot} Z" fill="url(#${g.id})" fill-opacity="0.08"/>
-        <path d="${line}" fill="none" stroke="url(#${g.id})" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+      return `<path d="${top} ${bot} Z" fill="${c}" fill-opacity="0.08"/>
+        <path d="${line}" fill="none" stroke="${c}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
         ${dots}`;
     }).join('');
 
-    const svg = `<svg class="pr-chart-svg" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${defs}${grid}${xLab}${lines}</svg>`;
-    const leg = `<div class="pr-legend">${provs.map(prov => {
-      const gi = _provincias.indexOf(prov);
-      const g = GRADS[(gi < 0 ? 0 : gi) % GRADS.length];
-      return `<span class="pr-legend-item"><i style="background:var(${g.varName})"></i>${esc(prov)}</span>`;
-    }).join('')}</div>`;
+    const svg = `<svg class="pr-chart-svg" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${grid}${xLab}${lines}</svg>`;
+    const leg = `<div class="pr-legend">${provs.map(prov =>
+      `<span class="pr-legend-item"><i style="background:${_colorProv(prov)}"></i>${esc(prov)}</span>`
+    ).join('')}</div>`;
     return svg + leg;
   }
 
@@ -361,46 +355,48 @@ const PRECIOS = (() => {
   }
 
   function _buildComparativa() {
-    const head = `<div class="pr-heading">Comparativa por provincia</div>`;
-    const resumen = _calcResumen();
+    // La tabla sigue al material del gráfico: al elegir un chip de material, se
+    // muestra solo ese material (una fila por provincia).
+    const matTxt = _matGrafico ? ` · ${esc(_matGrafico)}` : '';
+    const head = `<div class="pr-heading">Comparativa por provincia${matTxt}</div>`;
+    const resumen = _matGrafico ? _calcResumen([_matGrafico]) : [];
     if (!resumen.length) return head + '<div class="card"><p class="pr-empty">Sin datos para este filtro.</p></div>';
 
-    // DESKTOP: tabla ancha (solo meses visibles)
+    // DESKTOP: tabla ancha (solo meses visibles). El punto de color por provincia
+    // hace juego con su línea del gráfico.
     const ths = PR_MESES_VIS.map(i => `<th>${MESES[i]}</th>`).join('');
-    const filas = resumen.map(({ provincia, material, meses, tendencia }) => {
+    const filas = resumen.map(({ provincia, meses, tendencia }) => {
       const cels = PR_MESES_VIS.map(i => meses[i]).map(({ avg, min, max }) =>
         avg === null
           ? `<td class="pr-dash">—</td>`
           : `<td title="Mín $${min} · Máx $${max}"><span class="pr-avg">$${fmtNum(avg, 2)}</span><span class="pr-range">${fmtNum(min, 2)}–${fmtNum(max, 2)}</span></td>`
       ).join('');
       return `<tr>
-        <td class="pr-prov">${esc(provincia)}</td>
-        <td class="pr-mat">${esc(material)}</td>
+        <td class="pr-prov"><span class="pr-prov-dot" style="background:${_colorProv(provincia)}"></span>${esc(provincia)}</td>
         ${cels}
         <td>${_tendBadge(tendencia)}</td>
       </tr>`;
     }).join('');
     const tabla = `<div class="table-wrap pr-tabla-desktop"><table>
-      <thead><tr><th>Provincia</th><th>Material</th>${ths}<th>Tendencia</th></tr></thead>
+      <thead><tr><th>Provincia</th>${ths}<th>Tendencia</th></tr></thead>
       <tbody>${filas}</tbody>
     </table></div>`;
 
     // MÓVIL: tarjetas resumen (tocar → detalle mensual completo)
-    const cards = resumen.map(({ provincia, material, meses, tendencia }) => {
+    const cards = resumen.map(({ provincia, meses, tendencia }) => {
       const conDato = PR_MESES_VIS.map(i => meses[i]).filter(m => m.avg !== null);
       const ultimo = conDato.length ? conDato[conDato.length - 1] : null;
       const resumenTxt = ultimo
         ? `Último: $${fmtNum(ultimo.avg, 2)} · ${conDato.length} ${conDato.length === 1 ? 'mes' : 'meses'} con dato`
         : 'Sin datos en el período';
-      return `<div class="pr-card" onclick="PRECIOS._verDetalle('${jsEsc(provincia)}','${jsEsc(material)}')">
+      return `<div class="pr-card" style="border-left:3px solid ${_colorProv(provincia)}" onclick="PRECIOS._verDetalle('${jsEsc(provincia)}','${jsEsc(_matGrafico)}')">
         <div class="pr-card-top">
           <div>
             <div class="pr-card-label">Provincia</div>
-            <div class="pr-card-prov">${esc(provincia)}</div>
+            <div class="pr-card-prov"><span class="pr-prov-dot" style="background:${_colorProv(provincia)}"></span>${esc(provincia)}</div>
           </div>
           ${_tendBadge(tendencia)}
         </div>
-        <div class="pr-card-mat">${esc(material)}</div>
         <div class="pr-card-foot">
           <span class="pr-card-hint">${resumenTxt}</span>
           <span class="pr-card-chev">Ver detalle ›</span>
@@ -447,6 +443,8 @@ const PRECIOS = (() => {
     _matGrafico = nombre;
     const c = document.getElementById('pr-chart-container');
     if (c) c.innerHTML = _buildChart();
+    const k = document.getElementById('pr-comparativa');
+    if (k) k.innerHTML = _buildComparativa();   // la tabla sigue al material elegido
     document.querySelectorAll('#pr-mat-tabs .cat-chip').forEach(b =>
       b.classList.toggle('active', b.getAttribute('data-mat') === nombre)
     );
@@ -502,10 +500,11 @@ const PRECIOS = (() => {
     .pr-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
     .pr-legend-item i { width: 16px; height: 4px; border-radius: 2px; display: inline-block; }
 
-    /* Centrar columnas de meses + tendencia, respetando .table-wrap */
-    #pr-comparativa .table-wrap th:nth-child(n+3),
-    #pr-comparativa .table-wrap td:nth-child(n+3) { text-align: center; }
-    .pr-prov { font-weight: 600; color: var(--text); white-space: nowrap; }
+    /* Centrar columnas de meses + tendencia (Provincia es la 1ª columna) */
+    #pr-comparativa .table-wrap th:nth-child(n+2),
+    #pr-comparativa .table-wrap td:nth-child(n+2) { text-align: center; }
+    .pr-prov { display: flex; align-items: center; gap: 9px; font-weight: 600; color: var(--text); white-space: nowrap; }
+    .pr-prov-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
     .pr-mat  { color: #1c7aa8; font-weight: 500; white-space: nowrap; }
     .pr-avg   { display: block; font-weight: 700; color: var(--text); }
     .pr-range { display: block; font-size: 11px; color: var(--text-dim); margin-top: 1px; }
@@ -527,7 +526,7 @@ const PRECIOS = (() => {
     .pr-card:active { transform: scale(0.99); box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 2px 8px rgba(0,0,0,0.06); }
     .pr-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
     .pr-card-label { font-size: 10px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; letter-spacing: .7px; }
-    .pr-card-prov { font-size: 17px; font-weight: 700; color: var(--text); margin-top: 2px; }
+    .pr-card-prov { display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 700; color: var(--text); margin-top: 2px; }
     .pr-card-mat { font-size: 14px; color: #1c7aa8; font-weight: 600; margin-top: 10px; }
     .pr-card-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
     .pr-card-hint { font-size: 12px; color: var(--text-muted); }
