@@ -73,11 +73,22 @@ function gZonaDe(act) {
   return 'Otros';
 }
 
-// Materiales mostrados en "Evolución" (null = todos los que tengan datos).
-let EVOLUCION_MATS = null;
+// Materiales mostrados en "Evolución" por defecto (los 3 priorizables;
+// null significaría "todos los que tengan datos" — el ⚙️ deja elegir otros).
+let EVOLUCION_MATS = ['PET', 'Plástico Suave', 'Plástico Duro'];
 
 let DASH_FILTROS = { anio: [], mes: [], provincia: [], asociacion: [] };
 let DASH_DATA    = null;
+
+// ── Gráficos dinámicos (ApexCharts) ──────────────────────────
+// Los charts se dibujan tras insertar el HTML (contenedores vacíos) y se
+// destruyen/recrean en cada re-render. Si ApexCharts no cargó, degradan a nada.
+let _dashApex     = [];             // instancias vivas
+let _dashSparks   = [];             // [{ serie, color }] de los 3 KPIs
+let _dashEvoPrep  = null, _dashZonaPrep = null, _dashTNPrep = null;
+const G_APEX_BASE = { fontFamily: 'Outfit, sans-serif', toolbar: { show: false }, animations: { enabled: true, easing: 'easeinout', speed: 750 } };
+function _apexOk() { return typeof ApexCharts !== 'undefined'; }
+function _destruirDashApex() { _dashApex.forEach(function (c) { try { c.destroy(); } catch (e) {} }); _dashApex = []; }
 
 // ============================================================
 // CONFIG DEL DRAWER DE FILTROS
@@ -90,7 +101,7 @@ function registerDashboardFilters() {
       { key: 'mes',        title: 'Meses',        type: 'options', options: MESES, allLabel: 'Todos los meses' },
       { key: 'anio',       title: 'Años',         type: 'options', options: [], allLabel: 'Todos los años' },
       { key: 'provincia',  title: 'Provincias',   type: 'options', options: PROVINCIAS, allLabel: 'Todas las provincias' },
-      { key: 'asociacion', title: 'Asociaciones', type: 'options', options: [], allLabel: 'Todas las asociaciones' },
+      { key: 'asociacion', title: 'Asociación',   type: 'search',  placeholder: 'Buscar por nombre...' },
     ],
     getValue: function(k) { return DASH_FILTROS[k] || ''; },
     setValue: function(k, v) { DASH_FILTROS[k] = v; },
@@ -112,7 +123,7 @@ async function renderDashboard() {
         '<div class="page-sub" id="dash-fecha">' + capitalize(fmtFechaLarga(new Date())) + '</div>' +
       '</div>' +
       '<div class="hdr-actions">' +
-        '<button class="hdr-circle" onclick="openFilterDrawer(\'dashboard\')" title="Filtros">' +
+        '<button class="hdr-circle" onclick="openFilterDrawer(\'dashboard\', this)" title="Filtros">' +
           icoHTML('sliders') +
           '<span class="filter-badge" id="badge-dashboard" style="display:none;">0</span>' +
         '</button>' +
@@ -141,6 +152,17 @@ function mesCanonico(m) {
   return i >= 0 ? MESES[i] : '';
 }
 
+// Filtro de Asociación = texto libre (no lista de checks, para no alargar el
+// popover con decenas de asociaciones). Busca por coincidencia parcial del
+// nombre, tolerante a acentos/mayúsculas (vía normKey).
+function pasaBusquedaAsociacion(idAsoc) {
+  const txt = (DASH_FILTROS.asociacion && DASH_FILTROS.asociacion[0]) || '';
+  if (!txt.trim()) return true;
+  const asoc = (CAT.asociaciones || []).find(function(a) { return a['ID_Asociacion'] === idAsoc; });
+  const nombre = asoc ? asoc['Nombre'] : idAsoc;
+  return normKey(nombre).indexOf(normKey(txt)) >= 0;
+}
+
 // ============================================================
 // CARGAR + AGREGAR (en el cliente)
 // ============================================================
@@ -148,10 +170,10 @@ function mesCanonico(m) {
 async function cargarDashboard() {
   try {
     const filtradas = (CAT.entregas || []).filter(function(e) {
-      return pasaFiltro(DASH_FILTROS.anio,       String(e['Año'])) &&
-             pasaFiltro(DASH_FILTROS.mes,        mesCanonico(e['Mes'])) &&
-             pasaFiltro(DASH_FILTROS.provincia,  e['Provincia']) &&
-             pasaFiltro(DASH_FILTROS.asociacion, e['ID_Asociacion']);
+      return pasaFiltro(DASH_FILTROS.anio,      String(e['Año'])) &&
+             pasaFiltro(DASH_FILTROS.mes,       mesCanonico(e['Mes'])) &&
+             pasaFiltro(DASH_FILTROS.provincia, e['Provincia']) &&
+             pasaBusquedaAsociacion(e['ID_Asociacion']);
     });
     DASH_DATA = calcularDashboard(filtradas);
     poblarFiltrosDisponibles(DASH_DATA.filtrosDisponibles);
@@ -245,12 +267,6 @@ function poblarFiltrosDisponibles(f) {
   if (!cfg) return;
   const anioSec = cfg.sections.find(function(s) { return s.key === 'anio'; });
   if (anioSec && f.anios) anioSec.options = f.anios.map(String);
-  const asocSec = cfg.sections.find(function(s) { return s.key === 'asociacion'; });
-  if (asocSec) {
-    asocSec.options = (CAT.asociaciones || []).map(function(a) {
-      return { val: a['ID_Asociacion'], lbl: a['Nombre'] };
-    });
-  }
 }
 
 // ============================================================
@@ -337,23 +353,30 @@ function renderContenidoDashboard() {
       '</div>' +
 
     '</div>';
+
+  _initDashCharts();   // dibuja los charts en los contenedores recién insertados
 }
 
 // ── Totales: 3 KPI con pill de tendencia + sparkline ────────
 function gTotales(k, porMes, meses) {
   const serie = function(campo) { return meses.map(function(m) { return (porMes[m] && porMes[m][campo]) || 0; }); };
-  const seg = function(icono, color, label, valTxt, vals) {
+  _dashSparks = [
+    { serie: serie('totalTN'),     color: G_INDIGO },
+    { serie: serie('prioTN'),      color: G_AMBAR  },
+    { serie: serie('ingresosPET'), color: G_TEAL   },
+  ];
+  const seg = function(idx, icono, color, label, valTxt, vals) {
     return '<div class="g-tot-seg">' +
       '<div class="g-tot-top"><div class="g-tot-ic" style="background:' + gRgba(color, .13) + ';color:' + color + '">' + icoHTML(icono) + '</div>' +
         '<span class="g-tot-lbl">' + esc(label) + '</span></div>' +
       '<div class="g-tot-val" style="color:' + color + '">' + valTxt + '</div>' +
-      '<div class="g-tot-foot">' + gTrend(vals) + gSparkline(vals, color) + '</div>' +
+      '<div class="g-tot-foot">' + gTrend(vals) + '<div class="g-spark" id="dash-spark-' + idx + '"></div></div>' +
     '</div>';
   };
   return '<div class="card g-tot">' +
-    seg('recycle', G_INDIGO, 'TN Recuperados',  fmtNum(k.totalTN),           serie('totalTN')) +
-    seg('star',    G_AMBAR,  'TN Priorizables', fmtNum(k.tnPriorizables),    serie('prioTN')) +
-    seg('dollar',  G_TEAL,   'Ingresos PET',    '$' + fmtNum(k.ingresosPET, 0), serie('ingresosPET')) +
+    seg(0, 'recycle', G_INDIGO, 'TN Recuperados',  fmtNum(k.totalTN),           serie('totalTN')) +
+    seg(1, 'star',    G_AMBAR,  'TN Priorizables', fmtNum(k.tnPriorizables),    serie('prioTN')) +
+    seg(2, 'dollar',  G_TEAL,   'Ingresos PET',    '$' + fmtNum(k.ingresosPET, 0), serie('ingresosPET')) +
   '</div>';
 }
 
@@ -364,21 +387,6 @@ function gTrend(vals) {
   const ch = ((cur - prev) / prev) * 100;
   const up = ch >= 0;
   return '<span class="g-pill ' + (up ? 'up' : 'down') + '">' + (up ? '▲' : '▼') + ' ' + fmtNum(Math.abs(ch), 1) + '% <small>vs. mes ant.</small></span>';
-}
-
-function gSparkline(vals, color) {
-  let v = (vals && vals.length) ? vals.slice() : [0];
-  if (v.length === 1) v = [v[0], v[0]];
-  const n = v.length;
-  const lo = Math.min.apply(null, v), hi = Math.max.apply(null, v);
-  const x = function(i) { return (i / (n - 1)) * 100; };
-  const y = function(val) { return hi === lo ? 17 : 30 - ((val - lo) / (hi - lo)) * 24; };
-  const pts = v.map(function(val, i) { return x(i).toFixed(1) + ',' + y(val).toFixed(1); });
-  const last = pts[pts.length - 1].split(',');
-  return '<svg class="g-spark" viewBox="0 0 100 34" preserveAspectRatio="none">' +
-    '<polygon points="' + pts.join(' ') + ' 100,34 0,34" fill="' + gRgba(color, .12) + '"/>' +
-    '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + color + '" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linecap="round" stroke-linejoin="round"/>' +
-    '<circle cx="' + last[0] + '" cy="' + last[1] + '" r="2.8" fill="' + color + '"/></svg>';
 }
 
 // ── Avance vs Meta (línea del 100% antes del final + excedente) ──
@@ -399,24 +407,11 @@ function gMetaRow(nombre, actual, meta, color) {
   '</div>';
 }
 
-// ── Zona de Recuperación (barras, mismo patrón que Avance) ──
+// ── Zona de Recuperación (dona interactiva) ──
 function gZona(zonas, totalTN) {
-  const items = G_ZONAS.map(function(z) { return { z: z, tn: (zonas && zonas[z]) || 0 }; })
-    .filter(function(i) { return i.tn > 0; });
-  items.sort(function(a, b) { return b.tn - a.tn; });
-  if (!items.length) return '<div class="empty-state"><p>Sin datos de zona para este filtro</p></div>';
-  const total = totalTN > 0 ? totalTN : items.reduce(function(s, i) { return s + i.tn; }, 0) || 1;
-  const rows = items.map(function(i) {
-    const pct = (i.tn / total) * 100;
-    const w = Math.max(6, Math.min(100, pct));
-    const color = G_ZONA_COLOR[i.z] || '#c3c8d4';
-    return '<div>' +
-      '<div class="g-z-top"><span class="g-z-name">' + esc(i.z) + '</span><span class="g-z-val">' + fmtNum(i.tn) + ' TN</span></div>' +
-      '<div class="g-z-track"><div class="g-z-fill" style="width:' + w + '%;background:' + color + '">' + pct.toFixed(0) + '%</div></div>' +
-    '</div>';
-  }).join('');
-  return rows + '<div class="g-z-note">Total recuperado · ' + fmtNum(total) + ' TN en ' +
-    items.length + ' zona' + (items.length !== 1 ? 's' : '') + '</div>';
+  _dashZonaPrep = _prepZona(zonas, totalTN);
+  if (!_dashZonaPrep) return '<div class="empty-state"><p>Sin datos de zona para este filtro</p></div>';
+  return '<div class="g-chart" id="dash-zona"></div>';
 }
 
 // ── Impacto Ambiental: un grupo de barras por métrica ──────
@@ -432,84 +427,132 @@ function gImpGrupo(titulo, totalTxt, rows, fmtVal) {
     '<div class="g-imp-gh"><span>' + esc(titulo) + '</span><b>' + totalTxt + '</b></div>' + bars + '</div>';
 }
 
-// ── TN Recuperados por Material: barras horizontales ────────
+// ── TN Recuperados por Material: barras horizontales interactivas ──
 function gMateriales(distribucion) {
-  const items = [];
-  let otros = 0;
-  Object.keys(distribucion || {}).forEach(function(nombre) {
-    const val = distribucion[nombre];
-    if (!(val > 0)) return;
-    if (MATS_FILTRO_ACTIVOS.includes(nombre)) items.push({ nombre: nombre, val: val });
-    else otros += val;
-  });
-  items.sort(function(a, b) { return b.val - a.val; });
-  if (otros > 0) items.push({ nombre: 'Otros materiales', val: otros, otros: true });
-  if (!items.length) return '<div class="empty-state"><p>Sin materiales con datos para este filtro</p></div>';
-
-  const max = Math.max.apply(null, items.map(function(i) { return i.val; }).concat([1]));
-  return items.map(function(it) {
-    const w = Math.max(3, Math.min(100, (it.val / max) * 100));
-    const color = it.otros ? '#c3c8d4' : gMatColor(it.nombre);
-    const nom = it.otros ? 'Otros' : (G_MAT_CORTO[it.nombre] || it.nombre);
-    const dim = it.otros ? ' style="color:var(--text-dim)"' : '';
-    return '<div class="g-matrow"><span class="g-matname"' + dim + '>' + esc(nom) + '</span>' +
-      '<div class="g-mattrack"><div class="g-matfill" style="width:' + w + '%;background:' + color + '"></div></div>' +
-      '<span class="g-matval"' + dim + '>' + fmtNum(it.val) + '</span></div>';
-  }).join('');
+  _dashTNPrep = _prepMateriales(distribucion);
+  if (!_dashTNPrep) return '<div class="empty-state"><p>Sin materiales con datos para este filtro</p></div>';
+  return '<div class="g-chart" id="dash-tn"></div>';
 }
 
-// ── Evolución por Material: una línea por material sobre los meses ──
+// ── Evolución por Material: línea interactiva (ApexCharts) ──
 // Todos los materiales con datos se muestran al inicio; el ⚙️ abre un modal
 // para filtrar cuáles ver (EVOLUCION_MATS). Escala Y compartida.
 function gEvolucionMats(porMesMat, meses) {
-  if (!meses.length) return '<div class="empty-state"><p>Sin datos para este filtro</p></div>';
+  _dashEvoPrep = _prepEvolucion(porMesMat, meses);
+  if (!_dashEvoPrep) return '<div class="empty-state"><p>Sin datos para este filtro</p></div>';
+  if (_dashEvoPrep.empty) return '<div class="empty-state"><p>Elige al menos un material con el ⚙️</p></div>';
+  return '<div class="g-chart" id="dash-evo"></div>' +
+    '<div class="g-chart-hint">Pasa el cursor para ver el detalle · toca un material en la leyenda para mostrarlo u ocultarlo</div>';
+}
 
+// ── Preparación de datos para los charts ──
+function _prepEvolucion(porMesMat, meses) {
+  if (!meses.length) return null;
   const valor = function(n, m) { return (porMesMat[m] || {})[n] || 0; };
   const conDatos = {};
-  meses.forEach(function(m) {
-    const mm = porMesMat[m] || {};
-    Object.keys(mm).forEach(function(n) { if (mm[n] > 0) conDatos[n] = true; });
-  });
+  meses.forEach(function(m) { const mm = porMesMat[m] || {}; Object.keys(mm).forEach(function(n) { if (mm[n] > 0) conDatos[n] = true; }); });
   let mats = Object.keys(conDatos);
   const totalDe = function(n) { return meses.reduce(function(s, m) { return s + valor(n, m); }, 0); };
   mats.sort(function(a, b) { return totalDe(b) - totalDe(a); });
   const shown = EVOLUCION_MATS ? mats.filter(function(n) { return EVOLUCION_MATS.includes(n); }) : mats;
-  if (!shown.length) return '<div class="empty-state"><p>Elige al menos un material (⚙️)</p></div>';
+  if (!shown.length) return { empty: true };
+  return {
+    series: shown.map(function(n) { return { name: G_MAT_CORTO[n] || n, data: meses.map(function(m) { return +valor(n, m).toFixed(2); }) }; }),
+    colors: shown.map(function(n) { return gMatColor(n); }),
+    categories: meses.map(function(m) { return m.substring(0, 3); }),
+  };
+}
+function _prepZona(zonas, totalTN) {
+  const items = G_ZONAS.map(function(z) { return { z: z, tn: (zonas && zonas[z]) || 0 }; }).filter(function(i) { return i.tn > 0; });
+  items.sort(function(a, b) { return b.tn - a.tn; });
+  if (!items.length) return null;
+  const total = totalTN > 0 ? totalTN : items.reduce(function(s, i) { return s + i.tn; }, 0) || 1;
+  return {
+    labels: items.map(function(i) { return i.z; }),
+    values: items.map(function(i) { return +i.tn.toFixed(2); }),
+    colors: items.map(function(i) { return G_ZONA_COLOR[i.z] || '#c3c8d4'; }),
+    total: total,
+  };
+}
+function _prepMateriales(distribucion) {
+  const items = []; let otros = 0;
+  Object.keys(distribucion || {}).forEach(function(nombre) {
+    const val = distribucion[nombre]; if (!(val > 0)) return;
+    if (MATS_FILTRO_ACTIVOS.includes(nombre)) items.push({ nombre: nombre, val: val }); else otros += val;
+  });
+  items.sort(function(a, b) { return b.val - a.val; });
+  if (otros > 0) items.push({ nombre: 'Otros materiales', val: otros, otros: true });
+  if (!items.length) return null;
+  return {
+    categories: items.map(function(i) { return i.otros ? 'Otros' : (G_MAT_CORTO[i.nombre] || i.nombre); }),
+    values: items.map(function(i) { return +i.val.toFixed(2); }),
+    colors: items.map(function(i) { return i.otros ? '#c3c8d4' : gMatColor(i.nombre); }),
+  };
+}
 
-  let yMax = 0;
-  shown.forEach(function(n) { meses.forEach(function(m) { yMax = Math.max(yMax, valor(n, m)); }); });
-  if (yMax <= 0) yMax = 1;
-
-  const padL = 60, padR = 20, padT = 20, padB = 40, innerW = 1000 - padL - padR, innerH = 300 - padT - padB;
-  const x = function(i) { return meses.length === 1 ? (padL + innerW / 2) : padL + (i / (meses.length - 1)) * innerW; };
-  const y = function(v) { return padT + innerH - (v / yMax) * innerH; };
-
-  let grid = '', ylab = '';
-  for (let g = 0; g <= 4; g++) {
-    const val = yMax * g / 4, yy = y(val);
-    grid += '<line x1="' + padL + '" y1="' + yy.toFixed(1) + '" x2="' + (padL + innerW) + '" y2="' + yy.toFixed(1) + '" stroke="#eef1f7" stroke-width="1"/>';
-    ylab += '<text x="' + (padL - 10) + '" y="' + (yy + 4).toFixed(1) + '" text-anchor="end" font-family="Outfit" font-size="11" fill="#a0a0b0">' + fmtNum(val, 0) + '</text>';
-  }
-  const xlab = meses.map(function(m, i) {
-    return '<text x="' + x(i).toFixed(1) + '" y="' + (padT + innerH + 20) + '" text-anchor="middle" font-family="Outfit" font-size="12" font-weight="600" fill="#767c8a">' + esc(m.substring(0, 3)) + '</text>';
-  }).join('');
-
-  const lineas = shown.map(function(n) {
-    const c = gMatColor(n);
-    const pts = meses.map(function(m, i) { return x(i).toFixed(1) + ',' + y(valor(n, m)).toFixed(1); }).join(' ');
-    const dots = meses.map(function(m, i) {
-      return '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(valor(n, m)).toFixed(1) + '" r="4" fill="' + c + '" stroke="#fff" stroke-width="1.5">' +
-        '<title>' + esc(n) + ' · ' + esc(m) + ': ' + fmtNum(valor(n, m)) + ' TN</title></circle>';
-    }).join('');
-    return '<polyline points="' + pts + '" fill="none" stroke="' + c + '" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' + dots;
-  }).join('');
-
-  const leg = shown.map(function(n) {
-    return '<span class="g-eleg"><span class="g-eleg-c" style="background:' + gMatColor(n) + '"></span>' + esc(G_MAT_CORTO[n] || n) + '</span>';
-  }).join('');
-
-  return '<svg class="g-evochart" viewBox="0 0 1000 300">' + grid + ylab + '<g>' + xlab + '</g>' + lineas + '</svg>' +
-    '<div class="g-evoleg">' + leg + '</div>';
+// ── Dibujo de los charts (tras insertar el HTML) ──
+function _initDashCharts() {
+  _destruirDashApex();
+  if (!_apexOk()) return;
+  _dashSparks.forEach(function(s, i) { _mkSpark('dash-spark-' + i, s.serie, s.color); });
+  if (_dashEvoPrep && !_dashEvoPrep.empty) _mkEvolucion('dash-evo', _dashEvoPrep);
+  if (_dashZonaPrep) _mkZona('dash-zona', _dashZonaPrep);
+  if (_dashTNPrep) _mkMateriales('dash-tn', _dashTNPrep);
+}
+function _mkSpark(id, serie, color) {
+  const el = document.getElementById(id); if (!el) return;
+  const c = new ApexCharts(el, {
+    chart: { type: 'area', height: 38, sparkline: { enabled: true }, animations: { enabled: true, speed: 800 } },
+    series: [{ name: '', data: serie.length ? serie : [0, 0] }],
+    colors: [color], stroke: { curve: 'smooth', width: 2.2 },
+    fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: .4, opacityTo: 0, stops: [0, 100] } },
+    tooltip: { enabled: true, x: { show: false }, y: { formatter: function(v) { return fmtNum(v); }, title: { formatter: function() { return ''; } } }, marker: { show: false } },
+  });
+  c.render(); _dashApex.push(c);
+}
+function _mkEvolucion(id, p) {
+  const el = document.getElementById(id); if (!el) return;
+  const c = new ApexCharts(el, {
+    chart: Object.assign({}, G_APEX_BASE, { type: 'area', height: 330 }),
+    series: p.series, colors: p.colors, stroke: { curve: 'smooth', width: 3 },
+    fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: .22, opacityTo: .02, stops: [0, 95] } },
+    dataLabels: { enabled: false }, markers: { size: 0, hover: { size: 6 } },
+    xaxis: { categories: p.categories, axisBorder: { show: false }, axisTicks: { show: false }, labels: { style: { colors: '#a4abba', fontSize: '12px', fontWeight: 600 } } },
+    yaxis: { labels: { formatter: function(v) { return fmtNum(v); }, style: { colors: '#a4abba', fontSize: '11px' } } },
+    grid: { borderColor: '#eef1f7', xaxis: { lines: { show: false } } },
+    legend: { position: 'top', horizontalAlign: 'left', fontSize: '13px', fontWeight: 600, labels: { colors: '#767c8a' }, markers: { width: 11, height: 11, radius: 6 }, itemMargin: { horizontal: 10 } },
+    tooltip: { shared: true, intersect: false, y: { formatter: function(v) { return fmtNum(v) + ' TN'; } } },
+  });
+  c.render(); _dashApex.push(c);
+}
+function _mkZona(id, p) {
+  const el = document.getElementById(id); if (!el) return;
+  const c = new ApexCharts(el, {
+    chart: Object.assign({}, G_APEX_BASE, { type: 'donut', height: 290 }),
+    series: p.values, labels: p.labels, colors: p.colors, stroke: { width: 2, colors: ['#fff'] },
+    plotOptions: { pie: { donut: { size: '68%', labels: { show: true,
+      value: { fontSize: '22px', fontWeight: 800, color: '#2b2f3a', formatter: function(v) { return fmtNum(v); } },
+      total: { show: true, label: 'Total TN', fontSize: '11px', color: '#a4abba', fontWeight: 600, formatter: function() { return fmtNum(p.total); } } } } } },
+    dataLabels: { enabled: false },
+    legend: { position: 'bottom', fontSize: '12.5px', fontWeight: 600, labels: { colors: '#767c8a' }, markers: { width: 10, height: 10, radius: 5 }, itemMargin: { horizontal: 8, vertical: 3 } },
+    tooltip: { y: { formatter: function(v) { return fmtNum(v) + ' TN'; } } },
+  });
+  c.render(); _dashApex.push(c);
+}
+function _mkMateriales(id, p) {
+  const el = document.getElementById(id); if (!el) return;
+  const h = Math.max(210, p.categories.length * 42);
+  const c = new ApexCharts(el, {
+    chart: Object.assign({}, G_APEX_BASE, { type: 'bar', height: h }),
+    series: [{ name: 'TN', data: p.values }], colors: p.colors,
+    plotOptions: { bar: { horizontal: true, distributed: true, borderRadius: 6, borderRadiusApplication: 'end', barHeight: '64%' } },
+    dataLabels: { enabled: true, formatter: function(v) { return fmtNum(v); }, textAnchor: 'start', offsetX: 8, style: { fontSize: '12px', fontWeight: 700, colors: ['#2b2f3a'] } },
+    xaxis: { categories: p.categories, axisBorder: { show: false }, axisTicks: { show: false }, labels: { style: { colors: '#a4abba', fontSize: '11px' } } },
+    yaxis: { labels: { style: { colors: '#767c8a', fontSize: '12.5px', fontWeight: 600 } } },
+    grid: { borderColor: '#eef1f7', yaxis: { lines: { show: false } } },
+    legend: { show: false }, tooltip: { y: { formatter: function(v) { return fmtNum(v) + ' TN'; } } },
+  });
+  c.render(); _dashApex.push(c);
 }
 
 // ============================================================

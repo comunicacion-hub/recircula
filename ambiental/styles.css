@@ -528,45 +528,151 @@ body {
 .load-text { font-size: 14px; color: var(--text-muted); }
 
 /* ============================================================
-   FILTER DRAWER — panel lateral derecho
+   FILTER POPOVER — flota anclado al botón que lo abre (estilo
+   "gota": tarjeta redondeada + colita apuntando al trigger),
+   en vez del panel lateral de ancho completo.
    ============================================================ */
 
 .filter-drawer {
   position: fixed;
-  top: 0;
-  right: -420px;
-  width: 380px;
-  max-width: 90vw;
-  height: 100dvh;
-  background: #fff;
-  box-shadow: -12px 0 32px rgba(0,0,0,0.08);
+  top: 0; left: 0;               /* JS fija top/left reales al abrir */
   z-index: 120;
+  opacity: 0;
+  transform: translateY(-6px) scale(0.97);
+  transform-origin: top center;
+  pointer-events: none;
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+.filter-drawer.open { opacity: 1; transform: translateY(0) scale(1); pointer-events: auto; }
+
+/* Colita: cuadrado rotado 45°, mitad oculta bajo la superficie */
+.filter-drawer-tail {
+  position: absolute;
+  top: -7px;
+  left: 50%;                      /* JS ajusta el left exacto para apuntar al botón */
+  width: 14px; height: 14px;
+  background: #fff;
+  border-top: 1px solid var(--border);
+  border-left: 1px solid var(--border);
+  border-radius: 3px 0 0 0;
+  transform: rotate(45deg);
+  z-index: 0;
+}
+
+.filter-drawer-surface {
+  position: relative;
+  z-index: 1;
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  max-height: min(70vh, 560px);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  box-shadow: 0 20px 48px rgba(31,41,71,0.16), 0 4px 14px rgba(31,41,71,0.07);
   display: flex;
   flex-direction: column;
-  transition: right 0.32s cubic-bezier(0.4,0,0.2,1);
+  overflow: hidden;
 }
-.filter-drawer.open { right: 0; }
 
 .filter-drawer-head {
-  padding: 24px 24px 18px;
+  padding: 18px 20px 14px;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 .filter-drawer-title {
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 700;
   color: var(--text);
-  letter-spacing: -0.5px;
+  letter-spacing: -0.3px;
   line-height: 1.2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.filter-drawer-count {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #506CFF;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
 }
 .filter-drawer-body {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 0;
+  overflow-x: hidden;
+  padding: 16px 18px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  scrollbar-width: thin;
+  scrollbar-color: #d5dae5 transparent;
 }
+.filter-drawer-body::-webkit-scrollbar { width: 8px; }
+.filter-drawer-body::-webkit-scrollbar-track { background: transparent; }
+.filter-drawer-body::-webkit-scrollbar-thumb { background: #d5dae5; border-radius: 4px; border: 2px solid #fff; }
+.filter-drawer-body::-webkit-scrollbar-thumb:hover { background: #c2c8d6; }
+
+/* ── Grupos de filtro con chips (reemplaza acordeón + casillas) ── */
+.filter-group-lbl {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  margin-bottom: 9px;
+}
+.filter-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.filter-chip {
+  font-family: 'Outfit', sans-serif;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 7px 13px;
+  border-radius: 11px;
+  cursor: pointer;
+  transition: all 0.13s;
+}
+.filter-chip:hover { border-color: #506CFF; color: var(--text); }
+.filter-chip.on {
+  background: #506CFF;
+  border-color: #506CFF;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(80,108,255,0.28);
+}
+.filter-search-box {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0 13px;
+  transition: border-color 0.13s, box-shadow 0.13s;
+}
+.filter-search-box:focus-within { border-color: #506CFF; box-shadow: 0 0 0 3px rgba(80,108,255,0.12); }
+.filter-search-box svg { width: 15px; height: 15px; color: var(--text-dim); flex-shrink: 0; }
+.filter-search-box .filter-search {
+  flex: 1; border: none; outline: none; background: none; box-shadow: none;
+  font-family: 'Outfit', sans-serif; font-size: 13px; color: var(--text); padding: 11px 0; width: auto;
+}
+.filter-empty { font-size: 12.5px; color: var(--text-dim); padding: 4px 2px; }
+
+/* El "Aplicar" del popover va índigo sólido (combina con los chips), no el degradado global */
+.filter-drawer-foot .btn-primary { background: #506CFF; }
+.filter-drawer-foot .btn-primary:hover { background: #405ae8; }
 
 .filter-section { border-bottom: 1px solid var(--border); }
 .filter-section:last-child { border-bottom: none; }
@@ -645,10 +751,11 @@ body {
 .filter-opt-all:hover { background: rgba(80,108,255,0.1); }
 
 .filter-drawer-foot {
-  padding: 16px 24px calc(16px + env(safe-area-inset-bottom));
+  padding: 14px 20px;
   border-top: 1px solid var(--border);
   display: flex;
   gap: 10px;
+  flex-shrink: 0;
 }
 .filter-drawer-foot .btn { flex: 1; }
 
@@ -865,7 +972,7 @@ body {
 .g-pill.up { background: rgba(24,174,151,.13); color: #0f9b84; }
 .g-pill.down { background: rgba(248,45,114,.12); color: var(--err); }
 .g-pill small { font-weight: 500; color: var(--text-dim); margin-left: 3px; }
-.g-spark { width: 96px; height: 30px; flex-shrink: 0; }
+.g-spark { width: 104px; height: 38px; flex-shrink: 0; }
 
 /* ── Avance vs Meta (línea de meta con zona de excedente) ──── */
 .g-meta { gap: 18px; }
@@ -915,6 +1022,14 @@ body {
 .g-evoleg   { display: flex; flex-wrap: wrap; justify-content: center; gap: 9px 18px; margin-top: 16px; }
 .g-eleg     { display: flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--text-muted); font-weight: 500; }
 .g-eleg-c   { width: 18px; height: 4px; border-radius: 2px; }
+
+/* ── Charts dinámicos (ApexCharts) ── */
+.g-chart { width: 100%; min-height: 40px; }
+.g-chart .apexcharts-canvas { margin: 0 auto; }
+.g-chart-hint { font-size: 11px; color: var(--text-dim); font-weight: 600; text-align: center; margin-top: 10px; }
+.apexcharts-tooltip { box-shadow: 0 8px 24px rgba(31,41,71,.14) !important; border: 1px solid var(--border) !important; border-radius: 10px !important; }
+.apexcharts-tooltip-title { background: var(--surface) !important; border-bottom: 1px solid var(--border) !important; font-weight: 700 !important; }
+.apexcharts-legend-marker { margin-right: 5px !important; }
 
 /* ── Responsive ───────────────────────────────────────────── */
 @media (max-width: 1040px) { .g-duo { grid-template-columns: 1fr; } }
@@ -1166,5 +1281,5 @@ body {
 }
 
 @media (max-width: 560px) {
-  .filter-drawer { width: 92vw; }
+  .filter-drawer-surface { width: calc(100vw - 32px); max-height: min(75vh, 520px); }
 }

@@ -35,7 +35,7 @@ function renderCompradores() {
         <div class="page-sub">Registro</div>
       </div>
       <div class="hdr-actions">
-        <button class="hdr-circle" onclick="openFilterDrawer('compradores')" title="Filtros">
+        <button class="hdr-circle" onclick="openFilterDrawer('compradores', this)" title="Filtros">
           ${icoHTML('sliders')}
           <span class="filter-badge" id="badge-compradores" style="display:none;">0</span>
         </button>

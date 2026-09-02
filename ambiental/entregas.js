@@ -207,7 +207,7 @@ function renderNivelAsociaciones() {
         <div class="page-sub">Registro por asociación</div>
       </div>
       <div class="hdr-actions">
-        <button class="hdr-circle" onclick="openFilterDrawer('entregas-n1')" title="Filtros">
+        <button class="hdr-circle" onclick="openFilterDrawer('entregas-n1', this)" title="Filtros">
           ${icoHTML('sliders')}<span class="filter-badge" id="badge-entregas-n1" style="display:none;">0</span>
         </button>
         <button class="hdr-circle" onclick="exportarMatrizEntregas()" title="Descargar toda la matriz">${icoHTML('download')}</button>
@@ -319,7 +319,7 @@ function renderNivelLista() {
       </div>
       <div class="hdr-actions">
         <button class="hdr-circle" onclick="volverAsociacionesEnt()" title="Volver a asociaciones">${icoHTML('arrowLeft')}</button>
-        <button class="hdr-circle" onclick="openFilterDrawer('entregas')" title="Filtros">
+        <button class="hdr-circle" onclick="openFilterDrawer('entregas', this)" title="Filtros">
           ${icoHTML('sliders')}<span class="filter-badge" id="badge-entregas" style="display:none;">0</span>
         </button>
         <button class="hdr-circle" onclick="exportarEntregasExcel()" title="Descargar Excel">${icoHTML('download')}</button>

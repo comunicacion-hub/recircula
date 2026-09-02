@@ -258,7 +258,7 @@ const PRECIOS = (() => {
           <div class="page-sub">Variación por provincia</div>
         </div>
         <div class="hdr-actions">
-          <button class="hdr-circle" onclick="openFilterDrawer('precios')" title="Filtros" aria-label="Filtros">
+          <button class="hdr-circle" onclick="openFilterDrawer('precios', this)" title="Filtros" aria-label="Filtros">
             ${icoHTML('sliders')}<span class="filter-badge" id="pr-filter-badge" style="display:none"></span>
           </button>
           <button class="hdr-circle" onclick="PRECIOS._exportar()" title="Descargar Excel" aria-label="Descargar Excel">

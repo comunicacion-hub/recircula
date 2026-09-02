@@ -588,11 +588,13 @@ function registerFilterConfig(scope, cfg) {
 
 let currentFilterScope = null;
 let pendingFilters = {};
+let _filterDrawerBtn = null;   // botón que abrió el popover (para anclarlo y no auto-cerrarlo)
 
-function openFilterDrawer(scope) {
+function openFilterDrawer(scope, btn) {
   const cfg = FILTER_CONFIGS[scope];
   if (!cfg) return;
   currentFilterScope = scope;
+  _filterDrawerBtn = btn || null;
 
   pendingFilters = {};
   cfg.sections.forEach(function(sec) {
@@ -600,87 +602,118 @@ function openFilterDrawer(scope) {
     pendingFilters[sec.key] = Array.isArray(v) ? v.slice() : (v ? [v] : []);
   });
 
-  const body = document.getElementById('filter-drawer-body');
-  body.innerHTML = cfg.sections.map(function(sec, i) {
-    const isOpen = i === 0;
-    return '<div class="filter-section ' + (isOpen ? 'open' : '') + '" data-key="' + sec.key + '">' +
-      '<button class="filter-section-head" onclick="toggleFilterSection(this)">' +
-        '<span>' + sec.title + '</span>' +
-        icoHTML('chevDown').replace('<svg', '<svg class="chev"') +
-      '</button>' +
-      '<div class="filter-section-body">' + renderFilterSection(sec) + '</div>' +
-    '</div>';
-  }).join('');
+  document.getElementById('filter-drawer-body').innerHTML = _buildFilterBody(cfg);
+  _refreshFilterCount();
 
   document.getElementById('filter-drawer').classList.add('open');
+  if (_filterDrawerBtn) _posicionarFilterDrawer(_filterDrawerBtn);
 }
+
+// Cuerpo del popover: un grupo por sección, con chips (o buscador) en vez de
+// listas de casillas dentro de acordeones.
+function _buildFilterBody(cfg) {
+  return cfg.sections.map(function(sec) {
+    return '<div class="filter-group" data-key="' + sec.key + '">' +
+      '<div class="filter-group-lbl">' + esc(sec.title) + '</div>' +
+      renderFilterSection(sec) +
+    '</div>';
+  }).join('');
+}
+
+// Recuenta las secciones con algún filtro activo (pendiente) y actualiza el
+// contador del encabezado del popover.
+function _refreshFilterCount() {
+  const cfg = FILTER_CONFIGS[currentFilterScope]; if (!cfg) return;
+  let n = 0;
+  cfg.sections.forEach(function(sec) {
+    const v = pendingFilters[sec.key];
+    const arr = Array.isArray(v) ? v : (v ? [v] : []);
+    if (arr.filter(function(x) { return x && x !== '__ALL__'; }).length) n++;
+  });
+  const c = document.getElementById('filter-drawer-count');
+  if (c) { c.textContent = n; c.style.display = n > 0 ? 'inline-flex' : 'none'; }
+}
+
+// Ancla el popover justo debajo del botón que lo abrió, con la colita
+// apuntando a su centro. Se ajusta para no salirse del viewport.
+function _posicionarFilterDrawer(btn) {
+  const drawer  = document.getElementById('filter-drawer');
+  const surface = document.getElementById('filter-drawer-surface');
+  const tail    = document.getElementById('filter-drawer-tail');
+  if (!drawer || !surface || !tail) return;
+
+  const margin  = 16;
+  const r       = btn.getBoundingClientRect();
+  const surfaceW = Math.min(360, window.innerWidth - margin * 2);
+
+  let left = r.right - surfaceW;                                    // alineado al borde derecho del botón
+  left = Math.max(margin, Math.min(left, window.innerWidth - surfaceW - margin));
+  let top = r.bottom + 12;
+  top = Math.min(top, window.innerHeight - margin - 120);           // deja espacio visible aunque el botón esté muy abajo
+
+  drawer.style.left = left + 'px';
+  drawer.style.top  = top + 'px';
+
+  const btnCenter = r.left + r.width / 2;
+  let tailLeft = btnCenter - left - 7;                               // 7 = mitad del ancho de la colita
+  tailLeft = Math.max(14, Math.min(tailLeft, surfaceW - 28));
+  tail.style.left = tailLeft + 'px';
+}
+
+// El popover queda desalineado si la página se desplaza bajo un
+// position:fixed — se re-ancla al botón en vez de quedar flotando suelto.
+let _filterDrawerRepoQueued = false;
+window.addEventListener('scroll', function() {
+  if (_filterDrawerRepoQueued || !_filterDrawerBtn) return;
+  const drawer = document.getElementById('filter-drawer');
+  if (!drawer || !drawer.classList.contains('open')) return;
+  _filterDrawerRepoQueued = true;
+  requestAnimationFrame(function() {
+    _filterDrawerRepoQueued = false;
+    if (_filterDrawerBtn && drawer.classList.contains('open')) _posicionarFilterDrawer(_filterDrawerBtn);
+  });
+}, true);
+
+document.addEventListener('click', function(e) {
+  const drawer = document.getElementById('filter-drawer');
+  if (!drawer || !drawer.classList.contains('open')) return;
+  if (drawer.contains(e.target)) return;
+  if (_filterDrawerBtn && (e.target === _filterDrawerBtn || _filterDrawerBtn.contains(e.target))) return;
+  closeFilterDrawer();
+});
 
 function renderFilterSection(sec) {
   const current = pendingFilters[sec.key];
   const arr = Array.isArray(current) ? current : (current ? [current] : []);
   if (sec.type === 'search') {
     const txt = arr[0] || '';
-    return '<input type="text" class="filter-search" placeholder="' + (sec.placeholder || '') + '"' +
+    return '<div class="filter-search-box">' +
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>' +
+      '<input type="text" class="filter-search" placeholder="' + esc(sec.placeholder || '') + '"' +
       ' value="' + esc(txt) + '"' +
-      ' oninput="pendingFilters[\'' + sec.key + '\'] = this.value ? [this.value] : []">';
+      ' oninput="pendingFilters[\'' + sec.key + '\'] = this.value ? [this.value] : []; _refreshFilterCount();">' +
+    '</div>';
   }
-  if (sec.type === 'options') {
-    const opts = sec.options || [];
-    if (!opts.length) {
-      return '<div style="font-size:13px;color:var(--text-dim);padding:8px 12px">Sin opciones disponibles</div>';
-    }
-    const allChecked = arr.includes('__ALL__');
-    const allOpt = '<label class="filter-opt filter-opt-all">' +
-      '<input type="checkbox" value="__ALL__" ' + (allChecked ? 'checked' : '') +
-        ' onchange="toggleFilterAll(\'' + sec.key + '\', this.checked)">' +
-      '<span><strong>Ver todos</strong></span>' +
-    '</label>' +
-    '<div style="border-top:1px solid var(--border);margin:4px 12px;"></div>';
-
-    const list = opts.map(function(o) {
-      const val = typeof o === 'object' ? o.val : o;
-      const lbl = typeof o === 'object' ? o.lbl : o;
-      const checked = arr.includes(val) ? 'checked' : '';
-      return '<label class="filter-opt">' +
-        '<input type="checkbox" value="' + esc(val) + '" ' + checked +
-          ' onchange="toggleFilterValue(\'' + sec.key + '\',\'' + jsEsc(val) + '\', this.checked)">' +
-        '<span>' + esc(lbl) + '</span>' +
-      '</label>';
-    }).join('');
-    return allOpt + list;
-  }
-  return '';
+  // 'options' → chips que se togglean; sin ninguno activo = todos.
+  const opts = sec.options || [];
+  if (!opts.length) return '<div class="filter-empty">Sin opciones disponibles</div>';
+  return '<div class="filter-chips">' + opts.map(function(o) {
+    const val = typeof o === 'object' ? o.val : o;
+    const lbl = typeof o === 'object' ? o.lbl : o;
+    const on = arr.includes(val) ? ' on' : '';
+    return '<button type="button" class="filter-chip' + on + '" data-val="' + esc(val) + '"' +
+      ' onclick="toggleFilterChip(\'' + jsEsc(sec.key) + '\',\'' + jsEsc(val) + '\', this)">' + esc(lbl) + '</button>';
+  }).join('') + '</div>';
 }
 
-function toggleFilterAll(key, checked) {
-  pendingFilters[key] = checked ? ['__ALL__'] : [];
-  const drawer = document.getElementById('filter-drawer-body');
-  const section = drawer ? drawer.querySelector('.filter-section[data-key="' + key + '"]') : null;
-  if (!section) return;
-  const cfg = FILTER_CONFIGS[currentFilterScope];
-  const sec = cfg.sections.find(function(s) { return s.key === key; });
-  section.querySelector('.filter-section-body').innerHTML = renderFilterSection(sec);
-}
-
-function toggleFilterValue(key, val, checked) {
-  if (!Array.isArray(pendingFilters[key])) {
-    pendingFilters[key] = pendingFilters[key] ? [pendingFilters[key]] : [];
-  }
+function toggleFilterChip(key, val, el) {
+  if (!Array.isArray(pendingFilters[key])) pendingFilters[key] = pendingFilters[key] ? [pendingFilters[key]] : [];
   let arr = pendingFilters[key].filter(function(v) { return v !== '__ALL__'; });
-  const idx = arr.indexOf(val);
-  if (checked && idx === -1) arr.push(val);
-  else if (!checked && idx !== -1) arr.splice(idx, 1);
+  const i = arr.indexOf(val);
+  if (i === -1) arr.push(val); else arr.splice(i, 1);
   pendingFilters[key] = arr;
-  const drawer = document.getElementById('filter-drawer-body');
-  const section = drawer ? drawer.querySelector('.filter-section[data-key="' + key + '"]') : null;
-  if (section) {
-    const allCb = section.querySelector('input[value="__ALL__"]');
-    if (allCb) allCb.checked = false;
-  }
-}
-
-function toggleFilterSection(btn) {
-  btn.closest('.filter-section').classList.toggle('open');
+  if (el) el.classList.toggle('on');
+  _refreshFilterCount();
 }
 
 function closeFilterDrawer() {
@@ -702,19 +735,8 @@ function clearFilters() {
   const cfg = FILTER_CONFIGS[currentFilterScope];
   if (!cfg) return;
   cfg.sections.forEach(function(sec) { pendingFilters[sec.key] = []; });
-  const body = document.getElementById('filter-drawer-body');
-  const openKeys = new Set();
-  body.querySelectorAll('.filter-section.open').forEach(function(s) { openKeys.add(s.dataset.key); });
-  body.innerHTML = cfg.sections.map(function(sec) {
-    const isOpen = openKeys.has(sec.key);
-    return '<div class="filter-section ' + (isOpen ? 'open' : '') + '" data-key="' + sec.key + '">' +
-      '<button class="filter-section-head" onclick="toggleFilterSection(this)">' +
-        '<span>' + sec.title + '</span>' +
-        icoHTML('chevDown').replace('<svg', '<svg class="chev"') +
-      '</button>' +
-      '<div class="filter-section-body">' + renderFilterSection(sec) + '</div>' +
-    '</div>';
-  }).join('');
+  document.getElementById('filter-drawer-body').innerHTML = _buildFilterBody(cfg);
+  _refreshFilterCount();
 }
 
 function updateFilterBadge(scope) {

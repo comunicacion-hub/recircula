@@ -34,16 +34,19 @@
   <!-- FAB flotante (acción primaria de la sección activa) -->
   <button class="fab hidden" id="fab" title=""></button>
 
-  <!-- FILTER DRAWER (compartido) -->
+  <!-- FILTER POPOVER (compartido) — flota anclado al botón que lo abre -->
   <aside class="filter-drawer" id="filter-drawer">
-    <div class="filter-drawer-head">
-      <div class="filter-drawer-title">Filtros de búsqueda</div>
-      <button class="modal-close" onclick="closeFilterDrawer()" title="Cerrar"></button>
-    </div>
-    <div class="filter-drawer-body" id="filter-drawer-body"></div>
-    <div class="filter-drawer-foot">
-      <button class="btn btn-glass" onclick="clearFilters()">Limpiar</button>
-      <button class="btn btn-primary" onclick="applyFilters()">Aplicar</button>
+    <div class="filter-drawer-tail" id="filter-drawer-tail"></div>
+    <div class="filter-drawer-surface" id="filter-drawer-surface">
+      <div class="filter-drawer-head">
+        <div class="filter-drawer-title">Filtros <span class="filter-drawer-count" id="filter-drawer-count"></span></div>
+        <button class="modal-close" onclick="closeFilterDrawer()" title="Cerrar"></button>
+      </div>
+      <div class="filter-drawer-body" id="filter-drawer-body"></div>
+      <div class="filter-drawer-foot">
+        <button class="btn btn-glass" onclick="clearFilters()">Limpiar</button>
+        <button class="btn btn-primary" onclick="applyFilters()">Aplicar</button>
+      </div>
     </div>
   </aside>
 </div>
@@ -52,6 +55,7 @@
 <div id="toast"></div>
 
 <!-- Scripts -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/apexcharts/3.54.1/apexcharts.min.js"></script>
 <script src="icons.js"></script>
 <script src="app.js"></script>
 <script src="dashboard.js"></script>
