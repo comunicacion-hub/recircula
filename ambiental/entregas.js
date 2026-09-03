@@ -79,9 +79,7 @@ function registerEntregasFilters() {
       { key: 'provincia',  title: 'Provincias',   type: 'options',
         options: Array.from(new Set((CAT.asociaciones || []).map(a => a['Provincia']).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'es')),
         allLabel: 'Todas las provincias' },
-      { key: 'asociacion', title: 'Asociaciones', type: 'options',
-        options: (CAT.asociaciones || []).map(a => ({ val: a['ID_Asociacion'], lbl: a['Nombre'] })),
-        allLabel: 'Todas las asociaciones' },
+      { key: 'asociacion', title: 'Asociación', type: 'search', placeholder: 'Buscar por nombre...' },
     ],
     getValue: (k) => ENT_FILTROS_N1[k] || [],
     setValue: (k, v) => { ENT_FILTROS_N1[k] = v; },
@@ -229,10 +227,14 @@ function renderProvinciasEnt() {
 
   const idx = _indiceAsociacionesEnt();
 
+  // Asociación = búsqueda por texto (coincidencia parcial del nombre), no lista.
+  const busqAsoc = (ENT_FILTROS_N1.asociacion && ENT_FILTROS_N1.asociacion[0]) || '';
+  const busqAsocK = busqAsoc.trim() ? normKey(busqAsoc) : '';
+
   const grupos = {};
   (CAT.asociaciones || []).forEach(a => {
-    if (!pasaFiltro(ENT_FILTROS_N1.provincia,  a['Provincia'])) return;
-    if (!pasaFiltro(ENT_FILTROS_N1.asociacion, a['ID_Asociacion'])) return;
+    if (!pasaFiltro(ENT_FILTROS_N1.provincia, a['Provincia'])) return;
+    if (busqAsocK && normKey(a['Nombre'] || '').indexOf(busqAsocK) < 0) return;
     const prov = a['Provincia'] || 'Sin provincia';
     (grupos[prov] = grupos[prov] || []).push(a);
   });
@@ -1735,7 +1737,7 @@ function exportarMatrizEntregas() {
   s.id = 'entregas-styles';
   s.textContent = `
     /* ══ NIVEL 1: una tarjeta por provincia (con su detalle) ══ */
-    .prov-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(420px,1fr)); gap:18px; align-items:start; }
+    .prov-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(420px,100%),1fr)); gap:18px; align-items:start; }
     .pcard { padding:20px 22px; }
     .pcard-head { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:12px; }
     .pg-badge { display:flex; align-items:center; gap:10px; }
@@ -1774,7 +1776,7 @@ function exportarMatrizEntregas() {
     .hito-tl-row { display:flex; gap:16px; align-items:stretch; }
     .hito-tl-side { width:22px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
     .hito-tl-dot { width:14px; height:14px; border-radius:50%; background:linear-gradient(135deg,#7B5CFF,#506CFF); }
-    .hito-tl-card { flex:1; min-width:0; background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px 18px; display:flex; flex-wrap:wrap; align-items:center; gap:18px; cursor:pointer; transition:box-shadow .15s,transform .12s,border-color .15s; }
+    .hito-tl-card { flex:1; min-width:0; background:var(--white); border:1px solid var(--border); border-radius:18px; box-shadow:var(--shadow-sm); padding:16px 18px; display:flex; flex-wrap:wrap; align-items:center; gap:18px; cursor:pointer; transition:box-shadow .15s,transform .12s,border-color .15s; }
     .hito-tl-card:hover { box-shadow:0 6px 20px rgba(0,0,0,.08); transform:translateY(-2px); border-color:transparent; }
     .hito-c-main { display:flex; align-items:center; gap:14px; flex:1 1 200px; min-width:0; }
     .hito-c-id { min-width:0; }
@@ -1797,7 +1799,7 @@ function exportarMatrizEntregas() {
 
     /* Nivel 2 móvil: tarjetas apiladas (réplica de "hito social") */
     .pmob { display:none; flex-direction:column; gap:12px; }
-    .pmob-card { background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px; cursor:pointer; transition:box-shadow .15s,transform .12s; }
+    .pmob-card { background:var(--white); border:1px solid var(--border); border-radius:18px; box-shadow:var(--shadow-sm); padding:16px; cursor:pointer; transition:box-shadow .15s,transform .12s; }
     .pmob-card:hover { box-shadow:0 6px 20px rgba(0,0,0,.08); transform:translateY(-2px); }
     .pmob-top { display:flex; align-items:flex-start; gap:12px; }
     .pmob-id { flex:1; min-width:0; }
