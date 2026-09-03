@@ -85,10 +85,6 @@ function _rgbaCmp(hex, a) {
   const n = parseInt(h, 16) || 0;
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
 }
-function toggleNivelComprador(i) {
-  const el = document.querySelector(`.cmp-lvl[data-nivel="${i}"]`);
-  if (el) el.classList.toggle('open');
-}
 
 function renderTablaCompradores() {
   const wrap = document.getElementById('compradores-table-wrap');
@@ -109,42 +105,43 @@ function renderTablaCompradores() {
 
   const edit = puedeEditar();
 
-  // Tarjeta de comprador: avatar de iniciales + nombre + provincia · destino final.
-  const card = (c, color) => {
+  // Fila de comprador dentro de la tarjeta del nivel: avatar + nombre + provincia · destino.
+  const fila = (c, color) => {
     const id     = jsEsc(c['ID_Comprador'] || '');
     const activo = c['Activo'] === true;
     const prov   = c['Provincia'] || 'Sin provincia';
     const dest   = c['Destino Final'] || '';
-    const destHtml = dest ? `<span class="cmp-c-sep">·</span>${icoHTML('arrowRight')}<span class="cmp-c-dest">${esc(dest)}</span>` : '';
-    return `<div class="cmp-card${activo ? '' : ' off'}" onclick="verComprador('${id}')">
-      <span class="cmp-c-ava" style="background:${_rgbaCmp(color, .12)};color:${color}">${esc(_inicialesCmp(c['Nombre']))}</span>
-      <div class="cmp-c-body">
-        <div class="cmp-c-top"><span class="cmp-c-name">${esc(c['Nombre'] || '—')}</span>${activo ? '' : '<span class="cmp-c-off">Inactivo</span>'}</div>
-        <div class="cmp-c-meta">${icoHTML('mapPin')}<span class="cmp-c-prov">${esc(prov)}</span>${destHtml}</div>
-      </div>
-      <div class="cmp-c-acts">
+    const meta   = esc(prov) + (dest ? ' · ' + esc(dest) : '');
+    return `<div class="cmp-row${activo ? '' : ' off'}" onclick="verComprador('${id}')">
+      <span class="cmp-r-ava" style="background:${_rgbaCmp(color, .12)};color:${color}">${esc(_inicialesCmp(c['Nombre']))}</span>
+      <span class="cmp-r-body">
+        <span class="cmp-r-top"><b class="cmp-r-name">${esc(c['Nombre'] || '—')}</b>${activo ? '' : '<span class="cmp-r-off">Inactivo</span>'}</span>
+        <span class="cmp-r-meta">${meta}</span>
+      </span>
+      <span class="cmp-r-acts">
         <button class="cmp-abtn" onclick="event.stopPropagation();verComprador('${id}')" title="Ver">${icoHTML('view')}</button>
         ${edit ? `<button class="cmp-abtn" onclick="event.stopPropagation();abrirFormComprador('${id}')" title="Editar">${icoHTML('edit')}</button>
         <button class="cmp-abtn del" onclick="event.stopPropagation();confirmarEliminarComprador('${id}')" title="Eliminar">${icoHTML('trash')}</button>` : ''}
-      </div>
+      </span>
     </div>`;
   };
 
-  // Secciones por nivel — acordeón; Nivel 1 (i=0) abierto al entrar para no ver vacío.
+  // Una tarjeta (a ancho completo) por nivel, con sus compradores como filas.
   const secs = CMP_NIVELES.map((n, i) => {
     const lista = cols[i];
     const cnt   = lista.length;
     const cuerpo = cnt
-      ? lista.map(c => card(c, n.color)).join('')
-      : `<div class="cmp-lvl-empty"><span style="background:${_rgbaCmp(n.color, .1)};color:${n.color}">${icoHTML('cart')}</span>Aún no hay compradores en este nivel.</div>`;
-    return `<div class="cmp-lvl${i === 0 ? ' open' : ''}" data-nivel="${i}">
-      <button class="cmp-lvl-head" onclick="toggleNivelComprador(${i})">
-        <span class="cmp-lvl-acc" style="background:${n.color}"></span>
-        <span class="cmp-lvl-tt">${esc(n.key)}</span><span class="cmp-lvl-desc">${esc(n.desc)}</span>
-        <span class="cmp-lvl-cnt">${cnt}</span>
-        <span class="cmp-lvl-chev">${icoHTML('chevDown')}</span>
-      </button>
-      <div class="cmp-lvl-grid">${cuerpo}</div>
+      ? lista.map(c => fila(c, n.color)).join('')
+      : `<div class="cmp-lvl-empty">Aún no hay compradores en este nivel.</div>`;
+    return `<div class="card cmp-lvlcard">
+      <div class="cmp-lvlcard-head">
+        <div class="cmp-lvlcard-badge">
+          <span class="cmp-lvlcard-acc" style="background:${n.color}"></span>
+          <div><div class="cmp-lvlcard-name">${esc(n.key)}</div><div class="cmp-lvlcard-desc">${esc(n.desc)}</div></div>
+        </div>
+        <div class="cmp-lvlcard-cnt">${cnt} comprador${cnt !== 1 ? 'es' : ''}</div>
+      </div>
+      <div class="cmp-rows">${cuerpo}</div>
     </div>`;
   }).join('');
 
@@ -166,7 +163,7 @@ function verComprador(id) {
     <div class="modal" style="max-width:520px">
       <div class="modal-head">
         <div style="display:flex;align-items:center;gap:14px;min-width:0">
-          <span class="cmp-c-ava" style="width:48px;height:48px;border-radius:13px;font-size:17px;background:${_rgbaCmp(color, .12)};color:${color}">${esc(_inicialesCmp(c['Nombre']))}</span>
+          <span class="cmp-r-ava" style="width:48px;height:48px;border-radius:13px;font-size:17px;background:${_rgbaCmp(color, .12)};color:${color}">${esc(_inicialesCmp(c['Nombre']))}</span>
           <div style="min-width:0">
             <div class="modal-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c['Nombre']||'')}</div>
             <div class="modal-sub"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:6px;vertical-align:middle"></span>${esc(niv.key)} · ${esc(niv.desc)}</div>
@@ -395,66 +392,36 @@ async function exportarCompradoresExcel() {
   s.textContent = `
     .cmp-wrap { display:flex; flex-direction:column; gap:18px; }
 
-    /* ── Resumen (hero) — deliberadamente suave para no competir con las tarjetas ── */
-    .cmp-hero { background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:20px 24px; display:flex; align-items:center; gap:30px; }
-    .cmp-hero-l { display:flex; align-items:center; gap:12px; flex-shrink:0; }
-    .cmp-hero-num { font-size:32px; font-weight:700; letter-spacing:-.5px; line-height:1; color:var(--text); }
-    .cmp-hero-lbl { font-size:12.5px; color:var(--text-muted); font-weight:600; line-height:1.35; }
-    .cmp-hero-lbl b { color:var(--text); font-weight:700; }
-    .cmp-hero-r { flex:1; min-width:0; display:flex; flex-direction:column; gap:10px; }
-    .cmp-dist { display:flex; height:7px; gap:2px; }
-    .cmp-dist > span { height:100%; border-radius:3px; }
-    .cmp-leg { display:flex; flex-wrap:wrap; gap:6px 20px; }
-    .cmp-leg-it { display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--text-muted); font-weight:600; }
-    .cmp-leg-it i { width:9px; height:9px; border-radius:3px; }
-    .cmp-leg-it b { color:var(--text); font-weight:800; margin-left:1px; }
+    /* ── Una tarjeta a ancho completo por nivel (estilo Pesos) ── */
+    .cmp-lvlcard { padding:20px 22px; }
+    .cmp-lvlcard-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .cmp-lvlcard-badge { display:flex; align-items:center; gap:10px; min-width:0; }
+    .cmp-lvlcard-acc { width:4px; height:22px; border-radius:3px; flex-shrink:0; }
+    .cmp-lvlcard-name { font-size:14.5px; font-weight:700; letter-spacing:.2px; color:var(--text); }
+    .cmp-lvlcard-desc { font-size:11.5px; color:var(--text-muted); font-weight:600; margin-top:1px; }
+    .cmp-lvlcard-cnt { font-size:11.5px; color:var(--text-muted); font-weight:600; white-space:nowrap; flex-shrink:0; }
 
-    /* ── Acordeón por nivel (colapsado al entrar) ── */
-    .cmp-lvl { display:flex; flex-direction:column; gap:10px; }
-    .cmp-lvl-head { display:flex; align-items:center; gap:11px; width:100%; padding:9px 12px; text-align:left; background:none; border:1px solid transparent; border-radius:12px; font-family:inherit; cursor:pointer; transition:background .14s, border-color .14s; }
-    .cmp-lvl-head:hover { background:var(--surface); border-color:var(--border); }
-    .cmp-lvl-acc { width:4px; height:20px; border-radius:3px; flex-shrink:0; }
-    .cmp-lvl-tt { font-size:14px; font-weight:700; letter-spacing:.2px; color:var(--text); }
-    .cmp-lvl-desc { font-size:12px; color:var(--text-dim); font-weight:500; }
-    .cmp-lvl-cnt { margin-left:auto; font-size:11.5px; font-weight:700; color:var(--text-muted); background:var(--surface); border:1px solid var(--border); padding:3px 11px; border-radius:20px; }
-    .cmp-lvl-head:hover .cmp-lvl-cnt { background:var(--white); }
-    .cmp-lvl-chev { display:flex; color:var(--text-dim); transform:rotate(-90deg); transition:transform .25s ease; }
-    .cmp-lvl-chev svg { width:17px; height:17px; }
-    .cmp-lvl.open .cmp-lvl-chev { transform:rotate(0deg); color:var(--text-muted); }
-    .cmp-lvl-grid { display:none; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px; }
-    .cmp-lvl.open .cmp-lvl-grid { display:grid; animation:cmpIn .24s ease; }
-    @keyframes cmpIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:none; } }
-
-    /* ── Tarjeta de comprador ── */
-    .cmp-card { display:flex; align-items:center; gap:13px; padding:13px 15px; border-radius:14px; background:var(--white); border:1px solid var(--border); box-shadow:var(--shadow-sm); cursor:pointer; transition:box-shadow .15s, transform .12s, border-color .15s; min-width:0; }
-    .cmp-card:hover { box-shadow:0 6px 18px rgba(0,0,0,.07); transform:translateY(-2px); border-color:transparent; }
-    .cmp-c-ava { width:42px; height:42px; border-radius:12px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:800; letter-spacing:.3px; }
-    .cmp-c-body { flex:1; min-width:0; }
-    .cmp-c-top { display:flex; align-items:center; gap:8px; }
-    .cmp-c-name { font-size:14px; font-weight:700; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    .cmp-c-off { flex-shrink:0; font-size:9.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:var(--text-dim); background:#eef1f6; padding:2px 7px; border-radius:20px; }
-    .cmp-c-meta { display:flex; align-items:center; gap:6px; margin-top:4px; font-size:12px; color:var(--text-muted); min-width:0; }
-    .cmp-c-meta svg { width:12.5px; height:12.5px; color:var(--text-dim); flex-shrink:0; }
-    .cmp-c-prov { font-weight:600; flex-shrink:0; }
-    .cmp-c-sep { color:var(--text-dim); flex-shrink:0; }
-    .cmp-c-dest { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0; }
-    .cmp-c-acts { flex-shrink:0; display:flex; gap:3px; opacity:0; transition:opacity .14s; }
-    .cmp-card:hover .cmp-c-acts { opacity:1; }
-    .cmp-abtn { width:31px; height:31px; border-radius:8px; border:none; background:#eef1f6; color:var(--text-muted); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:.14s; }
+    .cmp-rows { margin-top:10px; }
+    .cmp-row { display:flex; align-items:center; gap:13px; padding:11px 4px; cursor:pointer; border-radius:10px; transition:background .13s; }
+    .cmp-row + .cmp-row { border-top:1px solid #eef1f6; }
+    .cmp-row:hover { background:#f7f9fc; }
+    .cmp-row.off { opacity:.55; }
+    .cmp-r-ava { width:38px; height:38px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:800; letter-spacing:.3px; }
+    .cmp-r-body { flex:1; min-width:0; display:flex; flex-direction:column; }
+    .cmp-r-top { display:flex; align-items:center; gap:8px; min-width:0; }
+    .cmp-r-name { font-size:13.5px; font-weight:600; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .cmp-r-off { flex-shrink:0; font-size:9.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:var(--text-dim); background:#eef1f6; padding:2px 7px; border-radius:20px; }
+    .cmp-r-meta { font-size:11.5px; color:var(--text-muted); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px; }
+    .cmp-r-acts { flex-shrink:0; display:flex; gap:4px; opacity:0; transition:opacity .14s; }
+    .cmp-row:hover .cmp-r-acts { opacity:1; }
+    .cmp-abtn { width:32px; height:32px; border-radius:9px; border:none; background:#eef1f6; color:var(--text-muted); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:.14s; }
     .cmp-abtn svg { width:15px; height:15px; } .cmp-abtn:hover { background:#e2e7f0; color:var(--text); }
     .cmp-abtn.del { color:#EF4444; background:rgba(239,68,68,.09); } .cmp-abtn.del:hover { background:rgba(239,68,68,.16); }
-    .cmp-card.off { opacity:.6; }
 
-    .cmp-lvl-empty { grid-column:1/-1; display:flex; align-items:center; gap:12px; padding:16px 18px; border:1px dashed var(--border); border-radius:14px; color:var(--text-dim); font-size:12.5px; }
-    .cmp-lvl-empty span { width:34px; height:34px; border-radius:10px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-    .cmp-lvl-empty svg { width:17px; height:17px; }
+    .cmp-lvl-empty { padding:14px 4px; color:var(--text-dim); font-size:12.5px; }
 
     @media (max-width:900px) {
-      .cmp-hero { flex-direction:column; align-items:stretch; gap:16px; padding:18px 20px; }
-      .cmp-hero-num { font-size:30px; }
-      .cmp-leg { display:grid; grid-template-columns:1fr 1fr; gap:10px 12px; }
-      .cmp-c-acts { opacity:1; }
-      .cmp-lvl-grid { grid-template-columns:1fr; }
+      .cmp-r-acts { opacity:1; }
     }
   `;
   document.head.appendChild(s);
