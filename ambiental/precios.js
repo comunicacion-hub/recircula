@@ -43,6 +43,7 @@ const PRECIOS = (() => {
   let _provincias = [];
   let _matsActivos = [];    // materiales mostrados (derivado de _fMats)
   let _matGrafico = null;   // material activo en el gráfico
+  let _prChart = null;      // instancia ApexCharts viva (se destruye al re-dibujar)
 
   // Filtros (seleccionados en el drawer)
   let _fAnios = [];
@@ -203,6 +204,7 @@ const PRECIOS = (() => {
     _recalcMesesVis();
     const t = document.getElementById('pr-mat-tabs');     if (t) t.innerHTML = _buildTabs();
     const c = document.getElementById('pr-chart-container'); if (c) c.innerHTML = _buildChart();
+    _drawChart();
     const k = document.getElementById('pr-comparativa');  if (k) k.innerHTML = _buildComparativa();
   }
 
@@ -280,6 +282,7 @@ const PRECIOS = (() => {
       </div>
       <div id="pr-comparativa">${_buildComparativa()}</div>
     `);
+    _drawChart();
   }
 
   // ── Tabs de material (estilo .cat-chip del dashboard) ──────
@@ -291,60 +294,49 @@ const PRECIOS = (() => {
   }
 
   // ── Gráfico SVG (gradientes A–E + leyenda) ─────────────────
-  function _buildChart() {
-    if (!_matGrafico) return '<p class="pr-empty">Seleccioná al menos un material.</p>';
+  // Datos para el chart: una serie por provincia (promedio $/kg) sobre los meses visibles.
+  function _prepChart() {
+    if (!_matGrafico) return null;
     const stats = _calcStats(_matGrafico);
     const provs = Object.keys(stats).sort((a, b) => _provincias.indexOf(a) - _provincias.indexOf(b));
-    if (!provs.length) return '<p class="pr-empty">Sin datos para este filtro.</p>';
+    if (!provs.length) return { empty: true };
+    return {
+      series: provs.map(prov => ({
+        name: prov,
+        data: PR_MESES_VIS.map(mi => { const s = stats[prov][mi]; return s ? +Number(s.avg).toFixed(3) : null; }),
+      })),
+      colors: provs.map(prov => _colorProv(prov)),
+      categories: PR_MESES_VIS.map(mi => MESES[mi]),
+    };
+  }
 
-    let allAvgs = [];
-    provs.forEach(p => Object.values(stats[p]).forEach(s => allAvgs.push(s.avg)));
-    if (!allAvgs.length) return '<p class="pr-empty">Sin datos para este filtro.</p>';
+  // Solo el contenedor; el dibujo lo hace _drawChart() tras insertar el HTML.
+  function _buildChart() {
+    if (!_matGrafico) return '<p class="pr-empty">Seleccioná al menos un material.</p>';
+    if (!Object.keys(_calcStats(_matGrafico)).length) return '<p class="pr-empty">Sin datos para este filtro.</p>';
+    return '<div id="pr-apex" class="pr-apex"></div>';
+  }
 
-    const W = 720, H = 260, PAD = { t: 18, r: 18, b: 34, l: 58 };
-    const innerW = W - PAD.l - PAD.r, innerH = H - PAD.t - PAD.b;
-    const lo = Math.min(...allAvgs), hi = Math.max(...allAvgs);
-    const yMin = Math.max(0, lo === hi ? lo * 0.9 : lo - (hi - lo) * 0.15);
-    const yMax = lo === hi ? (hi * 1.1 || 1) : hi + (hi - lo) * 0.15;
-    const nVis = PR_MESES_VIS.length;
-    const xS = pos => PAD.l + (nVis > 1 ? (pos / (nVis - 1)) : 0.5) * innerW;
-    const yS = v => PAD.t + innerH - ((v - yMin) / ((yMax - yMin) || 1)) * innerH;
-
-    const grid = Array.from({ length: 5 }, (_, i) => {
-      const v = yMin + (i / 4) * (yMax - yMin), y = yS(v);
-      return `<line x1="${PAD.l}" y1="${y}" x2="${PAD.l + innerW}" y2="${y}" stroke="rgba(0,0,0,0.06)"/>
-        <text x="${PAD.l - 10}" y="${y + 4}" text-anchor="end" font-size="11" fill="#a0a0b0">$${v.toFixed(2)}</text>`;
-    }).join('');
-
-    const xLab = PR_MESES_VIS.map((mi, pos) =>
-      `<text x="${xS(pos)}" y="${PAD.t + innerH + 18}" text-anchor="middle" font-size="11" fill="#a0a0b0">${MESES[mi]}</text>`
-    ).join('');
-
-    const lines = provs.map(prov => {
-      const c = _colorProv(prov);
-      const pts = PR_MESES_VIS.map((mi, pos) => {
-        const s = stats[prov][mi];
-        return s ? { x: xS(pos), y: yS(s.avg), s, m: mi } : null;
-      }).filter(Boolean);
-      if (!pts.length) return '';
-      const line = pts.map((p, i) => `${i ? 'L' : 'M'} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
-      const top  = pts.map((p, i) => `${i ? 'L' : 'M'} ${p.x.toFixed(1)} ${yS(p.s.min).toFixed(1)}`).join(' ');
-      const bot  = [...pts].reverse().map(p => `L ${p.x.toFixed(1)} ${yS(p.s.max).toFixed(1)}`).join(' ');
-      const dots = pts.map(p =>
-        `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="4" fill="${c}" stroke="#fff" stroke-width="1.5">
-          <title>${esc(prov)} — ${MESES[p.m]}: Prom $${p.s.avg} · Mín $${p.s.min} · Máx $${p.s.max} (n=${p.s.n})</title>
-        </circle>`
-      ).join('');
-      return `<path d="${top} ${bot} Z" fill="${c}" fill-opacity="0.08"/>
-        <path d="${line}" fill="none" stroke="${c}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-        ${dots}`;
-    }).join('');
-
-    const svg = `<svg class="pr-chart-svg" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">${grid}${xLab}${lines}</svg>`;
-    const leg = `<div class="pr-legend">${provs.map(prov =>
-      `<span class="pr-legend-item"><i style="background:${_colorProv(prov)}"></i>${esc(prov)}</span>`
-    ).join('')}</div>`;
-    return svg + leg;
+  // Línea interactiva $/kg por provincia (ApexCharts): tooltip al pasar el cursor
+  // y leyenda para mostrar/ocultar provincias. Reemplaza el SVG estático.
+  function _drawChart() {
+    if (_prChart) { try { _prChart.destroy(); } catch (e) {} _prChart = null; }
+    const el = document.getElementById('pr-apex');
+    if (!el || typeof ApexCharts === 'undefined') return;
+    const p = _prepChart();
+    if (!p || p.empty) return;
+    _prChart = new ApexCharts(el, {
+      chart: { type: 'area', height: 300, fontFamily: 'Outfit, sans-serif', toolbar: { show: false }, animations: { enabled: true, easing: 'easeinout', speed: 700 } },
+      series: p.series, colors: p.colors, stroke: { curve: 'smooth', width: 2.6 },
+      fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: .15, opacityTo: .02, stops: [0, 95] } },
+      dataLabels: { enabled: false }, markers: { size: 0, hover: { size: 6 } },
+      xaxis: { categories: p.categories, axisBorder: { show: false }, axisTicks: { show: false }, labels: { style: { colors: '#a4abba', fontSize: '12px', fontWeight: 600 } } },
+      yaxis: { labels: { formatter: function (v) { return '$' + fmtNum(v, 2); }, style: { colors: '#a4abba', fontSize: '11px' } } },
+      grid: { borderColor: '#eef1f7', xaxis: { lines: { show: false } } },
+      legend: { position: 'top', horizontalAlign: 'left', fontSize: '13px', fontWeight: 600, labels: { colors: '#767c8a' }, markers: { width: 11, height: 11, radius: 6 }, itemMargin: { horizontal: 10 } },
+      tooltip: { shared: true, intersect: false, y: { formatter: function (v) { return v == null ? '—' : '$' + fmtNum(v, 2) + ' /kg'; } } },
+    });
+    _prChart.render();
   }
 
   // ── Tabla comparativa (estilo .table-wrap del dashboard) ───
@@ -443,6 +435,7 @@ const PRECIOS = (() => {
     _matGrafico = nombre;
     const c = document.getElementById('pr-chart-container');
     if (c) c.innerHTML = _buildChart();
+    _drawChart();
     const k = document.getElementById('pr-comparativa');
     if (k) k.innerHTML = _buildComparativa();   // la tabla sigue al material elegido
     document.querySelectorAll('#pr-mat-tabs .cat-chip').forEach(b =>
@@ -499,6 +492,11 @@ const PRECIOS = (() => {
     .pr-legend { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; margin-top: 14px; }
     .pr-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted); }
     .pr-legend-item i { width: 16px; height: 4px; border-radius: 2px; display: inline-block; }
+
+    /* Tabla blanca como las tarjetas de la app */
+    #pr-comparativa .table-wrap { background: var(--white); border: 1px solid var(--border); }
+    #pr-comparativa .table-wrap thead { background: var(--white); }
+    .pr-apex { width: 100%; min-height: 40px; }
 
     /* Centrar columnas de meses + tendencia (Provincia es la 1ª columna) */
     #pr-comparativa .table-wrap th:nth-child(n+2),

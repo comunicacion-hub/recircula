@@ -130,14 +130,14 @@ function renderTablaCompradores() {
     </div>`;
   };
 
-  // Secciones por nivel — acordeón, todo colapsado al entrar.
+  // Secciones por nivel — acordeón; Nivel 1 (i=0) abierto al entrar para no ver vacío.
   const secs = CMP_NIVELES.map((n, i) => {
     const lista = cols[i];
     const cnt   = lista.length;
     const cuerpo = cnt
       ? lista.map(c => card(c, n.color)).join('')
       : `<div class="cmp-lvl-empty"><span style="background:${_rgbaCmp(n.color, .1)};color:${n.color}">${icoHTML('cart')}</span>Aún no hay compradores en este nivel.</div>`;
-    return `<div class="cmp-lvl" data-nivel="${i}">
+    return `<div class="cmp-lvl${i === 0 ? ' open' : ''}" data-nivel="${i}">
       <button class="cmp-lvl-head" onclick="toggleNivelComprador(${i})">
         <span class="cmp-lvl-acc" style="background:${n.color}"></span>
         <span class="cmp-lvl-tt">${esc(n.key)}</span><span class="cmp-lvl-desc">${esc(n.desc)}</span>
