@@ -175,19 +175,23 @@ function verComprador(id) {
   const c = CAT.compradores.find(x => x['ID_Comprador'] === id);
   if (!c) { showToast('Comprador no encontrado'); return; }
   const activo = c['Activo'] === true;
+  const niv    = CMP_NIVELES[_grupoNivel(c['Nivel Intermediacion'] || c['Nivel'])];
+  const color  = niv.color;
 
   abrirModal(`
     <div class="modal" style="max-width:520px">
       <div class="modal-head">
-        <div>
-          <div class="modal-title">${esc(c['Nombre']||'')}</div>
-          <div class="modal-sub">Detalle del comprador</div>
+        <div style="display:flex;align-items:center;gap:14px;min-width:0">
+          <span class="cmp-c-ava" style="width:48px;height:48px;border-radius:13px;font-size:17px;background:${_rgbaCmp(color, .12)};color:${color}">${esc(_inicialesCmp(c['Nombre']))}</span>
+          <div style="min-width:0">
+            <div class="modal-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c['Nombre']||'')}</div>
+            <div class="modal-sub"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:6px;vertical-align:middle"></span>${esc(niv.key)} · ${esc(niv.desc)}</div>
+          </div>
         </div>
         <button class="modal-close" onclick="cerrarModal()"></button>
       </div>
       <div class="modal-body">
         <div class="form-grid-2">
-          <div><div class="form-label">Nivel</div><div style="margin-top:4px">${nivelBadge(c['Nivel Intermediacion']||c['Nivel'])}</div></div>
           <div><div class="form-label">Estado</div><div style="margin-top:4px"><span class="badge ${activo?'badge-on':'badge-off'}">${activo?'Activo':'Inactivo'}</span></div></div>
           <div><div class="form-label">Provincia</div><div style="font-size:14px;margin-top:4px">${esc(c['Provincia']||'—')}</div></div>
           <div><div class="form-label">C.I / RUC</div><div style="font-size:14px;margin-top:4px">${esc(c['CI/RUC']||'—')}</div></div>
@@ -438,7 +442,7 @@ async function exportarCompradoresExcel() {
     @keyframes cmpIn { from { opacity:0; transform:translateY(-6px); } to { opacity:1; transform:none; } }
 
     /* ── Tarjeta de comprador ── */
-    .cmp-card { display:flex; align-items:center; gap:13px; padding:13px 15px; border-radius:14px; background:var(--surface); border:1px solid var(--border); cursor:pointer; transition:box-shadow .15s, transform .12s, border-color .15s; min-width:0; }
+    .cmp-card { display:flex; align-items:center; gap:13px; padding:13px 15px; border-radius:14px; background:var(--white); border:1px solid var(--border); box-shadow:var(--shadow-sm); cursor:pointer; transition:box-shadow .15s, transform .12s, border-color .15s; min-width:0; }
     .cmp-card:hover { box-shadow:0 6px 18px rgba(0,0,0,.07); transform:translateY(-2px); border-color:transparent; }
     .cmp-c-ava { width:42px; height:42px; border-radius:12px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:800; letter-spacing:.3px; }
     .cmp-c-body { flex:1; min-width:0; }
