@@ -749,8 +749,10 @@ function updateFilterBadge(scope) {
     if (!Array.isArray(v)) return v && v.toString().trim() !== '' && v !== '__ALL__';
     return v.length > 0 && !v.includes('__ALL__');
   }).length;
-  if (count > 0) { badge.textContent = count; badge.style.display = 'inline-flex'; }
-  else { badge.style.display = 'none'; }
+  // Sin círculo naranja de conteo: el botón mismo se tiñe de índigo discreto.
+  badge.style.display = 'none';
+  const btn = badge.closest('.hdr-circle');
+  if (btn) btn.classList.toggle('has-filters', count > 0);
 }
 
 // ¿Una opción pasa el filtro? (array vacío o "__ALL__" = no filtra)

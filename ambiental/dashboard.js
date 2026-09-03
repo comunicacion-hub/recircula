@@ -535,25 +535,23 @@ function _mkEvolucion(id, p) {
 
 function abrirFiltroEvolucion() {
   const mats = (CAT.materiales || []).map(function(m) { return m['Nombre']; });
-  const checks = mats.map(function(m) {
+  const chips = mats.map(function(m) {
     const on = EVOLUCION_MATS ? EVOLUCION_MATS.includes(m) : true;
-    return '<label class="filter-opt">' +
-      '<input type="checkbox" value="' + esc(m) + '" ' + (on ? 'checked' : '') + '>' +
-      '<span>' + esc(m) + '</span></label>';
+    return _gMatChip(m, on);
   }).join('');
 
   abrirModal(
-    '<div class="modal" style="max-width:420px">' +
+    '<div class="modal" style="max-width:440px">' +
       '<div class="modal-head">' +
         '<div><div class="modal-title">Materiales</div><div class="modal-sub">Elige cuáles ver en la evolución</div></div>' +
         '<button class="modal-close" onclick="cerrarModal()"></button>' +
       '</div>' +
       '<div class="modal-body">' +
         '<div style="display:flex;gap:8px;margin-bottom:14px">' +
-          '<button class="btn btn-glass btn-sm" onclick="selTodosEvo(true)">Todos</button>' +
-          '<button class="btn btn-glass btn-sm" onclick="selTodosEvo(false)">Ninguno</button>' +
+          '<button class="btn btn-glass btn-sm" onclick="_gMatSel(\'evo-chips\',true)">Todos</button>' +
+          '<button class="btn btn-glass btn-sm" onclick="_gMatSel(\'evo-chips\',false)">Ninguno</button>' +
         '</div>' +
-        '<div id="evo-checks">' + checks + '</div>' +
+        '<div class="filter-chips" id="evo-chips">' + chips + '</div>' +
       '</div>' +
       '<div class="modal-foot">' +
         '<button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>' +
@@ -563,12 +561,18 @@ function abrirFiltroEvolucion() {
   );
 }
 
-function selTodosEvo(todos) {
-  document.querySelectorAll('#evo-checks input[type=checkbox]').forEach(function(cb) { cb.checked = todos; });
+// Chip de material con puntito de color (misma línea gráfica que el filtro).
+function _gMatChip(m, on) {
+  return '<button type="button" class="filter-chip gmat-chip' + (on ? ' on' : '') + '" data-mat="' + esc(m) + '" onclick="this.classList.toggle(\'on\')">' +
+    '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + gMatColor(m) + ';margin-right:7px;vertical-align:middle"></span>' + esc(m) +
+  '</button>';
+}
+function _gMatSel(contId, todos) {
+  document.querySelectorAll('#' + contId + ' .gmat-chip').forEach(function(c) { c.classList.toggle('on', todos); });
 }
 
 function aplicarFiltroEvolucion() {
-  EVOLUCION_MATS = Array.prototype.slice.call(document.querySelectorAll('#evo-checks input:checked')).map(function(cb) { return cb.value; });
+  EVOLUCION_MATS = Array.prototype.slice.call(document.querySelectorAll('#evo-chips .gmat-chip.on')).map(function(c) { return c.getAttribute('data-mat'); });
   cerrarModal();
   if (DASH_DATA) renderContenidoDashboard();
 }
@@ -582,24 +586,20 @@ function abrirFiltroMateriales() {
     ? CAT.materiales.map(function(m) { return m['Nombre']; })
     : ['PET','Plástico Duro','Plástico Suave','Cartón','Lata Aluminio','Vidrio'];
 
-  const checks = todosLosMats.map(function(m) {
-    return '<label class="filter-opt">' +
-      '<input type="checkbox" value="' + esc(m) + '" ' + (MATS_FILTRO_ACTIVOS.includes(m) ? 'checked' : '') + '>' +
-      '<span>' + esc(m) + '</span></label>';
-  }).join('');
+  const chips = todosLosMats.map(function(m) { return _gMatChip(m, MATS_FILTRO_ACTIVOS.includes(m)); }).join('');
 
   abrirModal(
-    '<div class="modal" style="max-width:420px">' +
+    '<div class="modal" style="max-width:440px">' +
       '<div class="modal-head">' +
         '<div><div class="modal-title">Filtrar materiales</div><div class="modal-sub">Selecciona los materiales a mostrar en la gráfica</div></div>' +
         '<button class="modal-close" onclick="cerrarModal()"></button>' +
       '</div>' +
       '<div class="modal-body">' +
         '<div style="display:flex;gap:8px;margin-bottom:14px">' +
-          '<button class="btn btn-glass btn-sm" onclick="selTodosMats(true)">Todos</button>' +
-          '<button class="btn btn-glass btn-sm" onclick="selTodosMats(false)">Ninguno</button>' +
+          '<button class="btn btn-glass btn-sm" onclick="_gMatSel(\'mats-chips\',true)">Todos</button>' +
+          '<button class="btn btn-glass btn-sm" onclick="_gMatSel(\'mats-chips\',false)">Ninguno</button>' +
         '</div>' +
-        '<div id="mats-checks">' + checks + '</div>' +
+        '<div class="filter-chips" id="mats-chips">' + chips + '</div>' +
       '</div>' +
       '<div class="modal-foot">' +
         '<button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>' +
@@ -609,12 +609,8 @@ function abrirFiltroMateriales() {
   );
 }
 
-function selTodosMats(todos) {
-  document.querySelectorAll('#mats-checks input[type=checkbox]').forEach(function(cb) { cb.checked = todos; });
-}
-
 function aplicarFiltroMateriales() {
-  MATS_FILTRO_ACTIVOS = Array.prototype.slice.call(document.querySelectorAll('#mats-checks input:checked')).map(function(cb) { return cb.value; });
+  MATS_FILTRO_ACTIVOS = Array.prototype.slice.call(document.querySelectorAll('#mats-chips .gmat-chip.on')).map(function(c) { return c.getAttribute('data-mat'); });
   cerrarModal();
   if (DASH_DATA) renderContenidoDashboard();
 }

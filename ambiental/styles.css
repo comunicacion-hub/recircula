@@ -311,7 +311,8 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 .hdr-circle svg { width: 18px; height: 18px; }
-.hdr-circle:hover { border-color: var(--blue); color: var(--blue); background: #f0f9ff; }
+/* Hover neutro: sin colores ajenos a la paleta */
+.hdr-circle:hover { background: var(--surface-hover); color: var(--text); }
 .hdr-circle:active { transform: scale(0.94); }
 .hdr-circle-primary {
   background: var(--grad-b);
@@ -320,7 +321,10 @@ body {
   box-shadow: 0 3px 12px rgba(80,108,255,0.3);
 }
 .hdr-circle-primary:hover { background: var(--grad-b); border-color: transparent; color: #fff; }
-.hdr-circle-danger:hover { border-color: var(--pink); color: var(--pink); background: #fff0f4; }
+.hdr-circle-danger:hover { background: var(--surface-hover); color: var(--text); }
+/* Filtro activo: círculo índigo discreto (reemplaza el badge naranja de conteo) */
+.hdr-circle.has-filters { background: rgba(80,108,255,0.1); border-color: #506CFF; color: #506CFF; }
+.hdr-circle.has-filters:hover { background: rgba(80,108,255,0.16); color: #506CFF; }
 
 .filter-badge {
   position: absolute;
