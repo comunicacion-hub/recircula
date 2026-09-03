@@ -976,7 +976,8 @@ body {
 .g-pill.up { background: rgba(24,174,151,.13); color: #0f9b84; }
 .g-pill.down { background: rgba(248,45,114,.12); color: var(--err); }
 .g-pill small { font-weight: 500; color: var(--text-dim); margin-left: 3px; }
-.g-spark { width: 104px; height: 38px; flex-shrink: 0; }
+.g-spark { width: 104px; height: 38px; flex-shrink: 0; overflow: hidden; }
+.g-spark .apexcharts-canvas, .g-spark svg { max-width: 104px; }
 
 /* ── Avance vs Meta (línea de meta con zona de excedente) ──── */
 .g-meta { gap: 18px; }
@@ -1037,7 +1038,7 @@ body {
 
 /* ── Responsive ───────────────────────────────────────────── */
 @media (max-width: 1040px) { .g-duo { grid-template-columns: 1fr; } }
-@media (max-width: 620px) {
+@media (max-width: 760px) {
   .g-tot { flex-direction: column; gap: 18px; padding: 20px 22px; }
   .g-tot-seg { padding: 0; }
   .g-tot-seg + .g-tot-seg { border-left: none; border-top: 1px solid var(--border); padding-top: 18px; }

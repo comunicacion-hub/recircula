@@ -107,23 +107,7 @@ function renderTablaCompradores() {
   datos.forEach(c => { cols[_grupoNivel(c['Nivel Intermediacion'] || c['Nivel'])].push(c); });
   cols.forEach(arr => arr.sort((a, b) => (a['Nombre'] || '').localeCompare(b['Nombre'] || '', 'es')));
 
-  const total   = datos.length;
-  const activos = datos.filter(c => c['Activo'] === true).length;
-  const edit    = puedeEditar();
-
-  // Resumen (hero): número + barra de distribución por nivel + leyenda.
-  const segs = CMP_NIVELES.map((n, i) => {
-    const cnt = cols[i].length;
-    const w = total ? (cnt / total * 100) : 0;
-    return cnt ? `<span style="width:${w.toFixed(1)}%;background:${n.color}"></span>` : '';
-  }).join('');
-  const leg = CMP_NIVELES.map((n, i) =>
-    `<div class="cmp-leg-it"><i style="background:${n.color}"></i>${esc(n.key)} <b>${cols[i].length}</b></div>`).join('');
-  const hero = `<div class="cmp-hero">
-    <div class="cmp-hero-l"><div class="cmp-hero-num">${total}</div>
-      <div class="cmp-hero-lbl">compradores<br><b>${activos}</b> activos · ${total - activos} inactivos</div></div>
-    <div class="cmp-hero-r"><div class="cmp-dist">${segs}</div><div class="cmp-leg">${leg}</div></div>
-  </div>`;
+  const edit = puedeEditar();
 
   // Tarjeta de comprador: avatar de iniciales + nombre + provincia · destino final.
   const card = (c, color) => {
@@ -164,7 +148,7 @@ function renderTablaCompradores() {
     </div>`;
   }).join('');
 
-  wrap.innerHTML = `<div class="cmp-wrap">${hero}${secs}</div>`;
+  wrap.innerHTML = `<div class="cmp-wrap">${secs}</div>`;
 }
 
 // ============================================================

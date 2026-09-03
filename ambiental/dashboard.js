@@ -505,7 +505,7 @@ function _initDashCharts() {
 function _mkSpark(id, serie, color) {
   const el = document.getElementById(id); if (!el) return;
   const c = new ApexCharts(el, {
-    chart: { type: 'area', height: 38, sparkline: { enabled: true }, animations: { enabled: true, speed: 800 } },
+    chart: { type: 'area', height: 38, width: 104, sparkline: { enabled: true }, animations: { enabled: true, speed: 800 } },
     series: [{ name: '', data: serie.length ? serie : [0, 0] }],
     colors: [color], stroke: { curve: 'smooth', width: 2.2 },
     fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: .4, opacityTo: 0, stops: [0, 100] } },
@@ -619,6 +619,10 @@ function aplicarFiltroMateriales() {
 // EDITAR METAS
 // ============================================================
 
+function _metaDot(color) {
+  return '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + color + ';margin-right:7px;vertical-align:middle"></span>';
+}
+
 function abrirEditarMetas() {
   abrirModal(
     '<div class="modal" style="max-width:420px">' +
@@ -627,11 +631,11 @@ function abrirEditarMetas() {
         '<button class="modal-close" onclick="cerrarModal()"></button>' +
       '</div>' +
       '<div class="modal-body">' +
-        '<div class="form-group"><label class="form-label">Meta PET (TN)</label>' +
+        '<div class="form-group"><label class="form-label">' + _metaDot(G_INDIGO) + 'Meta PET (TN)</label>' +
           '<input type="number" class="form-input" id="meta-pet" value="' + METAS.PET + '" min="0"></div>' +
-        '<div class="form-group"><label class="form-label">Meta Plástico Suave (TN)</label>' +
+        '<div class="form-group"><label class="form-label">' + _metaDot(G_TEAL) + 'Meta Plástico Suave (TN)</label>' +
           '<input type="number" class="form-input" id="meta-suave" value="' + METAS.Suave + '" min="0"></div>' +
-        '<div class="form-group"><label class="form-label">Meta Plástico Duro (TN)</label>' +
+        '<div class="form-group"><label class="form-label">' + _metaDot(G_AMBAR) + 'Meta Plástico Duro (TN)</label>' +
           '<input type="number" class="form-input" id="meta-duro" value="' + METAS.Duro + '" min="0"></div>' +
       '</div>' +
       '<div class="modal-foot">' +
