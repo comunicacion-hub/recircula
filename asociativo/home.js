@@ -1,24 +1,30 @@
 // ============================================================
-// DASHBOARD ASOCIATIVO — home.js
-// Sección Home: 5 KPIs + tabla resumen generada en frontend.
-// La tabla cruza Asoc_Asociativo con Diagnosticos (Inicial/Cierre).
+// DASHBOARD ASOCIATIVO — home.js (sección "Gráficos")
+// KPIs + charts dinámicos (ApexCharts, sin donas):
+//   · Recicladores por provincia (barras)
+//   · Talleres por mes / Reuniones por mes (barras)
 // ============================================================
 
 const HOME = (() => {
 
-  // Filtros del drawer (solo afectan la tabla; los KPIs son totales globales)
+  // Filtros del drawer (afectan los charts; los KPIs son totales globales)
   let _fProvs = [];
   let _fCats  = [];
+  let _charts = [];   // instancias ApexCharts vivas (se destruyen al re-dibujar)
 
   const CATEGORIAS = ['Líderes de ReCircula', 'En Fortalecimiento', 'En Acompañamiento'];
+  const MESES_ABR  = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const PROV_PAL   = ['#506CFF', '#18AE97', '#F5AD21', '#7B5CFF', '#EF4444', '#0BC3FF', '#FF751F', '#C19A6B'];
 
-  // ── Valoración del diagnóstico más reciente de un tipo (Inicial/Cierre) ──
-  function _pctTipo(idAsoc, tipo) {
-    const ds = CAT.diagnosticos.filter(function (d) { return d.id_asociacion === idAsoc && d.tipo === tipo; });
-    if (!ds.length) return null;
-    ds.sort(function (a, b) { return (parseFloat(b.anio) || 0) - (parseFloat(a.anio) || 0); });
-    const v = parseFloat(ds[0].valoracion_total);
-    return isNaN(v) ? null : v;
+  const CAT_COLOR = {
+    'Líderes de ReCircula': '#18AE97',
+    'En Fortalecimiento':   '#506CFF',
+    'En Acompañamiento':    '#7B5CFF',
+  };
+  function _rgba(hex, a) {
+    let h = String(hex || '').replace('#', ''); if (h.length === 3) h = h.split('').map(function (c) { return c + c; }).join('');
+    const n = parseInt(h, 16) || 0;
+    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
   }
 
   // ── KPIs globales ──
@@ -39,35 +45,51 @@ const HOME = (() => {
     };
   }
 
-  // Orden de categorías: Líderes → Fortalecimiento → Acompañamiento → sin diagnóstico
-  function _catRank(cat) {
-    return cat === 'Líderes de ReCircula' ? 0
-         : cat === 'En Fortalecimiento'   ? 1
-         : cat === 'En Acompañamiento'    ? 2 : 3;
-  }
-
-  // ── Filas de la tabla (filtradas y ordenadas por categoría) ──
-  function _filas() {
-    return CAT.asociaciones
-      .filter(function (a) {
-        const cat = categoriaVigente(a.id_asociacion);
-        return pasaFiltro(_fProvs, a.provincia) && pasaFiltro(_fCats, cat);
-      })
-      .map(function (a) {
-        const ini = _pctTipo(a.id_asociacion, 'Inicial');
-        const cie = _pctTipo(a.id_asociacion, 'Cierre');
-        const crec = (ini != null && cie != null) ? +(cie - ini).toFixed(2) : null;
-        return { nombre: a.nombre, provincia: a.provincia, ini: ini, cie: cie, crec: crec, categoria: categoriaVigente(a.id_asociacion) };
-      })
-      .sort(function (x, y) {
-        const r = _catRank(x.categoria) - _catRank(y.categoria);
-        return r !== 0 ? r : (x.nombre || '').localeCompare(y.nombre || '');
-      });
-  }
-
-  // ── Provincias disponibles para el filtro ──
   function _provincias() {
     return Array.from(new Set(CAT.asociaciones.map(function (a) { return a.provincia; }).filter(Boolean))).sort();
+  }
+
+  // ── Datos: recicladores por provincia (respeta filtros prov + categoría) ──
+  function _recPorProv() {
+    const map = {};
+    CAT.asociaciones.forEach(function (a) {
+      const cat = categoriaVigente(a.id_asociacion);
+      if (!pasaFiltro(_fProvs, a.provincia) || !pasaFiltro(_fCats, cat)) return;
+      const p = a.provincia || 'Sin provincia';
+      map[p] = (map[p] || 0) + (parseFloat(a.num_recicladores) || 0);
+    });
+    const rows = Object.keys(map).map(function (p) { return { prov: p, val: map[p] }; })
+      .sort(function (a, b) { return b.val - a.val; });
+    return {
+      names: rows.map(function (r) { return r.prov; }),
+      values: rows.map(function (r) { return r.val; }),
+      colors: rows.map(function (_, i) { return PROV_PAL[i % PROV_PAL.length]; }),
+    };
+  }
+
+  // ── Datos: encuentros por mes, por tipo (respeta filtro de provincia) ──
+  function _encFecha(e) {
+    const s = String(e.fecha_encuentro || '').substring(0, 10).split('-');
+    if (s.length < 3) return null;
+    const y = +s[0], m = +s[1]; if (!y || !m) return null;
+    return { y: y, m: m };
+  }
+  function _encFiltrados() {
+    return CAT.encuentros.filter(function (e) { return pasaFiltro(_fProvs, e.provincia); });
+  }
+  function _mesesVis() {
+    const set = {};
+    _encFiltrados().forEach(function (e) { const p = _encFecha(e); if (p) set[p.m] = true; });
+    return Object.keys(set).map(Number).sort(function (a, b) { return a - b; });
+  }
+  function _encPorMes(tipo, meses) {
+    const cnt = {}; meses.forEach(function (m) { cnt[m] = 0; });
+    _encFiltrados().forEach(function (e) {
+      if (e.tipo_encuentro !== tipo) return;
+      const p = _encFecha(e); if (!p || cnt[p.m] === undefined) return;
+      cnt[p.m]++;
+    });
+    return meses.map(function (m) { return cnt[m]; });
   }
 
   // ── Render principal ──
@@ -77,7 +99,7 @@ const HOME = (() => {
     const html =
       '<div class="page-header">' +
         '<div>' +
-          '<div class="page-title">Dashboard Asociativo</div>' +
+          '<div class="page-title">Gráficos</div>' +
           '<div class="page-sub">' + esc(fmtFechaLarga(new Date())) + '</div>' +
         '</div>' +
         '<div class="hdr-actions">' +
@@ -98,10 +120,11 @@ const HOME = (() => {
         _kpiBox('users',    '#7B5CFF', fmtNum(k.acompanamiento),  'En Acompañamiento',    'En seguimiento') +
       '</div>' +
 
-      '<div id="home-tabla">' + _tabla() + '</div>';
+      '<div id="home-charts">' + _chartsHtml() + '</div>';
 
     document.getElementById('main-content').innerHTML = html;
     updateFilterBadge('home');
+    _initCharts();
   }
 
   function _kpiBox(ico, color, num, lbl, sub) {
@@ -115,94 +138,74 @@ const HOME = (() => {
     '</div>';
   }
 
-  // Color por categoría (para leyenda, avatar y barra)
-  const CAT_COLOR = {
-    'Líderes de ReCircula': '#18AE97',
-    'En Fortalecimiento':   '#506CFF',
-    'En Acompañamiento':    '#7B5CFF',
-  };
-  function _rgba(hex, a) {
-    let h = String(hex || '').replace('#', ''); if (h.length === 3) h = h.split('').map(function (c) { return c + c; }).join('');
-    const n = parseInt(h, 16) || 0;
-    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+  function _chartsHtml() {
+    return '<div class="card asoc-chart-card">' +
+        '<div class="asoc-chart-title">' + icoHTML('users') + '<span>Recicladores por provincia</span></div>' +
+        '<div class="asoc-apex" id="chProv"></div>' +
+      '</div>' +
+      '<div class="asoc-duo">' +
+        '<div class="card asoc-chart-card">' +
+          '<div class="asoc-chart-title">' + icoHTML('leaf') + '<span>Talleres por mes</span></div>' +
+          '<div class="asoc-apex" id="chTaller"></div>' +
+        '</div>' +
+        '<div class="card asoc-chart-card">' +
+          '<div class="asoc-chart-title">' + icoHTML('calendar') + '<span>Reuniones por mes</span></div>' +
+          '<div class="asoc-apex" id="chReunion"></div>' +
+        '</div>' +
+      '</div>';
   }
 
-  // ── Tabla de desempeño (desktop) + tarjetas (móvil) ──
-  function _tabla() {
-    const filas = _filas();
+  // ── Dibujo de los charts (destruye los previos y recrea) ──
+  function _destroyCharts() { _charts.forEach(function (c) { try { c.destroy(); } catch (e) {} }); _charts = []; }
+  function _initCharts() {
+    _destroyCharts();
+    if (typeof ApexCharts === 'undefined') return;
 
-    // Encabezado con leyenda de categorías
-    const leyenda = CATEGORIAS.map(function (c) {
-      return '<span class="asoc-leg"><span class="asoc-leg-dot" style="background:' + CAT_COLOR[c] + '"></span>' + esc(c) + '</span>';
-    }).join('');
-    const cabecera =
-      '<div class="asoc-tabla-head">' +
-        '<div class="asoc-tabla-titulo">' +
-          '<span class="asoc-tabla-ico">' + icoHTML('users') + '</span>' +
-          '<span>Desempeño de asociaciones</span>' +
-        '</div>' +
-        '<div class="asoc-leyenda">' + leyenda + '</div>' +
-      '</div>';
-
-    if (!filas.length) {
-      return '<div class="card asoc-tabla-card">' + cabecera +
-        '<p class="asoc-empty">No hay asociaciones que coincidan con el filtro.</p></div>';
+    // Recicladores por provincia (barras horizontales)
+    const rp = _recPorProv();
+    const elP = document.getElementById('chProv');
+    if (elP) {
+      if (!rp.names.length) elP.innerHTML = '<p class="asoc-empty">Sin datos para este filtro.</p>';
+      else _push(elP, _barH(rp.names, rp.values, rp.colors, 'Recicladores'));
     }
 
-    const barra = function (pct, color) {
-      if (pct == null) return '<span class="asoc-dash">—</span>';
-      const w = Math.max(0, Math.min(pct, 100));
-      return '<div class="asoc-pct">' +
-        '<div class="asoc-pct-val" style="color:' + color + '">' + fmtNum(pct, 1) + '%</div>' +
-        '<div class="asoc-bar"><div class="asoc-bar-fill" style="width:' + w + '%;background:' + color + '"></div></div>' +
-      '</div>';
-    };
-    const avatar = function (cat) {
-      const col = CAT_COLOR[cat] || '#a0a0b0';
-      return '<span class="asoc-avatar" style="background:' + _rgba(col, 0.12) + ';color:' + col + '">' + icoHTML('users') + '</span>';
-    };
-    const accion = function (f) {
-      return '<button class="asoc-accion" onclick="navTo(\'asociaciones\')" title="Ver asociaciones">' + icoHTML('chevRight') + '</button>';
-    };
+    // Talleres / Reuniones por mes (barras verticales)
+    const meses = _mesesVis();
+    const labels = meses.map(function (m) { return MESES_ABR[m - 1]; });
+    _barMes('chTaller', labels, _encPorMes('Taller', meses), '#7B5CFF', 'Talleres');
+    _barMes('chReunion', labels, _encPorMes('Reunión', meses), '#506CFF', 'Reuniones');
+  }
+  function _push(el, opts) { const c = new ApexCharts(el, opts); c.render(); _charts.push(c); }
 
-    const filasTabla = filas.map(function (f) {
-      const col = CAT_COLOR[f.categoria] || '#506CFF';
-      return '<tr>' +
-        '<td>' + barra(f.ini, col) + '</td>' +
-        '<td>' + (f.cie != null ? fmtNum(f.cie, 1) + '%' : '<span class="asoc-dash">—</span>') + '</td>' +
-        '<td>' + _crecBadge(f.crec) + '</td>' +
-        '<td>' + categoriaBadge(f.categoria) + '</td>' +
-        '<td style="text-align:right">' + accion(f) + '</td>' +
-      '</tr>';
-    }).join('');
-    const tabla = '<div class="table-wrap asoc-tabla-desktop"><table>' +
-      '<thead><tr><th>% Inicial</th><th>% Cierre</th><th>Crecimiento</th><th>Categoría</th><th style="text-align:right">Acción</th></tr></thead>' +
-      '<tbody>' + filasTabla + '</tbody></table></div>';
-
-    const cards = filas.map(function (f) {
-      const col = CAT_COLOR[f.categoria] || '#506CFF';
-      return '<div class="asoc-card">' +
-        '<div class="asoc-card-top">' +
-          '<div class="asoc-nom-cell">' + avatar(f.categoria) + '<div><div class="asoc-card-nombre">' + esc(f.nombre) + '</div></div></div>' +
-          categoriaBadge(f.categoria) +
-        '</div>' +
-        '<div class="asoc-card-pct">' + barra(f.ini, col) + '</div>' +
-        '<div class="asoc-card-row">' +
-          '<div class="asoc-card-cell"><span class="asoc-card-mini">% Cierre</span><b>' + (f.cie != null ? fmtNum(f.cie, 1) + '%' : '—') + '</b></div>' +
-          '<div class="asoc-card-cell"><span class="asoc-card-mini">Crecimiento</span>' + _crecBadge(f.crec) + '</div>' +
-        '</div>' +
-      '</div>';
-    }).join('');
-    const cardsWrap = '<div class="asoc-cards-mobile">' + cards + '</div>';
-
-    return '<div class="card asoc-tabla-card">' + cabecera + tabla + cardsWrap + '</div>';
+  function _barH(names, values, colors, name) {
+    return {
+      chart: { type: 'bar', height: Math.max(220, names.length * 38 + 30), fontFamily: 'Outfit, sans-serif', toolbar: { show: false }, animations: { enabled: true, easing: 'easeinout', speed: 700 } },
+      series: [{ name: name, data: values }], colors: colors,
+      plotOptions: { bar: { horizontal: true, distributed: true, borderRadius: 6, borderRadiusApplication: 'end', barHeight: '62%' } },
+      dataLabels: { enabled: true, formatter: function (v) { return fmtNum(v); }, textAnchor: 'start', offsetX: 8, style: { fontSize: '12px', fontWeight: 700, colors: ['#2b2f3a'] } },
+      xaxis: { categories: names, axisBorder: { show: false }, axisTicks: { show: false }, labels: { style: { colors: '#a4abba', fontSize: '11px' } } },
+      yaxis: { labels: { style: { colors: '#767c8a', fontSize: '12.5px', fontWeight: 600 } } },
+      grid: { borderColor: '#eef1f7', yaxis: { lines: { show: false } } },
+      legend: { show: false }, tooltip: { y: { formatter: function (v) { return fmtNum(v) + ' recicladores'; } } },
+    };
   }
 
-  function _crecBadge(c) {
-    if (c == null) return '<span class="asoc-dash">—</span>';
-    if (c > 0) return '<span class="asoc-crec asoc-crec-up">▲ ' + fmtNum(c, 1) + '</span>';
-    if (c < 0) return '<span class="asoc-crec asoc-crec-down">▼ ' + fmtNum(Math.abs(c), 1) + '</span>';
-    return '<span class="asoc-crec asoc-crec-flat">=</span>';
+  function _barMes(id, labels, data, color, name) {
+    const el = document.getElementById(id); if (!el) return;
+    if (!labels.length || !data.some(function (x) { return x > 0; })) {
+      el.innerHTML = '<p class="asoc-empty">Sin ' + name.toLowerCase() + ' registrados.</p>';
+      return;
+    }
+    _push(el, {
+      chart: { type: 'bar', height: 250, fontFamily: 'Outfit, sans-serif', toolbar: { show: false }, animations: { enabled: true, easing: 'easeinout', speed: 700 } },
+      series: [{ name: name, data: data }], colors: [color],
+      plotOptions: { bar: { borderRadius: 6, borderRadiusApplication: 'end', columnWidth: '52%' } },
+      dataLabels: { enabled: false },
+      xaxis: { categories: labels, axisBorder: { show: false }, axisTicks: { show: false }, labels: { style: { colors: '#a4abba', fontSize: '12px', fontWeight: 600 } } },
+      yaxis: { min: 0, forceNiceScale: true, labels: { formatter: function (v) { return fmtNum(Math.round(v)); }, style: { colors: '#a4abba', fontSize: '11px' } } },
+      grid: { borderColor: '#eef1f7' },
+      tooltip: { y: { formatter: function (v) { return fmtNum(v) + ' ' + name.toLowerCase(); } } },
+    });
   }
 
   // ── Filtros (drawer) ──
@@ -215,10 +218,7 @@ const HOME = (() => {
       ],
       getValue: function (k) { return k === 'prov' ? _fProvs : _fCats; },
       setValue: function (k, v) { if (k === 'prov') _fProvs = v; else _fCats = v; },
-      apply: function () {
-        const cont = document.getElementById('home-tabla');
-        if (cont) cont.innerHTML = _tabla();
-      },
+      apply: function () { _initCharts(); },
     });
   }
 
@@ -233,8 +233,8 @@ function renderHome() { HOME.render(); }
   const s = document.createElement('style');
   s.id = 'home-styles';
   s.textContent = `
-    /* Tarjetas-resumen */
-    .asoc-kpis { display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:22px; }
+    /* KPIs */
+    .asoc-kpis { display:grid; grid-template-columns:repeat(5,1fr); gap:14px; }
     .asoc-kpi { background:var(--white); border:1px solid var(--border); border-radius:18px; padding:16px 18px; box-shadow:var(--shadow-sm); }
     .asoc-kpi-head { display:flex; align-items:center; gap:10px; }
     .asoc-kpi-ico { width:40px; height:40px; border-radius:12px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
@@ -243,56 +243,19 @@ function renderHome() { HOME.render(); }
     .asoc-kpi-num { font-size:32px; font-weight:800; line-height:1.05; margin-top:12px; }
     .asoc-kpi-sub { font-size:11.5px; color:var(--text-dim); margin-top:4px; font-weight:500; }
 
-    /* Tabla de desempeño */
-    .asoc-tabla-card { padding:22px 24px; }
-    .asoc-tabla-card .table-wrap { background:var(--white); box-shadow:none; border:none; border-radius:0; }
-    .asoc-tabla-card .table-wrap thead { background:var(--white); }
-    .asoc-tabla-head { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:18px; }
-    .asoc-tabla-titulo { display:flex; align-items:center; gap:12px; font-size:17px; font-weight:800; color:var(--text); }
-    .asoc-tabla-ico { width:40px; height:40px; border-radius:12px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:rgba(123,92,255,.1); color:#7B5CFF; }
-    .asoc-tabla-ico svg { width:20px; height:20px; }
-    .asoc-leyenda { display:flex; flex-wrap:wrap; gap:8px; }
-    .asoc-leg { display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:600; color:var(--text-muted); background:rgba(0,0,0,.03); padding:6px 12px; border-radius:20px; }
-    .asoc-leg-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
-
-    .asoc-nom-cell { display:flex; align-items:center; gap:11px; }
-    .asoc-avatar { width:38px; height:38px; border-radius:50%; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
-    .asoc-avatar svg { width:18px; height:18px; }
-    .asoc-td-nombre { font-weight:700; color:var(--text); }
-
-    .asoc-pct { min-width:120px; }
-    .asoc-pct-val { font-size:14px; font-weight:800; }
-    .asoc-bar { height:6px; background:#eef0f4; border-radius:20px; overflow:hidden; margin-top:6px; }
-    .asoc-bar-fill { height:100%; border-radius:20px; transition:width .5s ease; }
-
-    .asoc-accion { width:36px; height:36px; border-radius:50%; border:1px solid var(--border); background:var(--surface); color:var(--text-muted); cursor:pointer; display:inline-flex; align-items:center; justify-content:center; transition:background .15s,color .15s,border-color .15s; }
-    .asoc-accion:hover { background:rgba(80,108,255,.1); color:#506CFF; border-color:transparent; }
-    .asoc-accion svg { width:17px; height:17px; }
-
-    .asoc-dash { color:var(--text-dim); }
-    .asoc-crec { display:inline-flex; align-items:center; gap:4px; padding:4px 10px; border-radius:20px; font-size:12px; font-weight:700; }
-    .asoc-crec-up   { background:rgba(24,174,151,.12); color:#0a9e83; }
-    .asoc-crec-down { background:rgba(201,26,68,.10);  color:var(--err); }
-    .asoc-crec-flat { background:rgba(0,0,0,.05);      color:var(--text-muted); }
+    /* Charts */
+    #home-charts { display:flex; flex-direction:column; gap:18px; }
+    .asoc-chart-card { padding:20px 24px; }
+    .asoc-chart-title { display:flex; align-items:center; gap:10px; font-size:15px; font-weight:700; color:var(--text); margin-bottom:14px; }
+    .asoc-chart-title svg { width:18px; height:18px; color:var(--text-muted); }
+    .asoc-apex { width:100%; min-height:40px; }
+    .asoc-duo { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+    .asoc-duo > * { min-width:0; }
     .asoc-empty { text-align:center; padding:40px 0; color:var(--text-dim); font-size:14px; }
-
-    /* Tabla → tarjetas en móvil */
-    .asoc-cards-mobile { display:none; }
-    .asoc-card { background:var(--white); border:1px solid var(--border); border-radius:18px; padding:16px; box-shadow:var(--shadow-sm); }
-    .asoc-card + .asoc-card { margin-top:12px; }
-    .asoc-card-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }
-    .asoc-card-nombre { font-size:15px; font-weight:700; color:var(--text); }
-    .asoc-card-pct { margin-top:14px; }
-    .asoc-card-row { display:flex; gap:10px; margin-top:14px; padding-top:14px; border-top:1px solid var(--border); }
-    .asoc-card-cell { flex:1; display:flex; flex-direction:column; gap:4px; }
-    .asoc-card-cell b { font-size:15px; font-weight:700; color:var(--text); }
-    .asoc-card-mini { font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.5px; }
 
     @media (max-width:900px) {
       .asoc-kpis { grid-template-columns:repeat(2,1fr); }
-      .asoc-tabla-desktop { display:none; }
-      .asoc-cards-mobile { display:block; }
-      .asoc-tabla-card { padding:16px; }
+      .asoc-duo { grid-template-columns:1fr; }
     }
   `;
   document.head.appendChild(s);
