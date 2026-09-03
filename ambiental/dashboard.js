@@ -85,7 +85,7 @@ let DASH_DATA    = null;
 // destruyen/recrean en cada re-render. Si ApexCharts no cargó, degradan a nada.
 let _dashApex     = [];             // instancias vivas
 let _dashSparks   = [];             // [{ serie, color }] de los 3 KPIs
-let _dashEvoPrep  = null, _dashZonaPrep = null, _dashTNPrep = null;
+let _dashEvoPrep  = null;
 const G_APEX_BASE = { fontFamily: 'Outfit, sans-serif', toolbar: { show: false }, animations: { enabled: true, easing: 'easeinout', speed: 750 } };
 function _apexOk() { return typeof ApexCharts !== 'undefined'; }
 function _destruirDashApex() { _dashApex.forEach(function (c) { try { c.destroy(); } catch (e) {} }); _dashApex = []; }
@@ -407,11 +407,24 @@ function gMetaRow(nombre, actual, meta, color) {
   '</div>';
 }
 
-// ── Zona de Recuperación (dona interactiva) ──
+// ── Zona de Recuperación (barras, mismo patrón que Avance) ──
 function gZona(zonas, totalTN) {
-  _dashZonaPrep = _prepZona(zonas, totalTN);
-  if (!_dashZonaPrep) return '<div class="empty-state"><p>Sin datos de zona para este filtro</p></div>';
-  return '<div class="g-chart" id="dash-zona"></div>';
+  const items = G_ZONAS.map(function(z) { return { z: z, tn: (zonas && zonas[z]) || 0 }; })
+    .filter(function(i) { return i.tn > 0; });
+  items.sort(function(a, b) { return b.tn - a.tn; });
+  if (!items.length) return '<div class="empty-state"><p>Sin datos de zona para este filtro</p></div>';
+  const total = totalTN > 0 ? totalTN : items.reduce(function(s, i) { return s + i.tn; }, 0) || 1;
+  const rows = items.map(function(i) {
+    const pct = (i.tn / total) * 100;
+    const w = Math.max(6, Math.min(100, pct));
+    const color = G_ZONA_COLOR[i.z] || '#c3c8d4';
+    return '<div>' +
+      '<div class="g-z-top"><span class="g-z-name">' + esc(i.z) + '</span><span class="g-z-val">' + fmtNum(i.tn) + ' TN</span></div>' +
+      '<div class="g-z-track"><div class="g-z-fill" style="width:' + w + '%;background:' + color + '">' + pct.toFixed(0) + '%</div></div>' +
+    '</div>';
+  }).join('');
+  return rows + '<div class="g-z-note">Total recuperado · ' + fmtNum(total) + ' TN en ' +
+    items.length + ' zona' + (items.length !== 1 ? 's' : '') + '</div>';
 }
 
 // ── Impacto Ambiental: un grupo de barras por métrica ──────
@@ -427,11 +440,30 @@ function gImpGrupo(titulo, totalTxt, rows, fmtVal) {
     '<div class="g-imp-gh"><span>' + esc(titulo) + '</span><b>' + totalTxt + '</b></div>' + bars + '</div>';
 }
 
-// ── TN Recuperados por Material: barras horizontales interactivas ──
+// ── TN Recuperados por Material: barras horizontales ────────
 function gMateriales(distribucion) {
-  _dashTNPrep = _prepMateriales(distribucion);
-  if (!_dashTNPrep) return '<div class="empty-state"><p>Sin materiales con datos para este filtro</p></div>';
-  return '<div class="g-chart" id="dash-tn"></div>';
+  const items = [];
+  let otros = 0;
+  Object.keys(distribucion || {}).forEach(function(nombre) {
+    const val = distribucion[nombre];
+    if (!(val > 0)) return;
+    if (MATS_FILTRO_ACTIVOS.includes(nombre)) items.push({ nombre: nombre, val: val });
+    else otros += val;
+  });
+  items.sort(function(a, b) { return b.val - a.val; });
+  if (otros > 0) items.push({ nombre: 'Otros materiales', val: otros, otros: true });
+  if (!items.length) return '<div class="empty-state"><p>Sin materiales con datos para este filtro</p></div>';
+
+  const max = Math.max.apply(null, items.map(function(i) { return i.val; }).concat([1]));
+  return items.map(function(it) {
+    const w = Math.max(3, Math.min(100, (it.val / max) * 100));
+    const color = it.otros ? '#c3c8d4' : gMatColor(it.nombre);
+    const nom = it.otros ? 'Otros' : (G_MAT_CORTO[it.nombre] || it.nombre);
+    const dim = it.otros ? ' style="color:var(--text-dim)"' : '';
+    return '<div class="g-matrow"><span class="g-matname"' + dim + '>' + esc(nom) + '</span>' +
+      '<div class="g-mattrack"><div class="g-matfill" style="width:' + w + '%;background:' + color + '"></div></div>' +
+      '<span class="g-matval"' + dim + '>' + fmtNum(it.val) + '</span></div>';
+  }).join('');
 }
 
 // ── Evolución por Material: línea interactiva (ApexCharts) ──
@@ -462,33 +494,6 @@ function _prepEvolucion(porMesMat, meses) {
     categories: meses.map(function(m) { return m.substring(0, 3); }),
   };
 }
-function _prepZona(zonas, totalTN) {
-  const items = G_ZONAS.map(function(z) { return { z: z, tn: (zonas && zonas[z]) || 0 }; }).filter(function(i) { return i.tn > 0; });
-  items.sort(function(a, b) { return b.tn - a.tn; });
-  if (!items.length) return null;
-  const total = totalTN > 0 ? totalTN : items.reduce(function(s, i) { return s + i.tn; }, 0) || 1;
-  return {
-    labels: items.map(function(i) { return i.z; }),
-    values: items.map(function(i) { return +i.tn.toFixed(2); }),
-    colors: items.map(function(i) { return G_ZONA_COLOR[i.z] || '#c3c8d4'; }),
-    total: total,
-  };
-}
-function _prepMateriales(distribucion) {
-  const items = []; let otros = 0;
-  Object.keys(distribucion || {}).forEach(function(nombre) {
-    const val = distribucion[nombre]; if (!(val > 0)) return;
-    if (MATS_FILTRO_ACTIVOS.includes(nombre)) items.push({ nombre: nombre, val: val }); else otros += val;
-  });
-  items.sort(function(a, b) { return b.val - a.val; });
-  if (otros > 0) items.push({ nombre: 'Otros materiales', val: otros, otros: true });
-  if (!items.length) return null;
-  return {
-    categories: items.map(function(i) { return i.otros ? 'Otros' : (G_MAT_CORTO[i.nombre] || i.nombre); }),
-    values: items.map(function(i) { return +i.val.toFixed(2); }),
-    colors: items.map(function(i) { return i.otros ? '#c3c8d4' : gMatColor(i.nombre); }),
-  };
-}
 
 // ── Dibujo de los charts (tras insertar el HTML) ──
 function _initDashCharts() {
@@ -496,8 +501,6 @@ function _initDashCharts() {
   if (!_apexOk()) return;
   _dashSparks.forEach(function(s, i) { _mkSpark('dash-spark-' + i, s.serie, s.color); });
   if (_dashEvoPrep && !_dashEvoPrep.empty) _mkEvolucion('dash-evo', _dashEvoPrep);
-  if (_dashZonaPrep) _mkZona('dash-zona', _dashZonaPrep);
-  if (_dashTNPrep) _mkMateriales('dash-tn', _dashTNPrep);
 }
 function _mkSpark(id, serie, color) {
   const el = document.getElementById(id); if (!el) return;
@@ -522,35 +525,6 @@ function _mkEvolucion(id, p) {
     grid: { borderColor: '#eef1f7', xaxis: { lines: { show: false } } },
     legend: { position: 'top', horizontalAlign: 'left', fontSize: '13px', fontWeight: 600, labels: { colors: '#767c8a' }, markers: { width: 11, height: 11, radius: 6 }, itemMargin: { horizontal: 10 } },
     tooltip: { shared: true, intersect: false, y: { formatter: function(v) { return fmtNum(v) + ' TN'; } } },
-  });
-  c.render(); _dashApex.push(c);
-}
-function _mkZona(id, p) {
-  const el = document.getElementById(id); if (!el) return;
-  const c = new ApexCharts(el, {
-    chart: Object.assign({}, G_APEX_BASE, { type: 'donut', height: 290 }),
-    series: p.values, labels: p.labels, colors: p.colors, stroke: { width: 2, colors: ['#fff'] },
-    plotOptions: { pie: { donut: { size: '68%', labels: { show: true,
-      value: { fontSize: '22px', fontWeight: 800, color: '#2b2f3a', formatter: function(v) { return fmtNum(v); } },
-      total: { show: true, label: 'Total TN', fontSize: '11px', color: '#a4abba', fontWeight: 600, formatter: function() { return fmtNum(p.total); } } } } } },
-    dataLabels: { enabled: false },
-    legend: { position: 'bottom', fontSize: '12.5px', fontWeight: 600, labels: { colors: '#767c8a' }, markers: { width: 10, height: 10, radius: 5 }, itemMargin: { horizontal: 8, vertical: 3 } },
-    tooltip: { y: { formatter: function(v) { return fmtNum(v) + ' TN'; } } },
-  });
-  c.render(); _dashApex.push(c);
-}
-function _mkMateriales(id, p) {
-  const el = document.getElementById(id); if (!el) return;
-  const h = Math.max(210, p.categories.length * 42);
-  const c = new ApexCharts(el, {
-    chart: Object.assign({}, G_APEX_BASE, { type: 'bar', height: h }),
-    series: [{ name: 'TN', data: p.values }], colors: p.colors,
-    plotOptions: { bar: { horizontal: true, distributed: true, borderRadius: 6, borderRadiusApplication: 'end', barHeight: '64%' } },
-    dataLabels: { enabled: true, formatter: function(v) { return fmtNum(v); }, textAnchor: 'start', offsetX: 8, style: { fontSize: '12px', fontWeight: 700, colors: ['#2b2f3a'] } },
-    xaxis: { categories: p.categories, axisBorder: { show: false }, axisTicks: { show: false }, labels: { style: { colors: '#a4abba', fontSize: '11px' } } },
-    yaxis: { labels: { style: { colors: '#767c8a', fontSize: '12.5px', fontWeight: 600 } } },
-    grid: { borderColor: '#eef1f7', yaxis: { lines: { show: false } } },
-    legend: { show: false }, tooltip: { y: { formatter: function(v) { return fmtNum(v) + ' TN'; } } },
   });
   c.render(); _dashApex.push(c);
 }
