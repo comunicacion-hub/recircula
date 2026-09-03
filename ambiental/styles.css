@@ -315,12 +315,12 @@ body {
 .hdr-circle:hover { background: var(--surface-hover); color: var(--text); }
 .hdr-circle:active { transform: scale(0.94); }
 .hdr-circle-primary {
-  background: var(--grad-b);
+  background: #506CFF;
   border-color: transparent;
   color: #fff;
   box-shadow: 0 3px 12px rgba(80,108,255,0.3);
 }
-.hdr-circle-primary:hover { background: var(--grad-b); border-color: transparent; color: #fff; }
+.hdr-circle-primary:hover { background: #405ae8; border-color: transparent; color: #fff; }
 .hdr-circle-danger:hover { background: var(--surface-hover); color: var(--text); }
 /* Filtro activo: círculo índigo discreto (reemplaza el badge naranja de conteo) */
 .hdr-circle.has-filters { background: rgba(80,108,255,0.1); border-color: #506CFF; color: #506CFF; }
@@ -372,7 +372,7 @@ body {
 .btn svg { width: 16px; height: 16px; }
 
 .btn-primary {
-  background: var(--grad-b);
+  background: #506CFF;
   color: #fff;
   border: none;
   box-shadow: 0 4px 14px rgba(80,108,255,0.32);
@@ -380,7 +380,7 @@ body {
   font-weight: 700;
   font-size: 15px;
 }
-.btn-primary:hover { box-shadow: 0 6px 20px rgba(80,108,255,0.42); }
+.btn-primary:hover { background: #405ae8; box-shadow: 0 6px 20px rgba(80,108,255,0.42); }
 .btn-glass { background: #fff; color: var(--text-muted); border: 1.5px solid var(--border); }
 .btn-glass:hover { background: var(--surface-hover); color: var(--text); }
 .btn-danger { background: #fff; color: var(--err); border: 1.5px solid rgba(220,38,90,0.35); }
@@ -1112,7 +1112,7 @@ body {
   border: none;
   transition: all 0.15s;
 }
-.cat-chip.active { background: var(--grad-b); color: #fff; }
+.cat-chip.active { background: #506CFF; color: #fff; }
 
 /* ============================================================
    EMPTY STATE
