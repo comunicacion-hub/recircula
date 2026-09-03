@@ -1737,8 +1737,8 @@ function exportarMatrizEntregas() {
   s.id = 'entregas-styles';
   s.textContent = `
     /* ══ NIVEL 1: una tarjeta por provincia (con su detalle) ══ */
-    .prov-grid { display:flex; flex-wrap:wrap; gap:18px; align-items:flex-start; }
-    .prov-grid > * { flex:1 1 400px; min-width:0; }
+    .prov-grid { display:flex; flex-direction:column; gap:18px; }
+    .prov-grid > * { min-width:0; }
     .pcard { padding:20px 22px; }
     .pcard-head { display:grid; grid-template-columns:auto 1fr auto; align-items:center; gap:12px; }
     .pg-badge { display:flex; align-items:center; gap:10px; }
