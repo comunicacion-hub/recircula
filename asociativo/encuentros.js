@@ -97,7 +97,7 @@ function renderEncuentros() {
     '<div class="page-header">' +
       '<div><div class="page-title">Encuentros</div><div class="page-sub">Total de relaciones</div></div>' +
       '<div class="hdr-actions">' +
-        '<button class="hdr-circle" onclick="openFilterDrawer(\'encuentros\')" title="Filtros">' +
+        '<button class="hdr-circle" onclick="openFilterDrawer(\'encuentros\', this)" title="Filtros">' +
           icoHTML('filter') + '<span class="filter-badge" id="enc-filter-badge" style="display:none">0</span></button>' +
         '<button class="hdr-circle" onclick="exportarEncuentrosExcel()" title="Descargar Excel">' + icoHTML('download') + '</button>' +
         (puedeEditar() ? '<button class="hdr-circle hdr-circle-primary" onclick="abrirFormEncuentro()" title="Nuevo encuentro">' + icoHTML('plus') + '</button>' : '') +

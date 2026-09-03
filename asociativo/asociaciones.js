@@ -126,7 +126,7 @@ function renderAsociaciones() {
     '<div class="page-header">' +
       '<div><div class="page-title">Asociaciones</div><div class="page-sub">Registro</div></div>' +
       '<div class="hdr-actions">' +
-        '<button class="hdr-circle" onclick="openFilterDrawer(\'asociaciones\')" title="Filtros">' +
+        '<button class="hdr-circle" onclick="openFilterDrawer(\'asociaciones\', this)" title="Filtros">' +
           icoHTML('filter') + '<span class="filter-badge" id="asoc-filter-badge" style="display:none">0</span></button>' +
         '<button class="hdr-circle" onclick="exportarAsociacionesExcel()" title="Descargar Excel">' + icoHTML('download') + '</button>' +
         (puedeEditar() ? '<button class="hdr-circle hdr-circle-primary" onclick="abrirFormAsociacion()" title="Nueva asociación">' + icoHTML('plus') + '</button>' : '') +
