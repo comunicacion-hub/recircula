@@ -168,7 +168,6 @@ const HOME = (() => {
     const filasTabla = filas.map(function (f) {
       const col = CAT_COLOR[f.categoria] || '#506CFF';
       return '<tr>' +
-        '<td class="asoc-td-nombre"><div class="asoc-nom-cell">' + avatar(f.categoria) + '<span>' + esc(f.nombre) + '</span></div></td>' +
         '<td>' + barra(f.ini, col) + '</td>' +
         '<td>' + (f.cie != null ? fmtNum(f.cie, 1) + '%' : '<span class="asoc-dash">—</span>') + '</td>' +
         '<td>' + _crecBadge(f.crec) + '</td>' +
@@ -177,7 +176,7 @@ const HOME = (() => {
       '</tr>';
     }).join('');
     const tabla = '<div class="table-wrap asoc-tabla-desktop"><table>' +
-      '<thead><tr><th>Asociación</th><th>% Inicial</th><th>% Cierre</th><th>Crecimiento</th><th>Categoría</th><th style="text-align:right">Acción</th></tr></thead>' +
+      '<thead><tr><th>% Inicial</th><th>% Cierre</th><th>Crecimiento</th><th>Categoría</th><th style="text-align:right">Acción</th></tr></thead>' +
       '<tbody>' + filasTabla + '</tbody></table></div>';
 
     const cards = filas.map(function (f) {
@@ -236,7 +235,7 @@ function renderHome() { HOME.render(); }
   s.textContent = `
     /* Tarjetas-resumen */
     .asoc-kpis { display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin-bottom:22px; }
-    .asoc-kpi { background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px 18px; box-shadow:0 1px 3px rgba(0,0,0,.04),0 4px 14px rgba(0,0,0,.04); }
+    .asoc-kpi { background:var(--white); border:1px solid var(--border); border-radius:18px; padding:16px 18px; box-shadow:var(--shadow-sm); }
     .asoc-kpi-head { display:flex; align-items:center; gap:10px; }
     .asoc-kpi-ico { width:40px; height:40px; border-radius:12px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
     .asoc-kpi-ico svg { width:20px; height:20px; }
@@ -246,6 +245,8 @@ function renderHome() { HOME.render(); }
 
     /* Tabla de desempeño */
     .asoc-tabla-card { padding:22px 24px; }
+    .asoc-tabla-card .table-wrap { background:var(--white); box-shadow:none; border:none; border-radius:0; }
+    .asoc-tabla-card .table-wrap thead { background:var(--white); }
     .asoc-tabla-head { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:18px; }
     .asoc-tabla-titulo { display:flex; align-items:center; gap:12px; font-size:17px; font-weight:800; color:var(--text); }
     .asoc-tabla-ico { width:40px; height:40px; border-radius:12px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:rgba(123,92,255,.1); color:#7B5CFF; }
@@ -277,7 +278,7 @@ function renderHome() { HOME.render(); }
 
     /* Tabla → tarjetas en móvil */
     .asoc-cards-mobile { display:none; }
-    .asoc-card { background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:16px; }
+    .asoc-card { background:var(--white); border:1px solid var(--border); border-radius:18px; padding:16px; box-shadow:var(--shadow-sm); }
     .asoc-card + .asoc-card { margin-top:12px; }
     .asoc-card-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }
     .asoc-card-nombre { font-size:15px; font-weight:700; color:var(--text); }
