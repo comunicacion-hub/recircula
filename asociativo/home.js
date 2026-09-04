@@ -368,7 +368,6 @@ const HOME = (() => {
       '<div class="g-tot-val" style="color:' + color + '">' + valTxt + '</div>' +
       '<div class="g-tot-foot">' +
         '<span class="g-pill ' + (idx === 1 ? 'up' : 'neutral') + '">' + esc(pillTxt) + '</span>' +
-        '<div class="g-spark" id="hk-spark-' + idx + '"></div>' +
       '</div>' +
     '</div>';
   }
@@ -383,33 +382,11 @@ const HOME = (() => {
   function _initCharts() {
     _destroyCharts();
     if (typeof ApexCharts === 'undefined') return;
-    _renderSparks();              // KPIs: sparklines
     _renderCategoria();           // barras verticales
     _renderProvincias();          // barras horizontales
     _renderRadarEstado();         // radar
     _renderTiposEncuentro();      // treemap
     _renderEvolucion();           // combo columnas + área
-  }
-
-  // ── Sparklines de los KPIs (mismo lenguaje que el ambiental) ──
-  function _renderSparks() {
-    const kpi = _calcKPIs();
-    const specs = [
-      { serie: kpi.asocSpark,    color: G_INDIGO },
-      { serie: kpi.madurezSpark, color: G_TEAL },
-      { serie: kpi.encSpark,     color: G_AMBAR },
-      { serie: kpi.asistSpark,   color: G_PURPLE },
-    ];
-    specs.forEach(function (s, i) {
-      const el = document.getElementById('hk-spark-' + i); if (!el) return;
-      const serie = (s.serie && s.serie.length) ? s.serie : [0, 0];
-      _push(el, {
-        chart: { type: 'area', height: 36, width: 96, sparkline: { enabled: true }, animations: { enabled: true, speed: 700 } },
-        series: [{ data: serie }], colors: [s.color], stroke: { curve: 'smooth', width: 2.2 },
-        fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: .4, opacityTo: 0, stops: [0, 100] } },
-        tooltip: { enabled: false },
-      });
-    });
   }
 
   // ── Gráfico 1: Categoría de asociaciones (barras verticales) ──
