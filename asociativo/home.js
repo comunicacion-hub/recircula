@@ -242,7 +242,7 @@ const HOME = (() => {
     let totAsist = 0;
     encs.forEach(function (e) { totAsist += parseFloat(e.num_asistentes) || 0; });
     const promPorEnc = totEnc ? Math.round(totAsist / totEnc) : 0;
-    const asistPill = totEnc ? ('~' + fmtNum(promPorEnc) + ' por evento') : '—';
+    const asistPill = totEnc ? (fmtNum(promPorEnc) + ' prom. por evento') : '—';
     const asistSpark = evo.asistentes.length ? evo.asistentes : [0, 0];
 
     return {
@@ -296,7 +296,7 @@ const HOME = (() => {
           _kpiSeg(3, 'users',    G_PURPLE, 'Participantes', fmtNum(kpi.totAsist), kpi.asistPill) +
         '</div>' +
 
-        // ── Fila 1: Categorías (Donut) + Provincias (Barras H) ──
+        // ── Fila 1: Categorías (Ranking Proporcional) + Provincias (Barras H) ──
         '<div class="g-duo">' +
 
           '<div class="card">' +
@@ -305,7 +305,7 @@ const HOME = (() => {
               '<span style="font-size:11px;color:var(--text-dim);font-weight:600">diagnóstico vigente</span>' +
             '</div>' +
             '<div class="g-chart" id="chCategoria"></div>' +
-            '<div class="g-chart-hint">Pasa el cursor para ver el detalle de cada categoría</div>' +
+            '<div class="g-chart-hint">Distribución proporcional por estado de madurez</div>' +
           '</div>' +
 
           '<div class="card">' +
@@ -319,7 +319,7 @@ const HOME = (() => {
 
         '</div>' +
 
-        // ── Fila 2: Estado Asociativo (Radar) + Tipos de Encuentro (Donut) ──
+        // ── Fila 2: Estado Asociativo (Radar + Scorecard) + Tipos de Encuentro (Ranking H) ──
         '<div class="g-duo">' +
 
           '<div class="card">' +
@@ -327,26 +327,27 @@ const HOME = (() => {
               '<span>Estado asociativo</span>' +
               '<span style="font-size:11px;color:var(--text-dim);font-weight:600">promedio 5 módulos</span>' +
             '</div>' +
-            '<div class="g-chart" id="chEstado"></div>' +
-            '<div class="g-chart-hint">Evaluación diagnóstica multidimensional (escala de 0 a 100%)</div>' +
+            '<div class="g-chart" id="chEstado" style="height:215px;min-height:215px;"></div>' +
+            '<div id="chEstado-scorecard" style="width:100%;"></div>' +
+            '<div class="g-chart-hint" style="margin-top:6px;">Evaluación diagnóstica multidimensional (escala de 0 a 100%)</div>' +
           '</div>' +
 
           '<div class="card">' +
             '<div class="card-title">' +
               '<span>Tipos de encuentro</span>' +
-              '<span style="font-size:11px;color:var(--text-dim);font-weight:600">por modalidad</span>' +
+              '<span style="font-size:11px;color:var(--text-dim);font-weight:600">ranking por modalidad</span>' +
             '</div>' +
             '<div class="g-chart" id="chTiposEncuentro"></div>' +
-            '<div class="g-chart-hint">Eventos y actividades organizativas realizadas</div>' +
+            '<div class="g-chart-hint">Modalidades de actividad ordenadas por frecuencia</div>' +
           '</div>' +
 
         '</div>' +
 
-        // ── Fila 3: Evolución Temporal Completa ──
+        // ── Fila 3: Evolución Temporal Completa (Columnas Agrupadas Dual) ──
         '<div class="card">' +
           '<div class="card-title">' +
             '<span>Evolución mensual de encuentros y asistencia</span>' +
-            '<span style="font-size:11px;color:var(--text-dim);font-weight:600">histórico temporal</span>' +
+            '<span style="font-size:11px;color:var(--text-dim);font-weight:600">comparativa de volumen y participantes</span>' +
           '</div>' +
           '<div class="g-chart g-chart-evo" id="chEvolucion"></div>' +
           '<div class="g-chart-hint">Pasa el cursor para ver el detalle mensual · interactúa con la leyenda</div>' +
@@ -381,28 +382,29 @@ const HOME = (() => {
 
   function _initCharts() {
     _destroyCharts();
-    if (typeof ApexCharts === 'undefined') return;
 
     // 1. Sparklines en la tarjeta superior
-    const kpi = _calcKPIs();
-    _mkSpark('asoc-spark-0', kpi.asocSpark, G_INDIGO);
-    _mkSpark('asoc-spark-1', kpi.madurezSpark, G_TEAL);
-    _mkSpark('asoc-spark-2', kpi.encSpark, G_AMBAR);
-    _mkSpark('asoc-spark-3', kpi.asistSpark, G_PURPLE);
+    if (typeof ApexCharts !== 'undefined') {
+      const kpi = _calcKPIs();
+      _mkSpark('asoc-spark-0', kpi.asocSpark, G_INDIGO);
+      _mkSpark('asoc-spark-1', kpi.madurezSpark, G_TEAL);
+      _mkSpark('asoc-spark-2', kpi.encSpark, G_AMBAR);
+      _mkSpark('asoc-spark-3', kpi.asistSpark, G_PURPLE);
+    }
 
-    // 2. Donut: Categorías de Asociaciones
-    _renderDonutCategorias();
+    // 2. Ranking Proporcional: Categorías de Asociaciones
+    _renderCategorias();
 
     // 3. Barras Horizontales: Asociaciones por Provincia
     _renderBarrasProvincias();
 
-    // 4. Radar: Estado Asociativo (5 módulos)
+    // 4. Radar: Estado Asociativo (5 módulos con porcentajes directos)
     _renderRadarEstado();
 
-    // 5. Donut: Tipos de Encuentro
-    _renderDonutTiposEncuentro();
+    // 5. Barras Horizontales: Tipos de Encuentro
+    _renderBarrasTiposEncuentro();
 
-    // 6. Evolución Temporal Combinada
+    // 6. Evolución Temporal (Columnas agrupadas dual, sin desborde de líneas)
     _renderEvolucionTemporal();
   }
 
@@ -421,8 +423,8 @@ const HOME = (() => {
     _charts.push(c);
   }
 
-  // ── Gráfico 1: Categorías (Donut) ──
-  function _renderDonutCategorias() {
+  // ── Gráfico 1: Categorías (Ranking Proporcional Ejecutivo) ──
+  function _renderCategorias() {
     const el = document.getElementById('chCategoria');
     if (!el) return;
     const d = _categoriaData();
@@ -431,64 +433,32 @@ const HOME = (() => {
       return;
     }
 
-    const c = new ApexCharts(el, {
-      chart: Object.assign({}, G_APEX_BASE, { type: 'donut', height: 265 }),
-      series: d.values,
-      labels: d.names,
-      colors: d.colors,
-      plotOptions: {
-        pie: {
-          donut: {
-            size: '72%',
-            labels: {
-              show: true,
-              name: { show: true, fontSize: '12px', fontWeight: 600, color: '#767c8a', offsetY: -4 },
-              value: {
-                show: true,
-                fontSize: '24px',
-                fontWeight: 800,
-                color: 'var(--text)',
-                offsetY: 4,
-                formatter: function (val) { return fmtNum(val); }
-              },
-              total: {
-                show: true,
-                label: 'Total',
-                fontSize: '11px',
-                fontWeight: 700,
-                color: '#a0a0b0',
-                formatter: function (w) {
-                  return w.globals.seriesTotals.reduce(function (a, b) { return a + b; }, 0);
-                }
-              }
-            }
-          }
-        }
-      },
-      dataLabels: { enabled: false },
-      stroke: { width: 2, colors: ['#ffffff'] },
-      legend: {
-        position: 'bottom',
-        fontSize: '12px',
-        fontWeight: 600,
-        labels: { colors: '#767c8a' },
-        markers: { width: 10, height: 10, radius: 5 },
-        itemMargin: { horizontal: 8, vertical: 4 }
-      },
-      tooltip: {
-        y: {
-          formatter: function (val) {
-            const pct = d.total ? ((val / d.total) * 100).toFixed(1) : '0.0';
-            return val + ' asoc. (' + pct + '%)';
-          }
-        }
-      }
-    });
-    c.render();
-    _charts.push(c);
+    const maxVal = Math.max.apply(null, d.values.concat([1]));
+    const rows = d.names.map(function (cat, i) {
+      const val = d.values[i];
+      const pct = d.total ? ((val / d.total) * 100).toFixed(1) : '0.0';
+      const w = Math.max(val > 0 ? 6 : 0, Math.min(100, (val / maxVal) * 100));
+      const col = d.colors[i];
+      return '<div class="asoc-cat-row">' +
+        '<div class="asoc-cat-head">' +
+          '<span class="asoc-cat-badge" style="color:' + col + ';background:' + gRgba(col, 0.12) + '">' +
+            '<span class="asoc-cat-dot" style="background:' + col + '"></span>' + esc(cat) +
+          '</span>' +
+          '<div class="asoc-cat-meta">' +
+            '<span class="asoc-cat-pct" style="color:' + col + '">' + pct + '%</span>' +
+            '<span class="asoc-cat-count">(' + val + ' ' + (val === 1 ? 'asoc.' : 'asocs.') + ')</span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="asoc-cat-track">' +
+          '<div class="asoc-cat-bar" style="width:' + w + '%;background:' + col + '"></div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    el.innerHTML = '<div class="asoc-cat-rank">' + rows + '</div>';
   }
 
-  // ── Gráfico 2: Provincias (Barras Horizontales) ──
+  // ── Gráfico 2: Provincias (Barras Horizontales con texto blanco interno) ──
   function _renderBarrasProvincias() {
     const el = document.getElementById('chAsocProv');
     if (!el) return;
@@ -497,6 +467,7 @@ const HOME = (() => {
       el.innerHTML = '<div class="empty-state"><p>Sin asociaciones para este filtro</p></div>';
       return;
     }
+    if (typeof ApexCharts === 'undefined') return;
 
     const c = new ApexCharts(el, {
       chart: Object.assign({}, G_APEX_BASE, { type: 'bar', height: 265 }),
@@ -505,9 +476,12 @@ const HOME = (() => {
           horizontal: true,
           borderRadius: 6,
           borderRadiusApplication: 'end',
-          barHeight: d.names.length > 5 ? '65%' : '52%',
+          barHeight: d.names.length > 5 ? '68%' : '60%',
           distributed: true,
-          dataLabels: { position: 'top' }
+          dataLabels: {
+            position: 'center',
+            hideOverflowingLabels: false
+          }
         }
       },
       series: [{ name: 'Asociaciones', data: d.values }],
@@ -527,13 +501,23 @@ const HOME = (() => {
           maxWidth: 130
         }
       },
-      grid: { borderColor: '#eef1f7', padding: { left: 8, right: 28, top: -14, bottom: -8 } },
+      grid: { borderColor: '#eef1f7', padding: { left: 8, right: 18, top: -14, bottom: -8 } },
       dataLabels: {
         enabled: true,
-        textAnchor: 'start',
-        offsetX: 8,
         formatter: function (val) { return fmtNum(val); },
-        style: { fontSize: '11px', fontWeight: 700, colors: ['#555e6d'] }
+        style: {
+          fontSize: '12px',
+          fontWeight: 800,
+          colors: ['#ffffff']
+        },
+        dropShadow: {
+          enabled: true,
+          top: 1,
+          left: 1,
+          blur: 1,
+          color: '#000000',
+          opacity: 0.3
+        }
       },
       legend: { show: false },
       tooltip: {
@@ -548,33 +532,41 @@ const HOME = (() => {
     _charts.push(c);
   }
 
-  // ── Gráfico 3: Estado Asociativo (Radar 5 Módulos) ──
+  // ── Gráfico 3: Estado Asociativo (Radar 5 Módulos + Porcentajes Directos + Scorecard) ──
   function _renderRadarEstado() {
     const el = document.getElementById('chEstado');
+    const scEl = document.getElementById('chEstado-scorecard');
     if (!el) return;
     const d = _estadoAsociativo();
     if (!d.count) {
       el.innerHTML = '<div class="empty-state"><p>Sin diagnósticos registrados</p></div>';
+      if (scEl) scEl.innerHTML = '';
       return;
     }
+    if (typeof ApexCharts === 'undefined') return;
+
+    // Vértices con porcentaje explícito directamente visible
+    const vertexLabels = d.names.map(function (n, i) {
+      return n + ' (' + fmtNum(d.values[i], 0) + '%)';
+    });
 
     const c = new ApexCharts(el, {
-      chart: Object.assign({}, G_APEX_BASE, { type: 'radar', height: 265 }),
+      chart: Object.assign({}, G_APEX_BASE, { type: 'radar', height: 215 }),
       series: [{ name: 'Madurez promedio', data: d.values }],
-      labels: d.names,
+      labels: vertexLabels,
       colors: [G_INDIGO],
       fill: {
-        opacity: 0.30
+        opacity: 0.28
       },
-      stroke: { width: 2.5, colors: [G_INDIGO] },
-      markers: { size: 4.5, colors: ['#ffffff'], strokeColors: G_INDIGO, strokeWidth: 2, hover: { size: 7 } },
+      stroke: { width: 2.2, colors: [G_INDIGO] },
+      markers: { size: 4, colors: ['#ffffff'], strokeColors: G_INDIGO, strokeWidth: 2, hover: { size: 6 } },
       yaxis: {
         min: 0,
         max: 100,
-        tickAmount: 5,
+        tickAmount: 4,
         labels: {
           formatter: function (val) { return Math.round(val) + '%'; },
-          style: { colors: '#a4abba', fontSize: '10px' }
+          style: { colors: '#a4abba', fontSize: '9.5px' }
         }
       },
       xaxis: {
@@ -599,10 +591,24 @@ const HOME = (() => {
     });
     c.render();
     _charts.push(c);
+
+    // Scorecard inferior con pastillas de cada módulo
+    if (scEl) {
+      const pills = d.names.map(function (mod, i) {
+        const val = d.values[i];
+        const cl = val >= 80 ? 'ok' : 'warn';
+        const shortMod = mod.length > 7 ? mod.substring(0, 6) + '.' : mod;
+        return '<div class="asoc-score-pill" title="' + esc(mod) + ': ' + fmtNum(val, 1) + '%">' +
+          '<span class="asoc-score-mod">' + esc(shortMod) + '</span>' +
+          '<span class="asoc-score-val ' + cl + '">' + fmtNum(val, 0) + '%</span>' +
+        '</div>';
+      }).join('');
+      scEl.innerHTML = '<div class="asoc-score-strip">' + pills + '</div>';
+    }
   }
 
-  // ── Gráfico 4: Tipos de Encuentro (Donut) ──
-  function _renderDonutTiposEncuentro() {
+  // ── Gráfico 4: Tipos de Encuentro (Barras Horizontales Analíticas) ──
+  function _renderBarrasTiposEncuentro() {
     const el = document.getElementById('chTiposEncuentro');
     if (!el) return;
     const d = _tiposEncuentroData();
@@ -610,56 +616,71 @@ const HOME = (() => {
       el.innerHTML = '<div class="empty-state"><p>Sin encuentros registrados</p></div>';
       return;
     }
+    if (typeof ApexCharts === 'undefined') return;
+
+    // Ordenar descendente por frecuencia de evento
+    const idxs = d.names.map(function (_, i) { return i; }).sort(function (a, b) { return d.values[b] - d.values[a]; });
+    const sNames = idxs.map(function (i) { return d.names[i]; });
+    const sVals  = idxs.map(function (i) { return d.values[i]; });
+    const sCols  = idxs.map(function (i) { return d.colors[i]; });
+    const sAsist = idxs.map(function (i) { return d.asistentes[i]; });
 
     const c = new ApexCharts(el, {
-      chart: Object.assign({}, G_APEX_BASE, { type: 'donut', height: 265 }),
-      series: d.values,
-      labels: d.names,
-      colors: d.colors,
+      chart: Object.assign({}, G_APEX_BASE, { type: 'bar', height: 265 }),
       plotOptions: {
-        pie: {
-          donut: {
-            size: '72%',
-            labels: {
-              show: true,
-              name: { show: true, fontSize: '12px', fontWeight: 600, color: '#767c8a', offsetY: -4 },
-              value: {
-                show: true,
-                fontSize: '24px',
-                fontWeight: 800,
-                color: 'var(--text)',
-                offsetY: 4,
-                formatter: function (val) { return fmtNum(val); }
-              },
-              total: {
-                show: true,
-                label: 'Encuentros',
-                fontSize: '11px',
-                fontWeight: 700,
-                color: '#a0a0b0',
-                formatter: function (w) {
-                  return w.globals.seriesTotals.reduce(function (a, b) { return a + b; }, 0);
-                }
-              }
-            }
+        bar: {
+          horizontal: true,
+          borderRadius: 6,
+          borderRadiusApplication: 'end',
+          barHeight: sNames.length > 4 ? '68%' : '58%',
+          distributed: true,
+          dataLabels: {
+            position: 'center',
+            hideOverflowingLabels: false
           }
         }
       },
-      dataLabels: { enabled: false },
-      stroke: { width: 2, colors: ['#ffffff'] },
-      legend: {
-        position: 'bottom',
-        fontSize: '12px',
-        fontWeight: 600,
-        labels: { colors: '#767c8a' },
-        markers: { width: 10, height: 10, radius: 5 },
-        itemMargin: { horizontal: 8, vertical: 4 }
+      series: [{ name: 'Encuentros', data: sVals }],
+      colors: sCols,
+      xaxis: {
+        categories: sNames,
+        axisBorder: { show: false },
+        axisTicks: { show: false },
+        labels: {
+          style: { colors: '#a4abba', fontSize: '11px', fontWeight: 600 },
+          formatter: function (v) { return Math.round(v); }
+        }
       },
+      yaxis: {
+        labels: {
+          style: { colors: '#555e6d', fontSize: '12px', fontWeight: 600 },
+          maxWidth: 130
+        }
+      },
+      grid: { borderColor: '#eef1f7', padding: { left: 8, right: 18, top: -14, bottom: -8 } },
+      dataLabels: {
+        enabled: true,
+        formatter: function (val) { return fmtNum(val); },
+        style: {
+          fontSize: '12px',
+          fontWeight: 800,
+          colors: ['#ffffff']
+        },
+        dropShadow: {
+          enabled: true,
+          top: 1,
+          left: 1,
+          blur: 1,
+          color: '#000000',
+          opacity: 0.3
+        }
+      },
+      legend: { show: false },
       tooltip: {
         y: {
           formatter: function (val, opts) {
-            const idx = opts.dataPointIndex;
-            const personas = d.asistentes[idx] || 0;
+            const i = opts.dataPointIndex;
+            const personas = sAsist[i] || 0;
             return val + ' encuentro' + (val === 1 ? '' : 's') + ' (' + fmtNum(personas) + ' participantes)';
           }
         }
@@ -669,7 +690,7 @@ const HOME = (() => {
     _charts.push(c);
   }
 
-  // ── Gráfico 5: Evolución Temporal Combinada (Barras + Área) ──
+  // ── Gráfico 5: Evolución Temporal (Columnas Agrupadas Duales Índigo / Púrpura) ──
   function _renderEvolucionTemporal() {
     const el = document.getElementById('chEvolucion');
     if (!el) return;
@@ -678,44 +699,57 @@ const HOME = (() => {
       el.innerHTML = '<div class="empty-state"><p>Sin encuentros registrados para este periodo</p></div>';
       return;
     }
+    if (typeof ApexCharts === 'undefined') return;
 
     const c = new ApexCharts(el, {
-      chart: Object.assign({}, G_APEX_BASE, { type: 'line', height: 300 }),
+      chart: Object.assign({}, G_APEX_BASE, { type: 'bar', height: 300 }),
       series: [
-        { name: 'Encuentros', type: 'column', data: d.encuentros },
-        { name: 'Participantes', type: 'area', data: d.asistentes }
+        { name: 'Encuentros', data: d.encuentros },
+        { name: 'Participantes', data: d.asistentes }
       ],
-      colors: [G_INDIGO, G_TEAL],
-      stroke: { width: [0, 3], curve: 'smooth' },
-      fill: {
-        type: ['solid', 'gradient'],
-        gradient: { shadeIntensity: 1, opacityFrom: 0.28, opacityTo: 0.02, stops: [0, 95] }
-      },
+      colors: [G_INDIGO, G_PURPLE], // #506CFF y #7B5CFF
       plotOptions: {
-        bar: { columnWidth: '38%', borderRadius: 6, borderRadiusApplication: 'end' }
+        bar: {
+          horizontal: false,
+          columnWidth: d.meses.length > 3 ? '44%' : '32%',
+          borderRadius: 6,
+          borderRadiusApplication: 'end',
+          dataLabels: { position: 'top' }
+        }
       },
+      dataLabels: {
+        enabled: true,
+        offsetY: -18,
+        style: { fontSize: '11px', fontWeight: 700, colors: ['#555e6d'] },
+        formatter: function (v) { return v > 0 ? fmtNum(v) : ''; }
+      },
+      stroke: { show: true, width: 3, colors: ['transparent'] },
       xaxis: {
         categories: d.meses,
         axisBorder: { show: false },
         axisTicks: { show: false },
+        tickPlacement: 'between',
         labels: { style: { colors: '#a4abba', fontSize: '12px', fontWeight: 600 } }
       },
       yaxis: [
         {
-          title: { text: 'N° Encuentros', style: { color: G_INDIGO, fontSize: '11px', fontWeight: 600 } },
+          title: { text: 'N° Encuentros', style: { color: G_INDIGO, fontSize: '11px', fontWeight: 700 } },
           labels: { formatter: function (v) { return Math.round(v); }, style: { colors: '#a4abba', fontSize: '11px' } },
           min: 0,
           forceNiceScale: true
         },
         {
           opposite: true,
-          title: { text: 'Participantes', style: { color: G_TEAL, fontSize: '11px', fontWeight: 600 } },
+          title: { text: 'Participantes', style: { color: G_PURPLE, fontSize: '11px', fontWeight: 700 } },
           labels: { formatter: function (v) { return Math.round(v); }, style: { colors: '#a4abba', fontSize: '11px' } },
           min: 0,
           forceNiceScale: true
         }
       ],
-      grid: { borderColor: '#eef1f7', xaxis: { lines: { show: false } } },
+      grid: {
+        borderColor: '#eef1f7',
+        padding: { left: 24, right: 24, top: 16, bottom: 6 }
+      },
       legend: {
         position: 'top',
         horizontalAlign: 'right',
