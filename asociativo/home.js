@@ -1,13 +1,15 @@
 // ============================================================
 // DASHBOARD ASOCIATIVO — home.js (sección "Gráficos")
-// KPIs + charts dinámicos (ApexCharts, sin donas):
-//   · Recicladores por provincia (barras)
+// Solo charts dinámicos (ApexCharts, sin donas ni KPIs ni tabla):
+//   · Asociaciones por provincia (barras)
+//   · Categoría de asociaciones % (barras)
+//   · Estado asociativo — promedio de los 5 módulos (barras)
 //   · Talleres por mes / Reuniones por mes (barras)
 // ============================================================
 
 const HOME = (() => {
 
-  // Filtros del drawer (afectan los charts; los KPIs son totales globales)
+  // Filtros del drawer (afectan todos los charts)
   let _fProvs = [];
   let _fCats  = [];
   let _charts = [];   // instancias ApexCharts vivas (se destruyen al re-dibujar)
@@ -15,48 +17,31 @@ const HOME = (() => {
   const CATEGORIAS = ['Líderes de ReCircula', 'En Fortalecimiento', 'En Acompañamiento'];
   const MESES_ABR  = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   const PROV_PAL   = ['#506CFF', '#18AE97', '#F5AD21', '#7B5CFF', '#EF4444', '#0BC3FF', '#FF751F', '#C19A6B'];
+  const MODULO_PAL = ['#506CFF', '#18AE97', '#F5AD21', '#7B5CFF', '#EF4444'];
 
   const CAT_COLOR = {
     'Líderes de ReCircula': '#18AE97',
     'En Fortalecimiento':   '#506CFF',
     'En Acompañamiento':    '#7B5CFF',
   };
-  function _rgba(hex, a) {
-    let h = String(hex || '').replace('#', ''); if (h.length === 3) h = h.split('').map(function (c) { return c + c; }).join('');
-    const n = parseInt(h, 16) || 0;
-    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
-  }
 
-  // ── KPIs globales ──
-  function _kpis() {
-    let recicladores = 0;
-    const cuenta = { 'Líderes de ReCircula': 0, 'En Fortalecimiento': 0, 'En Acompañamiento': 0 };
-    CAT.asociaciones.forEach(function (a) {
-      recicladores += parseFloat(a.num_recicladores) || 0;
+  function _asociacionesFiltradas() {
+    return CAT.asociaciones.filter(function (a) {
       const cat = categoriaVigente(a.id_asociacion);
-      if (cuenta[cat] !== undefined) cuenta[cat]++;
+      return pasaFiltro(_fProvs, a.provincia) && pasaFiltro(_fCats, cat);
     });
-    return {
-      recicladores: recicladores,
-      asociaciones: CAT.asociaciones.length,
-      lideres: cuenta['Líderes de ReCircula'],
-      fortalecimiento: cuenta['En Fortalecimiento'],
-      acompanamiento: cuenta['En Acompañamiento'],
-    };
   }
 
   function _provincias() {
     return Array.from(new Set(CAT.asociaciones.map(function (a) { return a.provincia; }).filter(Boolean))).sort();
   }
 
-  // ── Datos: recicladores por provincia (respeta filtros prov + categoría) ──
-  function _recPorProv() {
+  // ── Datos: asociaciones por provincia ──
+  function _asocPorProv() {
     const map = {};
-    CAT.asociaciones.forEach(function (a) {
-      const cat = categoriaVigente(a.id_asociacion);
-      if (!pasaFiltro(_fProvs, a.provincia) || !pasaFiltro(_fCats, cat)) return;
+    _asociacionesFiltradas().forEach(function (a) {
       const p = a.provincia || 'Sin provincia';
-      map[p] = (map[p] || 0) + (parseFloat(a.num_recicladores) || 0);
+      map[p] = (map[p] || 0) + 1;
     });
     const rows = Object.keys(map).map(function (p) { return { prov: p, val: map[p] }; })
       .sort(function (a, b) { return b.val - a.val; });
@@ -64,6 +49,60 @@ const HOME = (() => {
       names: rows.map(function (r) { return r.prov; }),
       values: rows.map(function (r) { return r.val; }),
       colors: rows.map(function (_, i) { return PROV_PAL[i % PROV_PAL.length]; }),
+    };
+  }
+
+  // ── Datos: % de asociaciones por categoría vigente ──
+  function _categoriaPct() {
+    const filtradas = _asociacionesFiltradas();
+    const total = filtradas.length || 1;
+    const cuenta = { 'Líderes de ReCircula': 0, 'En Fortalecimiento': 0, 'En Acompañamiento': 0 };
+    filtradas.forEach(function (a) {
+      const cat = categoriaVigente(a.id_asociacion);
+      if (cuenta[cat] !== undefined) cuenta[cat]++;
+    });
+    return {
+      names: CATEGORIAS,
+      values: CATEGORIAS.map(function (c) { return +((cuenta[c] / total) * 100).toFixed(1); }),
+      colors: CATEGORIAS.map(function (c) { return CAT_COLOR[c]; }),
+    };
+  }
+
+  // ── Diagnóstico vigente de una asociación (más reciente: año desc, Cierre > Inicial) ──
+  function _diagVigente(idAsociacion) {
+    const ds = CAT.diagnosticos.filter(function (d) { return d.id_asociacion === idAsociacion; });
+    if (!ds.length) return null;
+    ds.sort(function (a, b) {
+      const ay = parseFloat(a.anio) || 0, by = parseFloat(b.anio) || 0;
+      if (by !== ay) return by - ay;
+      const rank = function (t) { return t === 'Cierre' ? 1 : 0; };
+      return rank(b.tipo) - rank(a.tipo);
+    });
+    return ds[0];
+  }
+
+  // ── Datos: "Estado asociativo" — promedio de los 5 módulos entre asociaciones filtradas ──
+  const MODULOS = [
+    { key: 'p_organizacional', lbl: 'Organiz.' },
+    { key: 'p_productivo',     lbl: 'Product.' },
+    { key: 'p_empresarial',    lbl: 'Empres.' },
+    { key: 'p_ambiental',      lbl: 'Ambien.' },
+    { key: 'p_financiero',     lbl: 'Financ.' },
+  ];
+  function _estadoAsociativo() {
+    const sumas = { p_organizacional: 0, p_productivo: 0, p_empresarial: 0, p_ambiental: 0, p_financiero: 0 };
+    let n = 0;
+    _asociacionesFiltradas().forEach(function (a) {
+      const d = _diagVigente(a.id_asociacion);
+      if (!d) return;
+      n++;
+      MODULOS.forEach(function (m) { sumas[m.key] += parseFloat(d[m.key]) || 0; });
+    });
+    if (!n) return { names: [], values: [], colors: [] };
+    return {
+      names: MODULOS.map(function (m) { return m.lbl; }),
+      values: MODULOS.map(function (m) { return +(sumas[m.key] / n).toFixed(1); }),
+      colors: MODULO_PAL,
     };
   }
 
@@ -95,7 +134,6 @@ const HOME = (() => {
   // ── Render principal ──
   function render() {
     _registrarFiltros();
-    const k = _kpis();
     const html =
       '<div class="page-header">' +
         '<div>' +
@@ -112,14 +150,6 @@ const HOME = (() => {
         '</div>' +
       '</div>' +
 
-      '<div class="asoc-kpis">' +
-        _kpiBox('users',    '#506CFF', fmtNum(k.recicladores),    'Recicladores',         'Total en la red') +
-        _kpiBox('building', '#18AE97', fmtNum(k.asociaciones),    'Asociaciones',         'En la red') +
-        _kpiBox('star',     '#F5AD21', fmtNum(k.lideres),         'Líderes de ReCircula', 'Activos') +
-        _kpiBox('trendUp',  '#F82D72', fmtNum(k.fortalecimiento), 'En Fortalecimiento',   'En proceso') +
-        _kpiBox('users',    '#7B5CFF', fmtNum(k.acompanamiento),  'En Acompañamiento',    'En seguimiento') +
-      '</div>' +
-
       '<div id="home-charts">' + _chartsHtml() + '</div>';
 
     document.getElementById('main-content').innerHTML = html;
@@ -127,21 +157,20 @@ const HOME = (() => {
     _initCharts();
   }
 
-  function _kpiBox(ico, color, num, lbl, sub) {
-    return '<div class="asoc-kpi">' +
-      '<div class="asoc-kpi-head">' +
-        '<span class="asoc-kpi-ico" style="background:' + _rgba(color, 0.12) + ';color:' + color + '">' + icoHTML(ico) + '</span>' +
-        '<span class="asoc-kpi-lbl">' + esc(lbl) + '</span>' +
-      '</div>' +
-      '<div class="asoc-kpi-num" style="color:' + color + '">' + num + '</div>' +
-      '<div class="asoc-kpi-sub">' + esc(sub) + '</div>' +
-    '</div>';
-  }
-
   function _chartsHtml() {
     return '<div class="card asoc-chart-card">' +
-        '<div class="asoc-chart-title">' + icoHTML('users') + '<span>Recicladores por provincia</span></div>' +
-        '<div class="asoc-apex" id="chProv"></div>' +
+        '<div class="asoc-chart-title">' + icoHTML('building') + '<span>Asociaciones por provincia</span></div>' +
+        '<div class="asoc-apex" id="chAsocProv"></div>' +
+      '</div>' +
+      '<div class="asoc-duo">' +
+        '<div class="card asoc-chart-card">' +
+          '<div class="asoc-chart-title">' + icoHTML('star') + '<span>Categoría de asociaciones</span></div>' +
+          '<div class="asoc-apex" id="chCategoria"></div>' +
+        '</div>' +
+        '<div class="card asoc-chart-card">' +
+          '<div class="asoc-chart-title">' + icoHTML('trendUp') + '<span>Estado asociativo</span></div>' +
+          '<div class="asoc-apex" id="chEstado"></div>' +
+        '</div>' +
       '</div>' +
       '<div class="asoc-duo">' +
         '<div class="card asoc-chart-card">' +
@@ -161,15 +190,10 @@ const HOME = (() => {
     _destroyCharts();
     if (typeof ApexCharts === 'undefined') return;
 
-    // Recicladores por provincia (barras horizontales)
-    const rp = _recPorProv();
-    const elP = document.getElementById('chProv');
-    if (elP) {
-      if (!rp.names.length) elP.innerHTML = '<p class="asoc-empty">Sin datos para este filtro.</p>';
-      else _push(elP, _barH(rp.names, rp.values, rp.colors, 'Recicladores'));
-    }
+    _barHInto('chAsocProv', _asocPorProv(), 'Asociaciones', function (v) { return fmtNum(v); }, 'Sin asociaciones para este filtro.');
+    _barHInto('chCategoria', _categoriaPct(), 'Asociaciones', function (v) { return fmtNum(v, 1) + '%'; }, 'Sin datos para este filtro.');
+    _barHInto('chEstado', _estadoAsociativo(), 'Promedio', function (v) { return fmtNum(v, 1) + '%'; }, 'Sin diagnósticos registrados.');
 
-    // Talleres / Reuniones por mes (barras verticales)
     const meses = _mesesVis();
     const labels = meses.map(function (m) { return MESES_ABR[m - 1]; });
     _barMes('chTaller', labels, _encPorMes('Taller', meses), '#7B5CFF', 'Talleres');
@@ -177,17 +201,19 @@ const HOME = (() => {
   }
   function _push(el, opts) { const c = new ApexCharts(el, opts); c.render(); _charts.push(c); }
 
-  function _barH(names, values, colors, name) {
-    return {
-      chart: { type: 'bar', height: Math.max(220, names.length * 38 + 30), fontFamily: 'Outfit, sans-serif', toolbar: { show: false }, animations: { enabled: true, easing: 'easeinout', speed: 700 } },
-      series: [{ name: name, data: values }], colors: colors,
+  function _barHInto(id, data, seriesName, fmt, emptyMsg) {
+    const el = document.getElementById(id); if (!el) return;
+    if (!data.names.length) { el.innerHTML = '<p class="asoc-empty">' + esc(emptyMsg) + '</p>'; return; }
+    _push(el, {
+      chart: { type: 'bar', height: Math.max(200, data.names.length * 44 + 30), fontFamily: 'Outfit, sans-serif', toolbar: { show: false }, animations: { enabled: true, easing: 'easeinout', speed: 700 } },
+      series: [{ name: seriesName, data: data.values }], colors: data.colors,
       plotOptions: { bar: { horizontal: true, distributed: true, borderRadius: 6, borderRadiusApplication: 'end', barHeight: '62%' } },
-      dataLabels: { enabled: true, formatter: function (v) { return fmtNum(v); }, textAnchor: 'start', offsetX: 8, style: { fontSize: '12px', fontWeight: 700, colors: ['#2b2f3a'] } },
-      xaxis: { categories: names, axisBorder: { show: false }, axisTicks: { show: false }, labels: { style: { colors: '#a4abba', fontSize: '11px' } } },
+      dataLabels: { enabled: true, formatter: fmt, textAnchor: 'start', offsetX: 8, style: { fontSize: '12px', fontWeight: 700, colors: ['#2b2f3a'] } },
+      xaxis: { categories: data.names, axisBorder: { show: false }, axisTicks: { show: false }, labels: { style: { colors: '#a4abba', fontSize: '11px' } } },
       yaxis: { labels: { style: { colors: '#767c8a', fontSize: '12.5px', fontWeight: 600 } } },
       grid: { borderColor: '#eef1f7', yaxis: { lines: { show: false } } },
-      legend: { show: false }, tooltip: { y: { formatter: function (v) { return fmtNum(v) + ' recicladores'; } } },
-    };
+      legend: { show: false }, tooltip: { y: { formatter: fmt } },
+    });
   }
 
   function _barMes(id, labels, data, color, name) {
@@ -233,17 +259,6 @@ function renderHome() { HOME.render(); }
   const s = document.createElement('style');
   s.id = 'home-styles';
   s.textContent = `
-    /* KPIs */
-    .asoc-kpis { display:grid; grid-template-columns:repeat(5,1fr); gap:14px; }
-    .asoc-kpi { background:var(--white); border:1px solid var(--border); border-radius:18px; padding:16px 18px; box-shadow:var(--shadow-sm); }
-    .asoc-kpi-head { display:flex; align-items:center; gap:10px; }
-    .asoc-kpi-ico { width:40px; height:40px; border-radius:12px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
-    .asoc-kpi-ico svg { width:20px; height:20px; }
-    .asoc-kpi-lbl { font-size:12.5px; color:var(--text-muted); font-weight:600; line-height:1.2; }
-    .asoc-kpi-num { font-size:32px; font-weight:800; line-height:1.05; margin-top:12px; }
-    .asoc-kpi-sub { font-size:11.5px; color:var(--text-dim); margin-top:4px; font-weight:500; }
-
-    /* Charts */
     #home-charts { display:flex; flex-direction:column; gap:18px; }
     .asoc-chart-card { padding:20px 24px; }
     .asoc-chart-title { display:flex; align-items:center; gap:10px; font-size:15px; font-weight:700; color:var(--text); margin-bottom:14px; }
@@ -254,7 +269,6 @@ function renderHome() { HOME.render(); }
     .asoc-empty { text-align:center; padding:40px 0; color:var(--text-dim); font-size:14px; }
 
     @media (max-width:900px) {
-      .asoc-kpis { grid-template-columns:repeat(2,1fr); }
       .asoc-duo { grid-template-columns:1fr; }
     }
   `;
