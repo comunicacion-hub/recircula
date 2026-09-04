@@ -242,7 +242,7 @@ const HOME = (() => {
     let totAsist = 0;
     encs.forEach(function (e) { totAsist += parseFloat(e.num_asistentes) || 0; });
     const promPorEnc = totEnc ? Math.round(totAsist / totEnc) : 0;
-    const asistPill = totEnc ? ('~' + fmtNum(promPorEnc) + ' por evento') : '—';
+    const asistPill = totEnc ? (fmtNum(promPorEnc) + ' por evento') : '—';
     const asistSpark = evo.asistentes.length ? evo.asistentes : [0, 0];
 
     return {
@@ -368,7 +368,6 @@ const HOME = (() => {
       '<div class="g-tot-val" style="color:' + color + '">' + valTxt + '</div>' +
       '<div class="g-tot-foot">' +
         '<span class="g-pill ' + (idx === 1 ? 'up' : 'neutral') + '">' + esc(pillTxt) + '</span>' +
-        '<div class="g-spark" id="asoc-spark-' + idx + '"></div>' +
       '</div>' +
     '</div>';
   }
@@ -383,42 +382,20 @@ const HOME = (() => {
     _destroyCharts();
     if (typeof ApexCharts === 'undefined') return;
 
-    // 1. Sparklines en la tarjeta superior
-    const kpi = _calcKPIs();
-    _mkSpark('asoc-spark-0', kpi.asocSpark, G_INDIGO);
-    _mkSpark('asoc-spark-1', kpi.madurezSpark, G_TEAL);
-    _mkSpark('asoc-spark-2', kpi.encSpark, G_AMBAR);
-    _mkSpark('asoc-spark-3', kpi.asistSpark, G_PURPLE);
-
-    // 2. Donut: Categorías de Asociaciones
+    // 1. Donut: Categorías de Asociaciones
     _renderDonutCategorias();
 
-    // 3. Barras Horizontales: Asociaciones por Provincia
+    // 2. Barras Horizontales: Asociaciones por Provincia
     _renderBarrasProvincias();
 
-    // 4. Radar: Estado Asociativo (5 módulos)
+    // 3. Radar: Estado Asociativo (5 módulos)
     _renderRadarEstado();
 
-    // 5. Donut: Tipos de Encuentro
+    // 4. Donut: Tipos de Encuentro
     _renderDonutTiposEncuentro();
 
-    // 6. Evolución Temporal Combinada
+    // 5. Evolución Temporal Combinada
     _renderEvolucionTemporal();
-  }
-
-  function _mkSpark(id, serie, color) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const c = new ApexCharts(el, {
-      chart: { type: 'area', height: 36, width: 96, sparkline: { enabled: true }, animations: { enabled: true, speed: 700 } },
-      series: [{ name: '', data: (serie && serie.length) ? serie : [0, 0] }],
-      colors: [color],
-      stroke: { curve: 'smooth', width: 2.2 },
-      fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.45, opacityTo: 0.05, stops: [0, 100] } },
-      tooltip: { enabled: true, x: { show: false }, y: { formatter: function (v) { return fmtNum(v); }, title: { formatter: function () { return ''; } } }, marker: { show: false } },
-    });
-    c.render();
-    _charts.push(c);
   }
 
   // ── Gráfico 1: Categorías (Donut) ──
