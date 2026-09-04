@@ -1086,12 +1086,33 @@ body {
 .apexcharts-legend-marker { margin-right: 6px !important; }
 
 /* ── Responsive del Dashboard ──
-   En pantallas chicas NO se reacomoda la grilla (eso provocaba colisiones):
-   home.js mantiene el layout de escritorio a un ancho de diseño fijo (1040px)
-   y escala toda la sección con transform para que quepa intacta. El contenedor
-   .g-fit recorta el desborde del box sin escalar. */
+   En pantallas chicas la grilla se reacomoda a UNA columna y cada gráfico
+   conserva su tamaño real (no se escala/encoge el bloque). ApexCharts usa
+   width:100% del card, así que se redibuja a su nuevo ancho al hacer resize. */
 .g-fit { min-width: 0; }
-.g-fit.is-scaled { overflow: hidden; }
+
+/* Pares de gráficos: 2 columnas → 1 columna cuando la nav pasa a barra inferior */
+@media (max-width: 900px) {
+  .g-wrap { gap: 18px; }
+  .g-duo  { grid-template-columns: 1fr; gap: 18px; }
+}
+
+/* KPIs superiores: de 4 en fila a una grilla 2×2 (con separadores correctos) */
+@media (max-width: 720px) {
+  .g-tot { display: grid; grid-template-columns: 1fr 1fr; padding: 20px 4px; }
+  .g-tot-seg { padding: 14px 18px; }
+  .g-tot-seg + .g-tot-seg { border-left: none; }
+  .g-tot-seg:nth-child(odd) { border-right: 1px solid var(--border); }
+  .g-tot-seg:nth-child(n+3) { border-top: 1px solid var(--border); }
+}
+
+/* KPIs: 2×2 → una sola columna en teléfonos angostos */
+@media (max-width: 440px) {
+  .g-tot { grid-template-columns: 1fr; padding: 10px 6px; }
+  .g-tot-seg { padding: 16px 20px; }
+  .g-tot-seg:nth-child(odd) { border-right: none; }
+  .g-tot-seg:nth-child(n+2) { border-top: 1px solid var(--border); }
+}
 
 /* ============================================================
    ACCESOS
