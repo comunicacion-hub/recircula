@@ -434,15 +434,16 @@ const HOME = (() => {
     const d = _estadoAsociativo();
     if (!d.count) { el.innerHTML = '<div class="empty-state"><p>Sin diagnósticos registrados</p></div>'; return; }
     _push(el, {
-      chart: Object.assign({}, G_APEX_BASE, { type: 'radar', height: 290 }),
+      chart: Object.assign({}, G_APEX_BASE, { type: 'radar', height: 330, offsetY: 6 }),
       series: [{ name: 'Madurez promedio', data: d.values }],
       labels: d.names, colors: [G_INDIGO],
       fill: { opacity: 0.26, colors: [G_INDIGO] },
       stroke: { width: 2.5, colors: [G_INDIGO] },
       markers: { size: 4, colors: ['#ffffff'], strokeColors: G_INDIGO, strokeWidth: 2, hover: { size: 6 } },
+      grid: { padding: { top: 0, bottom: 0, left: 0, right: 0 } },
       yaxis: { min: 0, max: 100, tickAmount: 4, labels: { formatter: function (v) { return Math.round(v) + '%'; }, style: { colors: '#a4abba', fontSize: '10px' } } },
-      xaxis: { labels: { style: { colors: ['#333', '#333', '#333', '#333', '#333'], fontSize: '11px', fontWeight: 600 } } },
-      plotOptions: { radar: { polygons: { strokeColors: '#eef1f7', connectorColors: '#eef1f7', fill: { colors: ['#fafbfe', '#ffffff'] } } } },
+      xaxis: { labels: { style: { colors: ['#333', '#333', '#333', '#333', '#333'], fontSize: '12px', fontWeight: 600 } } },
+      plotOptions: { radar: { offsetY: 4, polygons: { strokeColors: '#eef1f7', connectorColors: '#eef1f7', fill: { colors: ['#fafbfe', '#ffffff'] } } } },
       tooltip: { y: { formatter: function (v) { return fmtNum(v, 1) + '%'; } } },
     });
   }
@@ -453,7 +454,7 @@ const HOME = (() => {
     const d = _tiposEncuentroData();
     if (!d.total) { el.innerHTML = '<div class="empty-state"><p>Sin encuentros registrados</p></div>'; return; }
     _push(el, {
-      chart: Object.assign({}, G_APEX_BASE, { type: 'treemap', height: 290 }),
+      chart: Object.assign({}, G_APEX_BASE, { type: 'treemap', height: 330 }),
       series: [{ data: d.names.map(function (n, i) { return { x: n, y: d.values[i] }; }) }],
       colors: d.colors,
       plotOptions: { treemap: { distributed: true, enableShades: false } },
