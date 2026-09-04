@@ -596,6 +596,24 @@ async function exportarDiagnosticosExcel() {
     .ent-back { width:38px; height:38px; border-radius:11px; border:1px solid var(--border); background:var(--surface); color:var(--text-muted); display:flex; align-items:center; justify-content:center; cursor:pointer; flex-shrink:0; transition:background .15s,color .15s; }
     .ent-back:hover { background:var(--surface-hover); color:var(--text); }
     .ent-back svg { width:18px; height:18px; }
+
+    /* Filas agrupadas por provincia (tarjetas por asociación) */
+    .asoc-provs { display:flex; flex-direction:column; gap:22px; }
+    .asoc-prov-cab { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
+    .asoc-prov-ico { width:34px; height:34px; border-radius:10px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+    .asoc-prov-ico svg { width:17px; height:17px; }
+    .asoc-prov-nom { font-size:14px; font-weight:800; color:var(--text); text-transform:uppercase; letter-spacing:.4px; }
+    .asoc-prov-count { font-size:11px; font-weight:600; color:var(--text-dim); background:rgba(0,0,0,.04); padding:3px 10px; border-radius:20px; }
+    .asoc-prov-lista { display:flex; flex-direction:column; gap:10px; }
+
+    .asoc-row { display:flex; align-items:center; gap:14px; width:100%; text-align:left; background:var(--surface); border:1px solid var(--border); border-radius:15px; padding:13px 18px; cursor:pointer; transition:box-shadow .15s,transform .12s,border-color .15s; }
+    .asoc-row:hover { box-shadow:0 6px 18px rgba(0,0,0,.08); transform:translateY(-2px); border-color:transparent; }
+    .asoc-row-ico { width:40px; height:40px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
+    .asoc-row-ico svg { width:19px; height:19px; }
+    .asoc-row-nom { flex:1; min-width:0; font-size:14px; font-weight:700; color:var(--text); line-height:1.3; }
+    .asoc-row-right { display:flex; align-items:center; gap:12px; flex-shrink:0; }
+    .asoc-row-pill { font-size:12.5px; font-weight:700; padding:5px 12px; border-radius:20px; white-space:nowrap; }
+    .asoc-row-pill-0 { color:var(--text-dim); background:rgba(0,0,0,.05); }
     .asoc-row-chev { color:var(--text-dim); display:flex; align-items:center; }
     .asoc-row-chev svg { width:18px; height:18px; }
 

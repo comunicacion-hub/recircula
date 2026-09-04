@@ -155,6 +155,13 @@ function _provColorAsoc(prov) {
   let h = 0; for (let i = 0; i < k.length; i++) h = (h * 31 + k.charCodeAt(i)) >>> 0;
   return ASOC_PROV_PAL[h % ASOC_PROV_PAL.length];
 }
+// Iniciales para el avatar de la asociaci\u00f3n (1-2 letras, saltando conectores)
+function _inicialesAsoc(nombre) {
+  const skip = new Set(['el', 'la', 'los', 'las', 'de', 'del', 'y', 'asociacion', 'asociaci\u00f3n', 'asoc']);
+  const w = String(nombre || '').split(/\s+/).filter(function (x) { return x && !skip.has(x.toLowerCase().replace(/[.,]/g, '')); });
+  const a = (w[0] || '')[0] || '', b = (w[1] || '')[0] || '';
+  return ((a + b) || String(nombre || '?')[0] || '?').toUpperCase();
+}
 // 6 puntos de documentos (verde=subido, gris=falta)
 function _docChecks(a) {
   return '<div class="asoc-dots">' + ASOC_DOCS.map(function (d) {
@@ -191,41 +198,53 @@ function renderTablaAsociaciones() {
 
   const acciones = function (a) {
     const docId = jsEsc(a._docId || '');
-    return '<button class="icon-btn" onclick="event.stopPropagation();verAsociacion(\'' + docId + '\')" title="Ver">' + icoHTML('view') + '</button>' +
-      (edit ? '<button class="icon-btn primary" onclick="event.stopPropagation();editarAsociacion(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' +
-        '<button class="icon-btn del" onclick="event.stopPropagation();confirmarEliminarAsociacion(\'' + docId + '\')" title="Eliminar">' + icoHTML('trash') + '</button>' : '');
+    return '<button class="asoc-abtn" onclick="event.stopPropagation();verAsociacion(\'' + docId + '\')" title="Ver">' + icoHTML('view') + '</button>' +
+      (edit ? '<button class="asoc-abtn" onclick="event.stopPropagation();editarAsociacion(\'' + docId + '\')" title="Editar">' + icoHTML('edit') + '</button>' +
+        '<button class="asoc-abtn del" onclick="event.stopPropagation();confirmarEliminarAsociacion(\'' + docId + '\')" title="Eliminar">' + icoHTML('trash') + '</button>' : '');
   };
 
+  // Fila de asociación dentro de la tarjeta de la provincia: avatar + nombre + meta + pill + acciones
   const fila = function (a, col) {
     const docId = jsEsc(a._docId || '');
     const cnt = _asocDocsCount(a);
     const pillCol = cnt >= ASOC_DOCS_TOTAL ? '#18AE97' : cnt > 0 ? '#F5AD21' : null;
     const pill = pillCol
-      ? '<span class="asoc-row-pill" style="background:' + _asocRgba(pillCol, 0.14) + ';color:' + pillCol + '">' + cnt + '/' + ASOC_DOCS_TOTAL + '</span>'
-      : '<span class="asoc-row-pill asoc-row-pill-0">' + cnt + '/' + ASOC_DOCS_TOTAL + '</span>';
-    return '<div class="asoc-row" onclick="verAsociacion(\'' + docId + '\')">' +
-      '<span class="asoc-row-ico" style="background:' + _asocRgba(col, 0.12) + ';color:' + col + '">' + icoHTML('users') + '</span>' +
-      '<span class="asoc-row-nom">' + esc(a.nombre || '—') + '</span>' +
-      '<span class="asoc-row-right">' + pill +
-        '<span class="asoc-row-acts td-actions">' + acciones(a) + '</span>' +
+      ? '<span class="asoc-r-pill" style="background:' + _asocRgba(pillCol, 0.14) + ';color:' + pillCol + '">' + cnt + '/' + ASOC_DOCS_TOTAL + '</span>'
+      : '<span class="asoc-r-pill asoc-r-pill-0">' + cnt + '/' + ASOC_DOCS_TOTAL + '</span>';
+    const cat = categoriaVigente(a.id_asociacion);
+    const nrec = parseFloat(a.num_recicladores) || 0;
+    const meta = nrec + ' reciclador' + (nrec !== 1 ? 'es' : '') + (cat ? ' · ' + esc(cat) : '');
+    return '<div class="asoc-lrow" onclick="verAsociacion(\'' + docId + '\')">' +
+      '<span class="asoc-r-ava" style="background:' + _asocRgba(col, 0.12) + ';color:' + col + '">' + esc(_inicialesAsoc(a.nombre)) + '</span>' +
+      '<span class="asoc-r-body">' +
+        '<span class="asoc-r-top"><b class="asoc-r-name">' + esc(a.nombre || '—') + '</b></span>' +
+        '<span class="asoc-r-meta">' + meta + '</span>' +
+      '</span>' +
+      '<span class="asoc-r-right">' + pill +
+        '<span class="asoc-r-acts">' + acciones(a) + '</span>' +
       '</span>' +
     '</div>';
   };
 
+  // Una tarjeta a ancho completo por provincia, con sus asociaciones como filas (estilo Compradores)
   const cuerpo = provs.map(function (prov) {
     const col = _provColorAsoc(prov);
     const lista = grupos[prov].slice().sort(function (a, b) { return (a.nombre || '').localeCompare(b.nombre || '', 'es'); });
-    return '<div class="asoc-prov-grupo">' +
-      '<div class="asoc-prov-cab">' +
-        '<span class="asoc-prov-ico" style="background:' + _asocRgba(col, 0.14) + ';color:' + col + '">' + icoHTML('mapPin') + '</span>' +
-        '<span class="asoc-prov-nom">' + esc(prov) + '</span>' +
-        '<span class="asoc-prov-count">' + lista.length + ' asociaci' + (lista.length !== 1 ? 'ones' : 'ón') + '</span>' +
+    const totRec = lista.reduce(function (s, a) { return s + (parseFloat(a.num_recicladores) || 0); }, 0);
+    return '<div class="card asoc-lvlcard">' +
+      '<div class="asoc-lvlcard-head">' +
+        '<div class="asoc-lvlcard-badge">' +
+          '<span class="asoc-lvlcard-acc" style="background:' + col + '"></span>' +
+          '<div><div class="asoc-lvlcard-name">' + esc(prov) + '</div>' +
+            '<div class="asoc-lvlcard-desc">' + totRec + ' reciclador' + (totRec !== 1 ? 'es' : '') + ' en total</div></div>' +
+        '</div>' +
+        '<div class="asoc-lvlcard-cnt">' + lista.length + ' asociaci' + (lista.length !== 1 ? 'ones' : 'ón') + '</div>' +
       '</div>' +
-      '<div class="asoc-prov-lista">' + lista.map(function (a) { return fila(a, col); }).join('') + '</div>' +
+      '<div class="asoc-rows">' + lista.map(function (a) { return fila(a, col); }).join('') + '</div>' +
     '</div>';
   }).join('');
 
-  wrap.innerHTML = '<div class="asoc-provs">' + cuerpo + '</div>' +
+  wrap.innerHTML = '<div class="asoc-lvlwrap">' + cuerpo + '</div>' +
     '<div style="font-size:12px;color:var(--text-dim);text-align:center;margin-top:16px">' + ASOCIACIONES_DATA.length + ' registro' + (ASOCIACIONES_DATA.length !== 1 ? 's' : '') + '</div>';
 }
 
@@ -495,24 +514,33 @@ async function exportarAsociacionesExcel() {
   const s = document.createElement('style');
   s.id = 'asoc-styles';
   s.textContent = `
-    /* Filas agrupadas por provincia (un solo nivel) */
-    .asoc-provs { display:flex; flex-direction:column; gap:22px; }
-    .asoc-prov-cab { display:flex; align-items:center; gap:10px; margin-bottom:12px; }
-    .asoc-prov-ico { width:34px; height:34px; border-radius:10px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
-    .asoc-prov-ico svg { width:17px; height:17px; }
-    .asoc-prov-nom { font-size:14px; font-weight:800; color:var(--text); text-transform:uppercase; letter-spacing:.4px; }
-    .asoc-prov-count { font-size:11px; font-weight:600; color:var(--text-dim); background:rgba(0,0,0,.04); padding:3px 10px; border-radius:20px; }
-    .asoc-prov-lista { display:flex; flex-direction:column; gap:10px; }
+    /* ── Una tarjeta a ancho completo por provincia (estilo Compradores) ── */
+    .asoc-lvlwrap { display:flex; flex-direction:column; gap:18px; }
+    .asoc-lvlcard { padding:20px 22px; }
+    .asoc-lvlcard-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+    .asoc-lvlcard-badge { display:flex; align-items:center; gap:10px; min-width:0; }
+    .asoc-lvlcard-acc { width:4px; height:22px; border-radius:3px; flex-shrink:0; }
+    .asoc-lvlcard-name { font-size:14.5px; font-weight:700; letter-spacing:.2px; color:var(--text); text-transform:uppercase; }
+    .asoc-lvlcard-desc { font-size:11.5px; color:var(--text-muted); font-weight:600; margin-top:1px; }
+    .asoc-lvlcard-cnt { font-size:11.5px; color:var(--text-muted); font-weight:600; white-space:nowrap; flex-shrink:0; }
 
-    .asoc-row { display:flex; align-items:center; gap:14px; width:100%; text-align:left; background:var(--surface); border:1px solid var(--border); border-radius:15px; padding:13px 18px; cursor:pointer; transition:box-shadow .15s,transform .12s,border-color .15s; }
-    .asoc-row:hover { box-shadow:0 6px 18px rgba(0,0,0,.08); transform:translateY(-2px); border-color:transparent; }
-    .asoc-row-ico { width:40px; height:40px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; }
-    .asoc-row-ico svg { width:19px; height:19px; }
-    .asoc-row-nom { flex:1; min-width:0; font-size:14px; font-weight:700; color:var(--text); line-height:1.3; }
-    .asoc-row-right { display:flex; align-items:center; gap:12px; flex-shrink:0; }
-    .asoc-row-pill { font-size:12.5px; font-weight:700; padding:5px 12px; border-radius:20px; white-space:nowrap; }
-    .asoc-row-pill-0 { color:var(--text-dim); background:rgba(0,0,0,.05); }
-    .asoc-row-acts { display:flex; gap:5px; }
+    .asoc-rows { margin-top:10px; }
+    .asoc-lrow { display:flex; align-items:center; gap:13px; padding:11px 4px; cursor:pointer; border-radius:10px; transition:background .13s; }
+    .asoc-lrow + .asoc-lrow { border-top:1px solid #eef1f6; }
+    .asoc-lrow:hover { background:#f7f9fc; }
+    .asoc-r-ava { width:38px; height:38px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:800; letter-spacing:.3px; }
+    .asoc-r-body { flex:1; min-width:0; display:flex; flex-direction:column; }
+    .asoc-r-top { display:flex; align-items:center; gap:8px; min-width:0; }
+    .asoc-r-name { font-size:13.5px; font-weight:600; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .asoc-r-meta { font-size:11.5px; color:var(--text-muted); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px; }
+    .asoc-r-right { display:flex; align-items:center; gap:10px; flex-shrink:0; }
+    .asoc-r-pill { font-size:12px; font-weight:700; padding:4px 11px; border-radius:20px; white-space:nowrap; }
+    .asoc-r-pill-0 { color:var(--text-dim); background:rgba(0,0,0,.05); }
+    .asoc-r-acts { flex-shrink:0; display:flex; gap:4px; opacity:0; transition:opacity .14s; }
+    .asoc-lrow:hover .asoc-r-acts { opacity:1; }
+    .asoc-abtn { width:32px; height:32px; border-radius:9px; border:none; background:#eef1f6; color:var(--text-muted); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:.14s; }
+    .asoc-abtn svg { width:15px; height:15px; } .asoc-abtn:hover { background:#e2e7f0; color:var(--text); }
+    .asoc-abtn.del { color:#EF4444; background:rgba(239,68,68,.09); } .asoc-abtn.del:hover { background:rgba(239,68,68,.16); }
 
     /* Casillas de PDF en el formulario */
     .asoc-docs { display:flex; flex-direction:column; gap:10px; }
@@ -556,10 +584,8 @@ async function exportarAsociacionesExcel() {
     .asoc-f-pend span { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .asoc-f-pend small { margin-left:auto; font-size:10.5px; color:var(--text-dim); white-space:nowrap; flex-shrink:0; }
 
-    @media (max-width:768px) {
-      .asoc-row { padding:12px 14px; gap:11px; }
-      .asoc-row-ico { width:36px; height:36px; }
-      .asoc-row-right { gap:8px; }
+    @media (max-width:900px) {
+      .asoc-r-acts { opacity:1; }
     }
   `;
   document.head.appendChild(s);
