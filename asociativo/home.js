@@ -402,8 +402,8 @@ const HOME = (() => {
       chart: Object.assign({}, G_APEX_BASE, { type: 'bar', height: 290 }),
       series: [{ name: 'Asociaciones', data: d.values }],
       colors: d.colors,
-      plotOptions: { bar: { distributed: true, columnWidth: '55%', borderRadius: 8, borderRadiusApplication: 'end', dataLabels: { position: 'top' } } },
-      dataLabels: { enabled: true, offsetY: -20, formatter: function (v) { return fmtNum(v); }, style: { fontSize: '13px', fontWeight: 700, colors: ['#555e6d'] } },
+      plotOptions: { bar: { distributed: true, columnWidth: '55%', borderRadius: 8, borderRadiusApplication: 'end' } },
+      dataLabels: { enabled: false },   // el número sale solo al pasar el cursor (tooltip)
       xaxis: { categories: d.names.map(function (n) { return cortas[n] || n; }), axisBorder: { show: false }, axisTicks: { show: false }, labels: { style: { colors: '#555e6d', fontSize: '12px', fontWeight: 600 } } },
       yaxis: { min: 0, forceNiceScale: true, labels: { formatter: function (v) { return Math.round(v); }, style: { colors: '#a4abba', fontSize: '11px' } } },
       grid: { borderColor: '#eef1f7', padding: { top: 10 } },
@@ -462,7 +462,7 @@ const HOME = (() => {
       colors: d.colors,
       plotOptions: { treemap: { distributed: true, enableShades: false } },
       stroke: { width: 3, colors: ['#ffffff'] },
-      dataLabels: { enabled: true, style: { fontSize: '12.5px', fontWeight: 700, colors: ['#ffffff'] }, formatter: function (text, op) { return [text, op.value]; } },
+      dataLabels: { enabled: true, style: { fontSize: '12.5px', fontWeight: 700, colors: ['#ffffff'] }, formatter: function (text) { return text; } },   // solo el nombre; el número sale en el tooltip
       legend: { show: false },
       tooltip: { y: { formatter: function (v, opts) { const p = d.asistentes[opts.dataPointIndex] || 0; return v + ' encuentro' + (v === 1 ? '' : 's') + ' · ' + fmtNum(p) + ' participantes'; } } },
     });
