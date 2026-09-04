@@ -212,13 +212,11 @@ function renderTablaAsociaciones() {
       ? '<span class="asoc-r-pill" style="background:' + _asocRgba(pillCol, 0.14) + ';color:' + pillCol + '">' + cnt + '/' + ASOC_DOCS_TOTAL + '</span>'
       : '<span class="asoc-r-pill asoc-r-pill-0">' + cnt + '/' + ASOC_DOCS_TOTAL + '</span>';
     const cat = categoriaVigente(a.id_asociacion);
-    const nrec = parseFloat(a.num_recicladores) || 0;
-    const meta = nrec + ' reciclador' + (nrec !== 1 ? 'es' : '') + (cat ? ' · ' + esc(cat) : '');
     return '<div class="asoc-lrow" onclick="verAsociacion(\'' + docId + '\')">' +
       '<span class="asoc-r-ava" style="background:' + _asocRgba(col, 0.12) + ';color:' + col + '">' + esc(_inicialesAsoc(a.nombre)) + '</span>' +
       '<span class="asoc-r-body">' +
         '<span class="asoc-r-top"><b class="asoc-r-name">' + esc(a.nombre || '—') + '</b></span>' +
-        '<span class="asoc-r-meta">' + meta + '</span>' +
+        '<span class="asoc-r-meta">' + esc(cat || 'Pendiente') + '</span>' +
       '</span>' +
       '<span class="asoc-r-right">' + pill +
         '<span class="asoc-r-acts">' + acciones(a) + '</span>' +
@@ -230,13 +228,11 @@ function renderTablaAsociaciones() {
   const cuerpo = provs.map(function (prov) {
     const col = _provColorAsoc(prov);
     const lista = grupos[prov].slice().sort(function (a, b) { return (a.nombre || '').localeCompare(b.nombre || '', 'es'); });
-    const totRec = lista.reduce(function (s, a) { return s + (parseFloat(a.num_recicladores) || 0); }, 0);
     return '<div class="card asoc-lvlcard">' +
       '<div class="asoc-lvlcard-head">' +
         '<div class="asoc-lvlcard-badge">' +
           '<span class="asoc-lvlcard-acc" style="background:' + col + '"></span>' +
-          '<div><div class="asoc-lvlcard-name">' + esc(prov) + '</div>' +
-            '<div class="asoc-lvlcard-desc">' + totRec + ' reciclador' + (totRec !== 1 ? 'es' : '') + ' en total</div></div>' +
+          '<div><div class="asoc-lvlcard-name">' + esc(prov) + '</div></div>' +
         '</div>' +
         '<div class="asoc-lvlcard-cnt">' + lista.length + ' asociaci' + (lista.length !== 1 ? 'ones' : 'ón') + '</div>' +
       '</div>' +
@@ -536,8 +532,7 @@ async function exportarAsociacionesExcel() {
     .asoc-r-right { display:flex; align-items:center; gap:10px; flex-shrink:0; }
     .asoc-r-pill { font-size:12px; font-weight:700; padding:4px 11px; border-radius:20px; white-space:nowrap; }
     .asoc-r-pill-0 { color:var(--text-dim); background:rgba(0,0,0,.05); }
-    .asoc-r-acts { flex-shrink:0; display:flex; gap:4px; opacity:0; transition:opacity .14s; }
-    .asoc-lrow:hover .asoc-r-acts { opacity:1; }
+    .asoc-r-acts { flex-shrink:0; display:flex; gap:4px; }
     .asoc-abtn { width:32px; height:32px; border-radius:9px; border:none; background:#eef1f6; color:var(--text-muted); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:.14s; }
     .asoc-abtn svg { width:15px; height:15px; } .asoc-abtn:hover { background:#e2e7f0; color:var(--text); }
     .asoc-abtn.del { color:#EF4444; background:rgba(239,68,68,.09); } .asoc-abtn.del:hover { background:rgba(239,68,68,.16); }
@@ -584,9 +579,6 @@ async function exportarAsociacionesExcel() {
     .asoc-f-pend span { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .asoc-f-pend small { margin-left:auto; font-size:10.5px; color:var(--text-dim); white-space:nowrap; flex-shrink:0; }
 
-    @media (max-width:900px) {
-      .asoc-r-acts { opacity:1; }
-    }
   `;
   document.head.appendChild(s);
 })();
