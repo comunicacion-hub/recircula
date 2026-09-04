@@ -2,10 +2,12 @@
 // DASHBOARD ASOCIATIVO — home.js (sección "Gráficos")
 // Línea visual unificada con Dashboard Ambiental (ReCircula 360).
 // Simetría, alineación precisa y variedad analítica:
-//   · Tarjeta superior de Totales (4 KPIs ejecutivos con sparklines)
-//   · Fila 1: Categoría de asociaciones (Donut) + Provincias (Barras H)
-//   · Fila 2: Estado asociativo (Radar 5 módulos) + Tipos de encuentro (Donut)
+//   · Tarjeta superior de Totales (4 KPIs ejecutivos)
+//   · Fila 1: Categoría de asociaciones (Barras V) + Provincias (Barras H)
+//   · Fila 2: Estado asociativo (Radar 5 módulos) + Tipos de encuentro (Treemap)
 //   · Fila 3: Evolución mensual combinada (Encuentros y Asistencia)
+// En pantallas chicas la sección se escala en bloque (no se reacomoda) para
+// evitar colisiones — ver _fitCharts().
 // ============================================================
 
 const HOME = (() => {
@@ -36,6 +38,12 @@ const HOME = (() => {
     fontFamily: 'Outfit, sans-serif',
     toolbar: { show: false },
     animations: { enabled: true, easing: 'easeinout', speed: 700 },
+    // Al montar/actualizar cada chart cambia el alto del bloque: resincroniza el
+    // contenedor escalado para que no queden huecos ni cortes en pantallas chicas.
+    events: {
+      mounted: function () { _syncFitHeight(); },
+      updated: function () { _syncFitHeight(); },
+    },
   };
 
   const MODULOS = [
@@ -71,6 +79,53 @@ const HOME = (() => {
   }
 
   function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+
+  // ── Ajuste a pantallas chicas ──
+  // En vez de reacomodar la grilla (que provocaba colisiones), mantenemos el
+  // layout de escritorio a un ancho de diseño fijo y escalamos toda la tarjeta
+  // proporcionalmente para que quepa sin romperse.
+  const _DESIGN_W = 1040;
+  let _fitScale = 1;
+  let _fitRO = null;
+  function _syncFitHeight() {
+    const fit = document.getElementById('home-fit');
+    const wrap = document.getElementById('home-charts');
+    if (!fit || !wrap) return;
+    // El transform no cambia offsetHeight (alto natural sin escalar) → alto real = natural × escala.
+    fit.style.height = _fitScale < 1 ? Math.ceil(wrap.offsetHeight * _fitScale) + 'px' : '';
+  }
+  function _fitCharts() {
+    const fit = document.getElementById('home-fit');
+    const wrap = document.getElementById('home-charts');
+    if (!fit || !wrap) return;
+    const avail = fit.clientWidth;
+    if (!avail) return;
+    if (avail >= _DESIGN_W) {
+      _fitScale = 1;
+      wrap.style.width = ''; wrap.style.transform = '';
+      fit.classList.remove('is-scaled');
+      fit.style.height = '';
+    } else {
+      _fitScale = avail / _DESIGN_W;
+      wrap.style.width = _DESIGN_W + 'px';
+      wrap.style.transformOrigin = 'top left';
+      wrap.style.transform = 'scale(' + _fitScale.toFixed(4) + ')';
+      fit.classList.add('is-scaled');
+      _syncFitHeight();
+    }
+    // Los ApexCharts montan de forma asíncrona y cambian el alto natural del wrap:
+    // observamos ese cambio para mantener el alto del contenedor siempre correcto.
+    if (!_fitRO && 'ResizeObserver' in window) _fitRO = new ResizeObserver(_syncFitHeight);
+    if (_fitRO) { try { _fitRO.disconnect(); } catch (e) {} _fitRO.observe(wrap); }
+    setTimeout(_syncFitHeight, 300);
+    setTimeout(_syncFitHeight, 800);
+  }
+  function _bindFitResize() {
+    if (window._homeFitBound) return;
+    window._homeFitBound = true;
+    let t;
+    window.addEventListener('resize', function () { clearTimeout(t); t = setTimeout(_fitCharts, 120); });
+  }
 
   // ── Filtros y colecciones ──
   function _asociacionesFiltradas() {
@@ -286,7 +341,7 @@ const HOME = (() => {
         '</div>' +
       '</div>' +
 
-      '<div class="g-wrap" id="home-charts">' +
+      '<div class="g-fit" id="home-fit"><div class="g-wrap" id="home-charts">' +
 
         // ── Tarjeta superior de Totales (4 KPIs simétricos) ──
         '<div class="card g-tot" id="home-totales">' +
@@ -352,11 +407,13 @@ const HOME = (() => {
           '<div class="g-chart-hint">Pasa el cursor para ver el detalle mensual · interactúa con la leyenda</div>' +
         '</div>' +
 
-      '</div>';
+      '</div></div>';
 
     document.getElementById('main-content').innerHTML = html;
     updateFilterBadge('home');
-    _initCharts();
+    _fitCharts();      // fija el ancho de diseño antes de dibujar (para que los charts maqueten bien)
+    _initCharts();     // dibuja y, al final, reajusta el alto del escalado
+    _bindFitResize();
   }
 
   function _kpiSeg(idx, ico, color, lbl, valTxt, pillTxt) {
@@ -387,6 +444,7 @@ const HOME = (() => {
     _renderRadarEstado();         // radar
     _renderTiposEncuentro();      // treemap
     _renderEvolucion();           // combo columnas + área
+    requestAnimationFrame(_fitCharts);  // reajusta el escalado al alto real de los charts
   }
 
   // ── Gráfico 1: Categoría de asociaciones (barras verticales) ──
@@ -434,7 +492,7 @@ const HOME = (() => {
     const d = _estadoAsociativo();
     if (!d.count) { el.innerHTML = '<div class="empty-state"><p>Sin diagnósticos registrados</p></div>'; return; }
     _push(el, {
-      chart: Object.assign({}, G_APEX_BASE, { type: 'radar', height: 330, offsetY: 6 }),
+      chart: Object.assign({}, G_APEX_BASE, { type: 'radar', height: 350, offsetY: 4 }),
       series: [{ name: 'Madurez promedio', data: d.values }],
       labels: d.names, colors: [G_INDIGO],
       fill: { opacity: 0.26, colors: [G_INDIGO] },
@@ -443,7 +501,7 @@ const HOME = (() => {
       grid: { padding: { top: 0, bottom: 0, left: 0, right: 0 } },
       yaxis: { min: 0, max: 100, tickAmount: 4, labels: { formatter: function (v) { return Math.round(v) + '%'; }, style: { colors: '#a4abba', fontSize: '10px' } } },
       xaxis: { labels: { style: { colors: ['#333', '#333', '#333', '#333', '#333'], fontSize: '12px', fontWeight: 600 } } },
-      plotOptions: { radar: { offsetY: 4, polygons: { strokeColors: '#eef1f7', connectorColors: '#eef1f7', fill: { colors: ['#fafbfe', '#ffffff'] } } } },
+      plotOptions: { radar: { size: 140, offsetY: 6, polygons: { strokeColors: '#eef1f7', connectorColors: '#eef1f7', fill: { colors: ['#fafbfe', '#ffffff'] } } } },
       tooltip: { y: { formatter: function (v) { return fmtNum(v, 1) + '%'; } } },
     });
   }
@@ -454,7 +512,7 @@ const HOME = (() => {
     const d = _tiposEncuentroData();
     if (!d.total) { el.innerHTML = '<div class="empty-state"><p>Sin encuentros registrados</p></div>'; return; }
     _push(el, {
-      chart: Object.assign({}, G_APEX_BASE, { type: 'treemap', height: 330 }),
+      chart: Object.assign({}, G_APEX_BASE, { type: 'treemap', height: 350 }),
       series: [{ data: d.names.map(function (n, i) { return { x: n, y: d.values[i] }; }) }],
       colors: d.colors,
       plotOptions: { treemap: { distributed: true, enableShades: false } },

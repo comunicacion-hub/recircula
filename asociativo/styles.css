@@ -1085,17 +1085,13 @@ body {
 .apexcharts-tooltip-title { background: var(--surface) !important; border-bottom: 1px solid var(--border) !important; font-weight: 700 !important; }
 .apexcharts-legend-marker { margin-right: 6px !important; }
 
-/* ── Responsive del Dashboard ── */
-@media (max-width: 1040px) {
-  .g-duo { grid-template-columns: 1fr; }
-  .g-tot { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px 22px; }
-  .g-tot-seg { padding: 0; }
-  .g-tot-seg + .g-tot-seg { border-left: none; }
-}
-@media (max-width: 640px) {
-  .g-tot { grid-template-columns: 1fr; gap: 18px; }
-  .g-tot-seg + .g-tot-seg { border-top: 1px solid var(--border); padding-top: 16px; }
-}
+/* ── Responsive del Dashboard ──
+   En pantallas chicas NO se reacomoda la grilla (eso provocaba colisiones):
+   home.js mantiene el layout de escritorio a un ancho de diseño fijo (1040px)
+   y escala toda la sección con transform para que quepa intacta. El contenedor
+   .g-fit recorta el desborde del box sin escalar. */
+.g-fit { min-width: 0; }
+.g-fit.is-scaled { overflow: hidden; }
 
 /* ============================================================
    ACCESOS
