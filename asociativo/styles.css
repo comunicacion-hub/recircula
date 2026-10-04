@@ -243,6 +243,7 @@ body {
 .mod-menu-item.current b { color: var(--blue2); }
 .mod-menu-check { display: inline-flex; }
 .mod-menu-check svg { width: 16px; height: 16px; }
+.mod-menu-sep { height: 1px; background: var(--border); margin: 4px 8px; }
 
 .page-title,
 .page-sub { display: none; }

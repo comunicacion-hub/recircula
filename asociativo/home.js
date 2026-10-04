@@ -283,7 +283,7 @@ const HOME = (() => {
             icoHTML('filter') +
             '<span class="filter-badge" id="home-filter-badge" style="display:none">0</span>' +
           '</button>' +
-          '<button class="hdr-circle" onclick="volverAlHub()" title="Volver al Hub" aria-label="Volver al Hub">' +
+          '<button class="hdr-circle" onclick="cerrarSesion()" title="Cerrar sesión" aria-label="Cerrar sesión">' +
             icoHTML('logout') +
           '</button>' +
         '</div>' +

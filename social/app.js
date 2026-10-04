@@ -411,8 +411,46 @@ async function establecerSesion(user) {
   }
 }
 
-// Vuelve al Hub SIN cerrar sesión.
-function volverAlHub() { window.location.href = HUB_URL; }
+// ── Períodos visibles (se eligen en recircula / configuraciones) ──
+// Firestore: Configuracion/periodos → { ocultos: { '2026': [1, 2, 3, 4] } }
+// Un registro con año + mes se oculta si ese mes está oculto; uno que solo
+// tiene año, si el año entero está oculto. Lo oculto no aparece en ninguna
+// parte (tarjetas, gráficos, totales, tablas ni exportaciones).
+// Bloque idéntico en ambiental, asociativo y social.
+const PERIODOS_DEFECTO = { '2026': [1, 2, 3, 4] };   // hasta que se guarde desde configuraciones
+let PERIODOS_OCULTOS = PERIODOS_DEFECTO;
+
+function _mesANumero(mes) {
+  const m = String(mes || '').trim().toLowerCase();
+  const nombres = ['enero','febrero','marzo','abril','mayo','junio',
+                   'julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const idx = nombres.indexOf(m);
+  if (idx >= 0) return idx + 1;
+  const n = parseInt(m, 10);               // por si viniera numérico ("04")
+  return (!isNaN(n) && n >= 1 && n <= 12) ? n : 0;
+}
+
+async function cargarPeriodosOcultos() {
+  try {
+    const docs = await fsGetAll('Configuracion');
+    const d = docs.find(function(x) { return x._docId === 'periodos'; });
+    if (d && d.ocultos && typeof d.ocultos === 'object') PERIODOS_OCULTOS = d.ocultos;
+  } catch (e) { console.warn('cargarPeriodosOcultos:', e); }
+}
+
+// mes: número 1-12, nombre ("Abril") o vacío si el registro solo tiene año
+function periodoOculto(anio, mes) {
+  const meses = PERIODOS_OCULTOS[String(parseInt(anio, 10))];
+  if (!Array.isArray(meses) || !meses.length) return false;
+  const m = _mesANumero(mes);
+  return m ? meses.map(Number).indexOf(m) >= 0 : meses.length >= 12;
+}
+
+// fecha "AAAA-MM-DD"
+function fechaOculta(fecha) {
+  const p = String(fecha || '').substring(0, 10).split('-');
+  return p.length >= 2 && !!p[0] && periodoOculto(p[0], p[1]);
+}
 
 function puedeEditar() { return SESSION && SESSION.rol !== 'Visualizador'; }
 
@@ -429,13 +467,19 @@ async function cargarDatos() {
       fsGetAll('Alianzas'),
       fsGetAll('CajasAhorro'),
       fsGetAll('Hitos'),
+      cargarPeriodosOcultos(),
     ]);
     CAT.recicladores = res[0].map(recicladorFromFS);
     CAT.asocAmbiente = res[1].map(asocAmbienteFromFS).sort(byNombre);
     CAT.asociaciones = res[2].map(asociacionMiniFromFS);
-    CAT.alianzas     = res[3].map(alianzaFromFS);
-    CAT.cajas        = res[4].map(cajaFromFS);
-    CAT.hitos        = res[5].map(hitoFromFS);
+    // Se quitan los períodos ocultos en configuraciones (ver periodoOculto).
+    // Recicladores y asociaciones son registros, no datos de un período: no se filtran.
+    CAT.alianzas     = res[3].map(alianzaFromFS).filter(function (a) { return !periodoOculto(a.anio); });
+    CAT.cajas        = res[4].map(cajaFromFS).filter(function (c) { return !periodoOculto(c.anio); });
+    CAT.hitos        = res[5].map(hitoFromFS).filter(function (h) {
+      if (h.anio && h.mes) return !periodoOculto(h.anio, h.mes);
+      return h.fecha ? !fechaOculta(h.fecha) : !periodoOculto(h.anio);
+    });
     console.log('[Social] datos:', {
       recicladores: CAT.recicladores.length, asocAmbiente: CAT.asocAmbiente.length,
       asociaciones: CAT.asociaciones.length, alianzas: CAT.alianzas.length, cajas: CAT.cajas.length,
@@ -475,8 +519,10 @@ async function cargarJsPDF() {
 
 async function iniciarApp() {
   initModSwitch();
-  cargarModulosNav();   // en paralelo: no bloquea la carga de datos
+  const pModulos = cargarModulosNav();   // en paralelo con la carga de datos
   await cargarDatos();
+  await pModulos;
+  if (MODULO_BLOQUEADO) { salirDeModuloBloqueado(); return; }
   mostrarApp();
   pintarIconos();
   navTo('home');
@@ -514,12 +560,17 @@ function navTo(seccion) {
 
 // ============================================================
 // SELECTOR DE MÓDULOS — "recircula / social ⌄" en la topbar
-// La lista sale de la colección Modulos: primero la caché que deja
-// el Hub (mismo dominio), y si no está, directo de Firestore.
-// Respeta los permisos del usuario igual que el Hub.
+// La lista sale de la colección Modulos: primero la caché que deja el
+// inicio de sesión (mismo dominio) y, si no está, directo de Firestore.
+// Cada usuario ve solo sus dashboards; el Admin además ve
+// "configuraciones". Bloque idéntico en ambiental, asociativo, social
+// y configuraciones (solo cambia MODULO_ACTUAL).
 // ============================================================
 
-let MODULOS_NAV = [];   // [{ slug, url }] módulos activos que el usuario puede ver
+const CONFIG_URL = HUB_URL + '/configuraciones/';
+let MODULOS_NAV = [];        // [{ id, slug, url }] módulos activos que el usuario puede ver
+let MODULO_BLOQUEADO = false; // el usuario no tiene asignado el dashboard en el que está
+let _esAdminNav = false;
 
 function _slugModulo(url) {
   try {
@@ -535,20 +586,18 @@ function _leerJSON(storage, key) {
 
 async function cargarModulosNav() {
   let todos = null;
-  const hubData = _leerJSON(localStorage, 'rcr_hub_data');
-  if (hubData && Array.isArray(hubData.modulos) && hubData.modulos.length) todos = hubData.modulos;
+  const cache = _leerJSON(localStorage, 'rcr_hub_data');
+  if (cache && Array.isArray(cache.modulos) && cache.modulos.length) todos = cache.modulos;
   if (!todos) {
     try { todos = await fsGetAll('Modulos'); }
     catch (e) { console.warn('cargarModulosNav:', e); todos = []; }
   }
 
-  // Permisos: la sesión que pasa el Hub trae rol + modulos; si no, la del Hub guardada
-  const hubSes = _leerJSON(sessionStorage, 'rcr_hub_session') || {};
-  const rol      = (SESSION && SESSION.rol) || hubSes.rol;
-  const externo  = (SESSION && SESSION.externo) || hubSes.externo;
-  const permitidos = (SESSION && Array.isArray(SESSION.modulos)) ? SESSION.modulos
-                   : (Array.isArray(hubSes.modulos) ? hubSes.modulos : []);
-  const verTodos = rol === 'Admin' || externo;
+  // Permisos: la sesión del inicio de sesión trae rol + modulos
+  const ses = SESSION || _leerJSON(sessionStorage, 'rcr_session') || {};
+  const permitidos = Array.isArray(ses.modulos) ? ses.modulos : [];
+  _esAdminNav = ses.rol === 'Admin';
+  const verTodos = _esAdminNav || ses.externo;
 
   MODULOS_NAV = todos
     .filter(function(m) {
@@ -560,11 +609,27 @@ async function cargarModulosNav() {
     .filter(function(m) { return m.slug; })
     .sort(function(a, b) { return String(a.id).localeCompare(String(b.id)); });
 
+  // Si este dashboard existe en Modulos pero el usuario no lo tiene asignado → bloqueado
+  const existe = todos.some(function(m) { return m.url && _slugModulo(String(m.url).trim()) === MODULO_ACTUAL; });
+  MODULO_BLOQUEADO = !_esAdminNav && existe && !MODULOS_NAV.some(function(m) { return m.slug === MODULO_ACTUAL; });
+
   document.querySelectorAll('.mod-switch').forEach(_pintarModSwitch);
 }
 
+// Lleva al usuario a un dashboard que sí tenga asignado (o al inicio de sesión)
+function salirDeModuloBloqueado() {
+  const destino = MODULOS_NAV.find(function(m) { return m.slug !== MODULO_ACTUAL; });
+  window.location.replace(destino ? destino.url : HUB_URL);
+}
+
+function _opcionesMenu() {
+  const ops = MODULOS_NAV.slice();
+  if (_esAdminNav) ops.push({ id: '', slug: 'configuraciones', url: CONFIG_URL, sep: true });
+  return ops;
+}
+
 function _hayOtrosModulos() {
-  return MODULOS_NAV.some(function(m) { return m.slug !== MODULO_ACTUAL; });
+  return _opcionesMenu().some(function(m) { return m.slug !== MODULO_ACTUAL; });
 }
 
 function _pintarModSwitch(btn) {
@@ -612,9 +677,10 @@ function toggleModMenu(btn) {
   if (menu.classList.contains('open') && _modMenuBtn === btn) { closeModMenu(); return; }
   if (!_hayOtrosModulos()) return;
 
-  menu.innerHTML = MODULOS_NAV.map(function(m) {
+  menu.innerHTML = _opcionesMenu().map(function(m) {
     const actual = m.slug === MODULO_ACTUAL;
-    return '<a class="mod-menu-item' + (actual ? ' current' : '') + '" role="menuitem"' +
+    return (m.sep ? '<div class="mod-menu-sep"></div>' : '') +
+      '<a class="mod-menu-item' + (actual ? ' current' : '') + '" role="menuitem"' +
       (actual ? ' aria-current="page"' : ' href="' + esc(m.url) + '"') + '>' +
         '<span><b>recircula</b> / ' + esc(m.slug) + '</span>' +
         (actual ? '<span class="mod-menu-check">' + icoHTML('check') + '</span>' : '') +
@@ -650,6 +716,17 @@ document.addEventListener('click', function(e) {
 });
 document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModMenu(); });
 window.addEventListener('resize', closeModMenu);
+
+// Cerrar sesión: cierra Firebase, limpia lo guardado y vuelve al inicio de sesión
+async function cerrarSesion() {
+  try { await window.fb.signOut(window.fb.auth); } catch (e) { console.warn('signOut:', e); }
+  try {
+    sessionStorage.clear();
+    localStorage.removeItem('rcr_hub_data');
+    localStorage.removeItem('rcr_hub_cache_time');
+  } catch (e) {}
+  window.location.href = HUB_URL;
+}
 
 // ============================================================
 // FILTER DRAWER — compartido entre pantallas

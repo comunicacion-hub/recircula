@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Configuraciones · ReCircula</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script type="module" src="firebase-init.js"></script>
+</head>
+<body>
+
+<!-- LOADING -->
+<div id="screen-loading">
+  <div class="spinner"></div>
+  <div class="load-text">Cargando ...</div>
+</div>
+
+<!-- APP -->
+<div id="screen-app" class="hidden">
+
+  <div class="main-area">
+    <div class="main-content" id="main-content"></div>
+  </div>
+
+  <!-- NAV (cápsula lateral en escritorio, barra abajo en móvil) -->
+  <nav class="bottom-nav" id="bottom-nav">
+    <button class="bn-item active" id="nav-usuarios" onclick="navTo('usuarios')" title="Usuarios"><span class="bn-label">Usuarios</span></button>
+    <button class="bn-item"        id="nav-modulos"  onclick="navTo('modulos')"  title="Módulos"><span class="bn-label">Módulos</span></button>
+    <button class="bn-item"        id="nav-periodos" onclick="navTo('periodos')" title="Períodos"><span class="bn-label">Períodos</span></button>
+  </nav>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- Scripts -->
+<script src="icons.js"></script>
+<script src="app.js"></script>
+
+</body>
+</html>

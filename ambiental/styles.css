@@ -267,6 +267,7 @@ body {
 .mod-menu-item.current b { color: var(--blue2); }
 .mod-menu-check { display: inline-flex; }
 .mod-menu-check svg { width: 16px; height: 16px; }
+.mod-menu-sep { height: 1px; background: var(--border); margin: 4px 8px; }
 
 /* El título grande de sección se oculta (Mi RCR hace lo mismo con
    .section-title). Las secciones pueden seguir pintándolo sin efecto. */

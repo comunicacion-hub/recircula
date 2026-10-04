@@ -130,7 +130,7 @@ const HOME = (() => {
           '<button class="hdr-circle" onclick="openFilterDrawer(\'home\', this)" title="Filtros" aria-label="Filtros">' +
             icoHTML('filter') + '<span class="filter-badge" id="home-filter-badge" style="display:none"></span>' +
           '</button>' +
-          '<button class="hdr-circle" onclick="volverAlHub()" title="Volver al Hub" aria-label="Volver al Hub">' +
+          '<button class="hdr-circle" onclick="cerrarSesion()" title="Cerrar sesión" aria-label="Cerrar sesión">' +
             icoHTML('logout') +
           '</button>' +
         '</div>' +

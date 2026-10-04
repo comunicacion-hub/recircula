@@ -127,7 +127,7 @@ async function renderDashboard() {
           icoHTML('sliders') +
           '<span class="filter-badge" id="badge-dashboard" style="display:none;">0</span>' +
         '</button>' +
-        '<button class="hdr-circle hdr-circle-danger" onclick="cerrarSesion()" title="Volver al Hub">' +
+        '<button class="hdr-circle hdr-circle-danger" onclick="cerrarSesion()" title="Cerrar sesión" aria-label="Cerrar sesión">' +
           icoHTML('logout') +
         '</button>' +
       '</div>' +
