@@ -20,6 +20,7 @@ function _dominioPermitido(email) {
   return e.endsWith('@' + DOMAIN) || _esVisualizadorExterno(email);
 }
 const HUB_URL = 'https://recircula.redesconrostro.org';
+const MODULO_ACTUAL = 'social';   // último segmento de su url en la colección Modulos
 
 // Carpetas raíz de Drive (ya creadas). Las subcarpetas se crean automáticamente.
 const DRIVE_PARENTS = {
@@ -387,20 +388,21 @@ async function establecerSesion(user) {
     if (snap.empty) {
       // Visualizador externo (Tesalia/personal): acceso de solo lectura automático, como el Hub
       if (_esVisualizadorExterno(user.email)) {
-        SESSION = { nombre: user.displayName || 'Visualizador', email: (user.email || '').toLowerCase(), rol: 'Visualizador' };
+        SESSION = { nombre: user.displayName || 'Visualizador', email: (user.email || '').toLowerCase(), rol: 'Visualizador', externo: true };
         sessionStorage.setItem('rcr_session', JSON.stringify(SESSION));
         return true;
       }
       return false;
     }
     const u = snap.docs[0].data();
-    SESSION = { nombre: u.nombre || user.displayName || 'Usuario', email: user.email, rol: u.rol || 'Visualizador' };
+    SESSION = { nombre: u.nombre || user.displayName || 'Usuario', email: user.email, rol: u.rol || 'Visualizador',
+                modulos: Array.isArray(u.modulos) ? u.modulos : [] };
     sessionStorage.setItem('rcr_session', JSON.stringify(SESSION));
     return true;
   } catch (e) {
     // Si falla la lectura pero es visualizador externo, permitir igual (solo lectura)
     if (_esVisualizadorExterno(user.email)) {
-      SESSION = { nombre: user.displayName || 'Visualizador', email: (user.email || '').toLowerCase(), rol: 'Visualizador' };
+      SESSION = { nombre: user.displayName || 'Visualizador', email: (user.email || '').toLowerCase(), rol: 'Visualizador', externo: true };
       sessionStorage.setItem('rcr_session', JSON.stringify(SESSION));
       return true;
     }
@@ -472,6 +474,8 @@ async function cargarJsPDF() {
 // ============================================================
 
 async function iniciarApp() {
+  initModSwitch();
+  cargarModulosNav();   // en paralelo: no bloquea la carga de datos
   await cargarDatos();
   mostrarApp();
   pintarIconos();
@@ -507,6 +511,145 @@ function navTo(seccion) {
   }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+
+// ============================================================
+// SELECTOR DE MÓDULOS — "recircula / social ⌄" en la topbar
+// La lista sale de la colección Modulos: primero la caché que deja
+// el Hub (mismo dominio), y si no está, directo de Firestore.
+// Respeta los permisos del usuario igual que el Hub.
+// ============================================================
+
+let MODULOS_NAV = [];   // [{ slug, url }] módulos activos que el usuario puede ver
+
+function _slugModulo(url) {
+  try {
+    const path = new URL(url, location.href).pathname
+      .replace(/\/index\.html?$/i, '').replace(/\/+$/, '');
+    return (path.split('/').pop() || '').toLowerCase();
+  } catch (e) { return ''; }
+}
+
+function _leerJSON(storage, key) {
+  try { return JSON.parse(storage.getItem(key) || 'null'); } catch (e) { return null; }
+}
+
+async function cargarModulosNav() {
+  let todos = null;
+  const hubData = _leerJSON(localStorage, 'rcr_hub_data');
+  if (hubData && Array.isArray(hubData.modulos) && hubData.modulos.length) todos = hubData.modulos;
+  if (!todos) {
+    try { todos = await fsGetAll('Modulos'); }
+    catch (e) { console.warn('cargarModulosNav:', e); todos = []; }
+  }
+
+  // Permisos: la sesión que pasa el Hub trae rol + modulos; si no, la del Hub guardada
+  const hubSes = _leerJSON(sessionStorage, 'rcr_hub_session') || {};
+  const rol      = (SESSION && SESSION.rol) || hubSes.rol;
+  const externo  = (SESSION && SESSION.externo) || hubSes.externo;
+  const permitidos = (SESSION && Array.isArray(SESSION.modulos)) ? SESSION.modulos
+                   : (Array.isArray(hubSes.modulos) ? hubSes.modulos : []);
+  const verTodos = rol === 'Admin' || externo;
+
+  MODULOS_NAV = todos
+    .filter(function(m) {
+      const activo = m.activo === true || m.activo === 'TRUE' || m.activo === 'true';
+      if (!activo || !m.url || !String(m.url).trim()) return false;
+      return verTodos || permitidos.indexOf(m.id_modulo) >= 0;
+    })
+    .map(function(m) { return { id: m.id_modulo || '', slug: _slugModulo(m.url), url: String(m.url).trim() }; })
+    .filter(function(m) { return m.slug; })
+    .sort(function(a, b) { return String(a.id).localeCompare(String(b.id)); });
+
+  document.querySelectorAll('.mod-switch').forEach(_pintarModSwitch);
+}
+
+function _hayOtrosModulos() {
+  return MODULOS_NAV.some(function(m) { return m.slug !== MODULO_ACTUAL; });
+}
+
+function _pintarModSwitch(btn) {
+  const multi = _hayOtrosModulos();
+  btn.classList.toggle('solo', !multi);
+  btn.disabled = !multi;
+  btn.setAttribute('aria-expanded', 'false');
+}
+
+// Cada sección pinta su propia .page-header; aquí se le inserta el selector
+// (reemplaza al breadcrumb que antes ponía el CSS con ::before/::after).
+function _injectModSwitch() {
+  document.querySelectorAll('#main-content > .page-header:not(.has-switch)').forEach(function(h) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'mod-switch';
+    btn.setAttribute('aria-haspopup', 'menu');
+    btn.innerHTML =
+      '<span class="mod-switch-brand">recircula</span>' +
+      '<span class="mod-switch-sec">&nbsp;/ ' + esc(MODULO_ACTUAL) + '</span>' +
+      '<span class="mod-switch-chev">' + icoHTML('chevDown') + '</span>';
+    btn.addEventListener('click', function(e) { e.stopPropagation(); toggleModMenu(btn); });
+    _pintarModSwitch(btn);
+    h.insertBefore(btn, h.firstChild);
+    h.classList.add('has-switch');
+  });
+}
+
+function initModSwitch() {
+  const main = document.getElementById('main-content');
+  if (main) new MutationObserver(_injectModSwitch).observe(main, { childList: true });
+
+  const menu = document.createElement('div');
+  menu.className = 'mod-menu';
+  menu.id = 'mod-menu';
+  menu.setAttribute('role', 'menu');
+  document.body.appendChild(menu);
+}
+
+let _modMenuBtn = null;
+
+function toggleModMenu(btn) {
+  const menu = document.getElementById('mod-menu');
+  if (!menu) return;
+  if (menu.classList.contains('open') && _modMenuBtn === btn) { closeModMenu(); return; }
+  if (!_hayOtrosModulos()) return;
+
+  menu.innerHTML = MODULOS_NAV.map(function(m) {
+    const actual = m.slug === MODULO_ACTUAL;
+    return '<a class="mod-menu-item' + (actual ? ' current' : '') + '" role="menuitem"' +
+      (actual ? ' aria-current="page"' : ' href="' + esc(m.url) + '"') + '>' +
+        '<span><b>recircula</b> / ' + esc(m.slug) + '</span>' +
+        (actual ? '<span class="mod-menu-check">' + icoHTML('check') + '</span>' : '') +
+      '</a>';
+  }).join('');
+  const cur = menu.querySelector('.current');
+  if (cur) cur.addEventListener('click', closeModMenu);
+
+  // Anclado bajo el botón (absoluto en el documento → acompaña al scroll)
+  const r = btn.getBoundingClientRect();
+  menu.style.top  = (r.bottom + window.scrollY + 10) + 'px';
+  menu.style.left = Math.max(16, r.left + window.scrollX - 10) + 'px';
+
+  _modMenuBtn = btn;
+  btn.setAttribute('aria-expanded', 'true');
+  btn.classList.add('open');
+  menu.classList.add('open');
+}
+
+function closeModMenu() {
+  const menu = document.getElementById('mod-menu');
+  if (menu) menu.classList.remove('open');
+  if (_modMenuBtn) {
+    _modMenuBtn.setAttribute('aria-expanded', 'false');
+    _modMenuBtn.classList.remove('open');
+  }
+  _modMenuBtn = null;
+}
+
+document.addEventListener('click', function(e) {
+  const menu = document.getElementById('mod-menu');
+  if (menu && menu.classList.contains('open') && !menu.contains(e.target)) closeModMenu();
+});
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModMenu(); });
+window.addEventListener('resize', closeModMenu);
 
 // ============================================================
 // FILTER DRAWER — compartido entre pantallas
