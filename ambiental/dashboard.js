@@ -20,10 +20,9 @@ let METAS = { PET: 811, Suave: 248, Duro: 377 };
 const FACTOR_CO2  = { PET: 2.17, Suave: 1.58, Duro: 1.42 };  // tCO₂e evitadas / TN
 const FACTOR_AGUA = { PET: 3000, Suave: 3930, Duro: 4900 };  // litros / TN
 
-// Materiales listados individualmente en "TN Recuperadas por material";
-// el resto se agrupa en "Otros materiales" (editable con el ⚙️ de la tarjeta)
+// Materiales listados individualmente en "TN Recuperados por Material" (lista
+// fija, sin ajuste); el resto se agrupa en "Otros materiales"
 const MATS_TORTA = ['PET','Plástico Duro','Plástico Suave','Cartón','Lata Aluminio','Vidrio'];
-let MATS_FILTRO_ACTIVOS = MATS_TORTA.slice();
 
 // ── Paleta de acento de la sección (índigo / ámbar / teal) ──
 const G_INDIGO = '#506CFF';
@@ -381,8 +380,7 @@ function renderContenidoDashboard() {
         '</div>' +
 
         '<div class="card">' +
-          '<div class="card-title"><span>TN Recuperados por Material</span>' +
-            '<button class="icon-btn" onclick="abrirFiltroMateriales()" title="Elegir materiales">' + icoHTML('settings') + '</button></div>' +
+          '<div class="card-title">TN Recuperados por Material</div>' +
           '<div class="g-body g-mat2">' + gMateriales(d.distribucion) + '</div>' +
         '</div>' +
 
@@ -511,7 +509,7 @@ function gMateriales(distribucion) {
   Object.keys(distribucion || {}).forEach(function(nombre) {
     const val = distribucion[nombre];
     if (!(val > 0)) return;
-    if (MATS_FILTRO_ACTIVOS.includes(nombre)) items.push({ nombre: nombre, val: val });
+    if (MATS_TORTA.includes(nombre)) items.push({ nombre: nombre, val: val });
     else otros += val;
   });
   items.sort(function(a, b) { return b.val - a.val; });
@@ -642,44 +640,6 @@ function _gMatSel(contId, todos) {
 
 function aplicarFiltroEvolucion() {
   EVOLUCION_MATS = Array.prototype.slice.call(document.querySelectorAll('#evo-chips .gmat-chip.on')).map(function(c) { return c.getAttribute('data-mat'); });
-  cerrarModal();
-  if (DASH_DATA) renderContenidoDashboard();
-}
-
-// ============================================================
-// FILTRO DE MATERIALES (multi-select sobre la torta)
-// ============================================================
-
-function abrirFiltroMateriales() {
-  const todosLosMats = (CAT.materiales || []).length
-    ? CAT.materiales.map(function(m) { return m['Nombre']; })
-    : ['PET','Plástico Duro','Plástico Suave','Cartón','Lata Aluminio','Vidrio'];
-
-  const chips = todosLosMats.map(function(m) { return _gMatChip(m, MATS_FILTRO_ACTIVOS.includes(m)); }).join('');
-
-  abrirModal(
-    '<div class="modal" style="max-width:440px">' +
-      '<div class="modal-head">' +
-        '<div><div class="modal-title">Filtrar materiales</div><div class="modal-sub">Selecciona los materiales a mostrar en la gráfica</div></div>' +
-        '<button class="modal-close" onclick="cerrarModal()"></button>' +
-      '</div>' +
-      '<div class="modal-body">' +
-        '<div style="display:flex;gap:8px;margin-bottom:14px">' +
-          '<button class="btn btn-glass btn-sm" onclick="_gMatSel(\'mats-chips\',true)">Todos</button>' +
-          '<button class="btn btn-glass btn-sm" onclick="_gMatSel(\'mats-chips\',false)">Ninguno</button>' +
-        '</div>' +
-        '<div class="filter-chips" id="mats-chips">' + chips + '</div>' +
-      '</div>' +
-      '<div class="modal-foot">' +
-        '<button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>' +
-        '<button class="btn btn-primary" onclick="aplicarFiltroMateriales()">Aplicar</button>' +
-      '</div>' +
-    '</div>'
-  );
-}
-
-function aplicarFiltroMateriales() {
-  MATS_FILTRO_ACTIVOS = Array.prototype.slice.call(document.querySelectorAll('#mats-chips .gmat-chip.on')).map(function(c) { return c.getAttribute('data-mat'); });
   cerrarModal();
   if (DASH_DATA) renderContenidoDashboard();
 }
