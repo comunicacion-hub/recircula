@@ -10,16 +10,19 @@ const PRECIOS = (() => {
   const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
   const MESES_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
-  // Meses que NO se muestran en Precios (0=Ene … 11=Dic). Oculta Enero–Abril
-  // en gráfico, tabla, tarjetas, detalle y exportación (aunque tengan datos).
-  const PR_MESES_OCULTOS = [0, 1, 2, 3];
-  const PR_MESES_PERMITIDOS = Array.from({ length: 12 }, (_, i) => i)
-    .filter(i => !PR_MESES_OCULTOS.includes(i));
-
-  // Meses realmente visibles = permitidos ∩ con algún precio registrado bajo
-  // los filtros activos. Se recalcula al procesar y al aplicar filtros, así
-  // las columnas/puntos de meses sin registrar no aparecen.
-  let PR_MESES_VIS = PR_MESES_PERMITIDOS.slice();
+  // Los meses ocultos se eligen en recircula / configuraciones (períodos): CAT.entregas
+  // ya llega sin ellos. (Antes aquí se ocultaba fijo Enero–Abril de TODOS los años.)
+  //
+  // Período = año + mes, como número ordenable: anio * 12 + mes (mes 0–11). Así
+  // junio 2025 y junio 2026 son columnas/puntos distintos (antes se promediaban juntos).
+  // PR_PER_VIS = períodos con algún precio bajo los filtros activos, en orden.
+  let PR_PER_VIS = [];
+  const _perMes  = (p) => p % 12;
+  const _perAnio = (p) => Math.floor(p / 12);
+  const _variosAnios = () => new Set(PR_PER_VIS.map(_perAnio)).size > 1;
+  // "May" (o "May 25" si se ven varios años) · completo: "Mayo" / "Mayo 2025"
+  const _lblPer = (p) => MESES[_perMes(p)] + (_variosAnios() ? ' ' + String(_perAnio(p)).slice(2) : '');
+  const _lblPerLargo = (p) => MESES_FULL[_perMes(p)] + (_variosAnios() ? ' ' + _perAnio(p) : '');
 
   // Paleta consistente por provincia (misma tríada índigo/ámbar/teal/violeta/rojo
   // que usan Pesos y Comprador). El color se asigna por orden alfabético de provincia
@@ -55,7 +58,8 @@ const PRECIOS = (() => {
     try {
       _procesar();
       if (!_datos.length) {
-        _render(_header() + '<div class="card"><p class="pr-empty">No hay entregas con precios cargados todavía.</p></div>');
+        // Sin datos no hay nada que filtrar ni exportar: el header va sin esos botones
+        _render(_header(true) + '<div class="card"><p class="pr-empty">No hay entregas con precios cargados todavía.</p></div>');
         return;
       }
       _registrarFiltros();
@@ -83,28 +87,28 @@ const PRECIOS = (() => {
       const mes = _mesAIndice(e['Mes']);
       if (mes === null) return; // sin mes válido → se omite
 
-      // Año operativo: parte de la Fecha de carga, pero si el mes operativo y
-      // el mes de carga difieren por medio año o más, la carga cruzó el límite
-      // de año (ej. diciembre cargado en enero) y se ajusta.
+      // Año operativo = campo Año (el mismo que usan Gráficos, Pesos y los períodos
+      // ocultos). Solo si falta se deduce de la Fecha de carga, ajustando cuando el
+      // mes operativo y el de carga difieren medio año o más (diciembre cargado en enero).
       let anio = null;
+      const a = parseInt(e['Año'], 10);
       const f = e['Fecha'] || '';
-      if (/^\d{4}-\d{2}/.test(f)) {
+      if (!isNaN(a) && a >= 2000) {
+        anio = a;
+      } else if (/^\d{4}-\d{2}/.test(f)) {
         const uy = parseInt(f.slice(0, 4), 10);          // año de carga
         const um = parseInt(f.slice(5, 7), 10) - 1;      // mes de carga (0–11)
         anio = uy;
         const diff = mes - um;
         if (diff >= 6) anio = uy - 1;        // operativo muy adelante → carga rodó al año siguiente
         else if (diff <= -6) anio = uy + 1;  // operativo muy atrás → registro anticipado
-      } else {
-        const a = parseInt(e['Año'], 10);    // sin Fecha válida → campo Año tal cual
-        if (!isNaN(a) && a >= 2000) anio = a;
       }
       if (anio === null || isNaN(anio)) return;
 
       const provincia = e['_provinciaAsociacion'] || e['Provincia'] || '—';
       _materiales.forEach(({ nombre }) => {
         const precio = parseFloat(e[nombre + ' Precio']);
-        if (!isNaN(precio) && precio > 0) rows.push({ provincia, anio, mes, material: nombre, precio });
+        if (!isNaN(precio) && precio > 0) rows.push({ provincia, anio, mes, per: anio * 12 + mes, material: nombre, precio });
       });
     });
 
@@ -135,10 +139,9 @@ const PRECIOS = (() => {
     return sel.filter(m => conDatos.has(m));
   }
 
-  // Recalcula PR_MESES_VIS: de los meses permitidos, deja solo los que tienen
-  // al menos un precio registrado con los filtros de año/provincia activos y
-  // en alguno de los materiales mostrados. Si no queda ninguno, se conserva el
-  // set permitido para no dejar el gráfico/tabla sin eje.
+  // Recalcula PR_PER_VIS: los períodos (año+mes) con al menos un precio
+  // registrado bajo los filtros de año/provincia activos y en alguno de los
+  // materiales mostrados, en orden cronológico.
   function _recalcMesesVis() {
     const mats = new Set(_matsActivos);
     const conDato = new Set();
@@ -146,10 +149,9 @@ const PRECIOS = (() => {
       if (!mats.has(r.material)) return;
       if (!pasaFiltro(_fAnios, String(r.anio))) return;
       if (!pasaFiltro(_fProvs, r.provincia)) return;
-      conDato.add(r.mes);
+      conDato.add(r.per);
     });
-    const vis = PR_MESES_PERMITIDOS.filter(i => conDato.has(i));
-    PR_MESES_VIS = vis.length ? vis : PR_MESES_PERMITIDOS.slice();
+    PR_PER_VIS = Array.from(conDato).sort((a, b) => a - b);
   }
 
   // Convierte el campo Mes a índice 0–11. Acepta número (4 / "04") o
@@ -215,10 +217,10 @@ const PRECIOS = (() => {
       pasaFiltro(_fAnios, String(r.anio)) &&
       pasaFiltro(_fProvs, r.provincia)
     );
-    const mapa = {};
-    filtrado.forEach(({ provincia, mes, precio }) => {
+    const mapa = {};   // { provincia: { período: [precios] } }
+    filtrado.forEach(({ provincia, per, precio }) => {
       (mapa[provincia] = mapa[provincia] || {});
-      (mapa[provincia][mes] = mapa[provincia][mes] || []).push(precio);
+      (mapa[provincia][per] = mapa[provincia][per] || []).push(precio);
     });
     const stats = {};
     Object.entries(mapa).forEach(([prov, meses]) => {
@@ -239,10 +241,13 @@ const PRECIOS = (() => {
       const stats = _calcStats(mat);
       const provs = Object.keys(stats).sort((a, b) => _provincias.indexOf(a) - _provincias.indexOf(b));
       provs.forEach(prov => {
-        const meses = Array.from({ length: 12 }, (_, i) => ({
-          mes: i, avg: stats[prov][i]?.avg ?? null, min: stats[prov][i]?.min ?? null, max: stats[prov][i]?.max ?? null,
-        }));
-        const conDato = PR_MESES_VIS.map(i => meses[i]).filter(m => m.avg !== null);
+        // meses[período] = { avg, min, max } (null si ese período no tiene precio)
+        const meses = {};
+        PR_PER_VIS.forEach(p => {
+          const s = stats[prov][p];
+          meses[p] = { per: p, avg: s ? s.avg : null, min: s ? s.min : null, max: s ? s.max : null };
+        });
+        const conDato = PR_PER_VIS.map(p => meses[p]).filter(m => m.avg !== null);
         let tendencia = 0;
         if (conDato.length >= 2) tendencia = conDato[conDato.length - 1].avg - conDato[0].avg;
         rows.push({ provincia: prov, material: mat, meses, tendencia });
@@ -252,21 +257,21 @@ const PRECIOS = (() => {
   }
 
   // ── Header (page-header + acciones) ────────────────────────
-  function _header() {
+  function _header(sinDatos) {
     return `
       <div class="page-header">
         <div>
           <div class="page-title">Precios</div>
           <div class="page-sub">Variación por provincia</div>
         </div>
-        <div class="hdr-actions">
+        ${sinDatos ? '' : `<div class="hdr-actions">
           <button class="hdr-circle" onclick="openFilterDrawer('precios', this)" title="Filtros" aria-label="Filtros">
             ${icoHTML('sliders')}<span class="filter-badge" id="pr-filter-badge" style="display:none"></span>
           </button>
           <button class="hdr-circle" onclick="PRECIOS._exportar()" title="Descargar Excel" aria-label="Descargar Excel">
             ${ICO_DOWNLOAD}
           </button>
-        </div>
+        </div>`}
       </div>`;
   }
 
@@ -303,10 +308,10 @@ const PRECIOS = (() => {
     return {
       series: provs.map(prov => ({
         name: prov,
-        data: PR_MESES_VIS.map(mi => { const s = stats[prov][mi]; return s ? +Number(s.avg).toFixed(3) : null; }),
+        data: PR_PER_VIS.map(p => { const s = stats[prov][p]; return s ? +Number(s.avg).toFixed(3) : null; }),
       })),
       colors: provs.map(prov => _colorProv(prov)),
-      categories: PR_MESES_VIS.map(mi => MESES[mi]),
+      categories: PR_PER_VIS.map(_lblPer),
     };
   }
 
@@ -319,8 +324,13 @@ const PRECIOS = (() => {
 
   // Línea interactiva $/kg por provincia (ApexCharts): tooltip al pasar el cursor
   // y leyenda para mostrar/ocultar provincias. Reemplaza el SVG estático.
-  function _drawChart() {
+  // Destruye el chart vivo (al redibujar y al salir de la sección, desde navTo)
+  function destruir() {
     if (_prChart) { try { _prChart.destroy(); } catch (e) {} _prChart = null; }
+  }
+
+  function _drawChart() {
+    destruir();
     const el = document.getElementById('pr-apex');
     if (!el || typeof ApexCharts === 'undefined') return;
     const p = _prepChart();
@@ -329,7 +339,8 @@ const PRECIOS = (() => {
       chart: { type: 'area', height: 300, fontFamily: 'Outfit, sans-serif', toolbar: { show: false }, animations: { enabled: true, easing: 'easeinout', speed: 700 } },
       series: p.series, colors: p.colors, stroke: { curve: 'smooth', width: 2.6 },
       fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: .15, opacityTo: .02, stops: [0, 95] } },
-      dataLabels: { enabled: false }, markers: { size: 0, hover: { size: 6 } },
+      // Con un solo período no hay línea: se marcan los puntos
+      dataLabels: { enabled: false }, markers: { size: p.categories.length === 1 ? 5 : 0, hover: { size: 6 } },
       xaxis: { categories: p.categories, axisBorder: { show: false }, axisTicks: { show: false }, labels: { style: { colors: '#a4abba', fontSize: '12px', fontWeight: 600 } } },
       yaxis: { labels: { formatter: function (v) { return '$' + fmtNum(v, 2); }, style: { colors: '#a4abba', fontSize: '11px' } } },
       grid: { borderColor: '#eef1f7', xaxis: { lines: { show: false } } },
@@ -356,12 +367,12 @@ const PRECIOS = (() => {
 
     // DESKTOP: tabla ancha (solo meses visibles). El punto de color por provincia
     // hace juego con su línea del gráfico.
-    const ths = PR_MESES_VIS.map(i => `<th>${MESES[i]}</th>`).join('');
+    const ths = PR_PER_VIS.map(p => `<th>${_lblPer(p)}</th>`).join('');
     const filas = resumen.map(({ provincia, meses, tendencia }) => {
-      const cels = PR_MESES_VIS.map(i => meses[i]).map(({ avg, min, max }) =>
+      const cels = PR_PER_VIS.map(p => meses[p]).map(({ avg, min, max }) =>
         avg === null
           ? `<td class="pr-dash">—</td>`
-          : `<td title="Mín $${min} · Máx $${max}"><span class="pr-avg">$${fmtNum(avg, 2)}</span><span class="pr-range">${fmtNum(min, 2)}–${fmtNum(max, 2)}</span></td>`
+          : `<td title="Mín $${fmtNum(min, 2)} · Máx $${fmtNum(max, 2)}"><span class="pr-avg">$${fmtNum(avg, 2)}</span><span class="pr-range">${fmtNum(min, 2)}–${fmtNum(max, 2)}</span></td>`
       ).join('');
       return `<tr>
         <td class="pr-prov"><span class="pr-prov-dot" style="background:${_colorProv(provincia)}"></span>${esc(provincia)}</td>
@@ -376,7 +387,7 @@ const PRECIOS = (() => {
 
     // MÓVIL: tarjetas resumen (tocar → detalle mensual completo)
     const cards = resumen.map(({ provincia, meses, tendencia }) => {
-      const conDato = PR_MESES_VIS.map(i => meses[i]).filter(m => m.avg !== null);
+      const conDato = PR_PER_VIS.map(p => meses[p]).filter(m => m.avg !== null);
       const ultimo = conDato.length ? conDato[conDato.length - 1] : null;
       const resumenTxt = ultimo
         ? `Último: $${fmtNum(ultimo.avg, 2)} · ${conDato.length} ${conDato.length === 1 ? 'mes' : 'meses'} con dato`
@@ -405,13 +416,13 @@ const PRECIOS = (() => {
     if (typeof abrirModal !== 'function') return;
     const s = _calcStats(mat)[prov] || {};
     const anioTxt = _fAnios.filter(a => a !== '__ALL__').join(', ') || 'Todos los años';
-    const filas = PR_MESES_VIS.map(i => {
-      const d = s[i];
+    const filas = PR_PER_VIS.map(p => {
+      const d = s[p];
       return d
-        ? `<div class="pr-det-row"><span class="pr-det-mes">${MESES_FULL[i]}</span><span class="pr-det-val"><b>$${fmtNum(d.avg, 2)}</b><small>${fmtNum(d.min, 2)}–${fmtNum(d.max, 2)} · n=${d.n}</small></span></div>`
-        : `<div class="pr-det-row pr-det-empty"><span class="pr-det-mes">${MESES_FULL[i]}</span><span class="pr-dash">—</span></div>`;
+        ? `<div class="pr-det-row"><span class="pr-det-mes">${_lblPerLargo(p)}</span><span class="pr-det-val"><b>$${fmtNum(d.avg, 2)}</b><small>${fmtNum(d.min, 2)}–${fmtNum(d.max, 2)} · n=${d.n}</small></span></div>`
+        : `<div class="pr-det-row pr-det-empty"><span class="pr-det-mes">${_lblPerLargo(p)}</span><span class="pr-dash">—</span></div>`;
     }).join('');
-    const conDato = PR_MESES_VIS.map(i => s[i]?.avg).filter(v => v != null);
+    const conDato = PR_PER_VIS.map(p => s[p]?.avg).filter(v => v != null);
     let tend = 0;
     if (conDato.length >= 2) tend = +(conDato[conDato.length - 1] - conDato[0]).toFixed(3);
     abrirModal(`
@@ -450,16 +461,16 @@ const PRECIOS = (() => {
     try {
       if (typeof cargarSheetJS === 'function') await cargarSheetJS();
       if (!window.XLSX) { if (typeof showToast === 'function') showToast('No se pudo cargar el exportador'); return; }
-      const aoa = [['Provincia', 'Material', ...PR_MESES_VIS.map(i => MESES[i]), 'Tendencia ($)']];
+      const aoa = [['Provincia', 'Material', ...PR_PER_VIS.map(_lblPer), 'Tendencia ($)']];
       resumen.forEach(r => {
         aoa.push([
           r.provincia, r.material,
-          ...PR_MESES_VIS.map(i => r.meses[i]).map(m => m.avg === null ? '' : +m.avg.toFixed(2)),
+          ...PR_PER_VIS.map(p => r.meses[p]).map(m => m.avg === null ? '' : +m.avg.toFixed(2)),
           r.tendencia > 0 ? `+${r.tendencia.toFixed(2)}` : r.tendencia < 0 ? `${r.tendencia.toFixed(2)}` : '0',
         ]);
       });
       const ws = XLSX.utils.aoa_to_sheet(aoa);
-      ws['!cols'] = [{ wch: 16 }, { wch: 16 }, ...PR_MESES_VIS.map(() => ({ wch: 9 })), { wch: 12 }];
+      ws['!cols'] = [{ wch: 16 }, { wch: 16 }, ...PR_PER_VIS.map(() => ({ wch: 9 })), { wch: 12 }];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Precios');
       const yrs = _fAnios.filter(a => a !== '__ALL__');
@@ -476,7 +487,7 @@ const PRECIOS = (() => {
     if (el) el.innerHTML = html;
   }
 
-  return { init, _onTabMat, _exportar, _verDetalle };
+  return { init, destruir, _onTabMat, _exportar, _verDetalle };
 })();
 
 // ── Estilos mínimos propios (lo que no cubre styles.css) ──────

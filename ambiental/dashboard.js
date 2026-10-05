@@ -12,7 +12,8 @@ const COLORES_PROV = {
   'Pichincha':  '#9FDA60', 'Chimborazo':'#FF376F',
 };
 
-// Metas editables (en memoria)
+// Metas anuales (TN). Valores por defecto: se reemplazan con Configuracion/metas
+// al cargar y se guardan ahí desde el ⚙️ de "Avance vs Meta".
 let METAS = { PET: 811, Suave: 248, Duro: 377 };
 
 // Factores ambientales — Marco Metodológico de Indicadores de Desempeño Ambiental (ReCircula)
@@ -176,7 +177,12 @@ async function cargarDashboard() {
              pasaBusquedaAsociacion(e['ID_Asociacion']);
     });
     DASH_DATA = calcularDashboard(filtradas);
-    poblarFiltrosDisponibles(DASH_DATA.filtrosDisponibles);
+    // Los años del filtro salen de TODAS las entregas (no de las ya filtradas),
+    // así elegir 2025 no esconde 2026; y un año elegido siempre conserva su chip.
+    const anios = Array.from(new Set((CAT.entregas || []).map(function(e) { return String(e['Año'] || ''); })
+      .filter(function(a) { return a && a !== 'undefined'; })));
+    (DASH_FILTROS.anio || []).forEach(function(a) { if (a && a !== '__ALL__' && anios.indexOf(a) < 0) anios.push(a); });
+    poblarFiltrosDisponibles({ anios: anios.sort() });
     renderContenidoDashboard();
     updateFilterBadge('dashboard');
   } catch (e) {
@@ -185,21 +191,39 @@ async function cargarDashboard() {
   }
 }
 
-// Agrega kilos/ventas por material, provincia y mes
+// Período = año + mes. Clave ordenable "AAAA-MM" para que junio 2025 y
+// junio 2026 sean puntos distintos (antes se sumaban en un solo "Junio").
+function _perClave(anio, mesCanon) {
+  const a = parseInt(anio, 10);
+  const m = MESES.indexOf(mesCanon);
+  if (isNaN(a) || m < 0) return '';
+  return a + '-' + String(m + 1).padStart(2, '0');
+}
+function _perIndice(clave) { const p = clave.split('-'); return parseInt(p[0], 10) * 12 + parseInt(p[1], 10); }
+// "Jun" si todos los períodos son del mismo año; "Jun 25" si hay varios años.
+function _perEtiqueta(clave, conAnio) {
+  const p = clave.split('-');
+  const mes = MESES[parseInt(p[1], 10) - 1].substring(0, 3);
+  return conAnio ? mes + ' ' + p[0].slice(2) : mes;
+}
+function _perVariosAnios(claves) {
+  return new Set(claves.map(function(c) { return c.slice(0, 4); })).size > 1;
+}
+
+// Agrega kilos/ventas por material y período (año + mes)
 function calcularDashboard(entregas) {
   const k = { totalTN: 0, tnPriorizables: 0, ingresosPET: 0, tnPET: 0, tnSuave: 0, tnDuro: 0 };
   const distribucion = {};
-  const porProvMesMat = {}; // { provincia: { mes: { material: TN } } }
-  const porMesMat = {};     // { mes: { material: TN } }  (todas las provincias)
-  const porMes = {};        // { mes: { totalTN, prioTN, ingresosPET } }
+  const porMesMat = {};     // { 'AAAA-MM': { material: TN } }  (todas las provincias)
+  const porMes = {};        // { 'AAAA-MM': { totalTN, prioTN, ingresosPET } }
+  const porAnio = {};       // { 'AAAA': { tnPET, tnSuave, tnDuro } }  (para Avance vs Meta)
   const zonas = {};         // { zona: TN }
-  const aniosSet = new Set();
-  const mesesSet = new Set();
+  const periodosSet = new Set();
 
   entregas.forEach(function(e) {
-    if (e['Año'] !== '' && e['Año'] != null) aniosSet.add(String(e['Año']));
     const mesCanon = mesCanonico(e['Mes']);
-    if (mesCanon) mesesSet.add(mesCanon);
+    const per = _perClave(e['Año'], mesCanon);
+    if (per) periodosSet.add(per);
 
     let totalKg = 0, prioKg = 0;
     (CAT.materiales || []).forEach(function(m) {
@@ -217,9 +241,17 @@ function calcularDashboard(entregas) {
     k.totalTN        += totalTN;
     k.tnPriorizables += prioKg / 1000;
     k.ingresosPET    += petVenta;
-    k.tnPET          += (parseFloat(e['PET Kilos']) || 0) / 1000;
-    k.tnSuave        += (parseFloat(e['Plástico Suave Kilos']) || 0) / 1000;
-    k.tnDuro         += (parseFloat(e['Plástico Duro Kilos']) || 0) / 1000;
+    const tnPET   = (parseFloat(e['PET Kilos']) || 0) / 1000;
+    const tnSuave = (parseFloat(e['Plástico Suave Kilos']) || 0) / 1000;
+    const tnDuro  = (parseFloat(e['Plástico Duro Kilos']) || 0) / 1000;
+    k.tnPET   += tnPET;
+    k.tnSuave += tnSuave;
+    k.tnDuro  += tnDuro;
+    const anio = parseInt(e['Año'], 10);
+    if (!isNaN(anio)) {
+      const pa = porAnio[anio] = porAnio[anio] || { tnPET: 0, tnSuave: 0, tnDuro: 0 };
+      pa.tnPET += tnPET; pa.tnSuave += tnSuave; pa.tnDuro += tnDuro;
+    }
 
     // Zona de recuperación: el TN de la entrega se reparte entre sus actividades
     const acts = Array.isArray(e['Actividad Fuente']) ? e['Actividad Fuente']
@@ -229,36 +261,40 @@ function calcularDashboard(entregas) {
       acts.forEach(function(a) { const z = gZonaDe(a); zonas[z] = (zonas[z] || 0) + cuota; });
     }
 
-    const prov = e['Provincia'] || e['_provinciaAsociacion'] || '—';
-    const mes  = mesCanon;
-    if (mes) {
-      porMes[mes] = porMes[mes] || { totalTN: 0, prioTN: 0, ingresosPET: 0 };
-      porMes[mes].totalTN += totalTN;
-      porMes[mes].prioTN  += prioKg / 1000;
-      porMes[mes].ingresosPET += petVenta;
+    if (per) {
+      porMes[per] = porMes[per] || { totalTN: 0, prioTN: 0, ingresosPET: 0 };
+      porMes[per].totalTN += totalTN;
+      porMes[per].prioTN  += prioKg / 1000;
+      porMes[per].ingresosPET += petVenta;
 
-      porProvMesMat[prov] = porProvMesMat[prov] || {};
-      porProvMesMat[prov][mes] = porProvMesMat[prov][mes] || {};
-      porMesMat[mes] = porMesMat[mes] || {};
+      porMesMat[per] = porMesMat[per] || {};
       (CAT.materiales || []).forEach(function(m) {
         const nombre = m['Nombre'];
         const tn = (parseFloat(e[nombre + ' Kilos']) || 0) / 1000;
-        if (tn > 0) {
-          porProvMesMat[prov][mes][nombre] = (porProvMesMat[prov][mes][nombre] || 0) + tn;
-          porMesMat[mes][nombre] = (porMesMat[mes][nombre] || 0) + tn;
-        }
+        if (tn > 0) porMesMat[per][nombre] = (porMesMat[per][nombre] || 0) + tn;
       });
     }
   });
 
-  const meses = MESES.filter(function(m) { return mesesSet.has(m); });
-  const anios = Array.from(aniosSet).filter(function(a) { return a && a !== 'undefined'; }).sort();
+  // Períodos en orden cronológico ("2025-11" < "2026-05")
+  const meses = Array.from(periodosSet).sort();
 
   return {
-    kpis: k, distribucion: distribucion, porProvMesMat: porProvMesMat,
+    kpis: k, distribucion: distribucion, porAnio: porAnio,
     porMesMat: porMesMat, porMes: porMes, zonas: zonas,
-    meses: meses, filtrosDisponibles: { anios: anios }
+    meses: meses
   };
+}
+
+// Año contra el que se mide "Avance vs Meta" (las metas son anuales):
+// el año filtrado (el más reciente si se eligieron varios) o, sin filtro,
+// el más reciente con datos.
+function _anioMeta(d) {
+  const sel = (DASH_FILTROS.anio || []).filter(function(a) { return a && a !== '__ALL__'; })
+    .map(function(a) { return parseInt(a, 10); }).filter(function(a) { return !isNaN(a); });
+  if (sel.length) return Math.max.apply(null, sel);
+  const conDatos = Object.keys(d.porAnio || {}).map(Number);
+  return conDatos.length ? Math.max.apply(null, conDatos) : null;
 }
 
 function poblarFiltrosDisponibles(f) {
@@ -293,6 +329,13 @@ function renderContenidoDashboard() {
   const co2Total  = co2.PET + co2.Suave + co2.Duro;
   const aguaTotal = agua.PET + agua.Suave + agua.Duro;
   const aguaTxt   = aguaTotal >= 1e6 ? fmtNum(aguaTotal / 1e6, 2) + '<u>M litros</u>' : fmtNum(aguaTotal, 0) + '<u>litros</u>';
+  // CO₂ con un decimal si es menor a 10 t (si no, una barra visible decía "0 t")
+  const fmtCO2 = function(v) { return fmtNum(v, v > 0 && v < 10 ? 1 : 0); };
+
+  // Avance vs Meta se mide contra UN año (las metas son anuales)
+  const anioMeta = _anioMeta(d);
+  const tnMeta = (anioMeta != null && d.porAnio[anioMeta]) || { tnPET: 0, tnSuave: 0, tnDuro: 0 };
+  const editaMetas = puedeEditar();
 
   document.getElementById('dash-content').innerHTML =
     '<div class="g-wrap">' +
@@ -304,13 +347,13 @@ function renderContenidoDashboard() {
       '<div class="g-duo">' +
 
         '<div class="card">' +
-          '<div class="card-title"><span>Avance vs Meta</span>' +
-            '<button class="icon-btn" onclick="abrirEditarMetas()" title="Editar metas">' + icoHTML('settings') + '</button></div>' +
+          '<div class="card-title"><span>Avance vs Meta' + (anioMeta != null ? ' · ' + anioMeta : '') + '</span>' +
+            (editaMetas ? '<button class="icon-btn" onclick="abrirEditarMetas()" title="Editar metas">' + icoHTML('settings') + '</button>' : '') + '</div>' +
           '<div class="g-body g-meta">' +
-            gMetaRow('PET',   k.tnPET,   METAS.PET,   G_INDIGO) +
-            gMetaRow('Suave', k.tnSuave, METAS.Suave, G_TEAL) +
-            gMetaRow('Duro',  k.tnDuro,  METAS.Duro,  G_AMBAR) +
-            '<div class="g-meta-note"><i></i> La línea marca el 100% de la meta · la zona verde es el excedente</div>' +
+            gMetaRow('PET',   tnMeta.tnPET,   METAS.PET,   G_INDIGO) +
+            gMetaRow('Suave', tnMeta.tnSuave, METAS.Suave, G_AMBAR) +
+            gMetaRow('Duro',  tnMeta.tnDuro,  METAS.Duro,  G_TEAL) +
+            '<div class="g-meta-note"><i></i> Meta anual' + (anioMeta != null ? ' de ' + anioMeta : '') + ' · la línea marca el 100% · la zona verde es el excedente</div>' +
           '</div>' +
         '</div>' +
 
@@ -328,9 +371,9 @@ function renderContenidoDashboard() {
           '<div class="card-title"><span>Impacto Ambiental</span>' +
             '<span style="font-size:11px;color:var(--text-dim);font-weight:600">por material</span></div>' +
           '<div class="g-body g-imp2">' +
-            gImpGrupo('CO₂ Evitado', fmtNum(co2Total, 0) + '<u>t CO₂e</u>',
+            gImpGrupo('CO₂ Evitado', fmtCO2(co2Total) + '<u>t CO₂e</u>',
               [['PET', co2.PET, G_INDIGO], ['Suave', co2.Suave, G_AMBAR], ['Duro', co2.Duro, G_TEAL]],
-              function(v) { return fmtNum(v, 0) + ' t'; }) +
+              function(v) { return fmtCO2(v) + ' t'; }) +
             gImpGrupo('Ahorro de Agua', aguaTxt,
               [['PET', agua.PET, G_INDIGO], ['Suave', agua.Suave, G_AMBAR], ['Duro', agua.Duro, G_TEAL]],
               function(v) { return fmtNum(v, 0) + ' L'; }) +
@@ -370,7 +413,7 @@ function gTotales(k, porMes, meses) {
       '<div class="g-tot-top"><div class="g-tot-ic" style="background:' + gRgba(color, .13) + ';color:' + color + '">' + icoHTML(icono) + '</div>' +
         '<span class="g-tot-lbl">' + esc(label) + '</span></div>' +
       '<div class="g-tot-val" style="color:' + color + '">' + valTxt + '</div>' +
-      '<div class="g-tot-foot">' + gTrend(vals) + '<div class="g-spark" id="dash-spark-' + idx + '"></div></div>' +
+      '<div class="g-tot-foot">' + gTrend(vals, meses) + '<div class="g-spark" id="dash-spark-' + idx + '"></div></div>' +
     '</div>';
   };
   return '<div class="card g-tot">' +
@@ -380,13 +423,27 @@ function gTotales(k, porMes, meses) {
   '</div>';
 }
 
-function gTrend(vals) {
+// Compara los dos últimos períodos con datos. Si no son meses seguidos
+// (o son de años distintos) se dice contra cuál se compara.
+function gTrend(vals, periodos) {
   if (!vals || vals.length < 2) return '<span class="g-pill up">— <small>sin histórico</small></span>';
   const cur = vals[vals.length - 1], prev = vals[vals.length - 2];
   if (prev <= 0) return '<span class="g-pill up">— <small>sin mes previo</small></span>';
   const ch = ((cur - prev) / prev) * 100;
   const up = ch >= 0;
-  return '<span class="g-pill ' + (up ? 'up' : 'down') + '">' + (up ? '▲' : '▼') + ' ' + fmtNum(Math.abs(ch), 1) + '% <small>vs. mes ant.</small></span>';
+  let ref = 'vs. mes ant.';
+  if (periodos && periodos.length >= 2) {
+    const pPrev = periodos[periodos.length - 2], pCur = periodos[periodos.length - 1];
+    if (_perIndice(pCur) - _perIndice(pPrev) !== 1) ref = 'vs. ' + _perEtiqueta(pPrev, true);
+  }
+  return '<span class="g-pill ' + (up ? 'up' : 'down') + '">' + (up ? '▲' : '▼') + ' ' + fmtNum(Math.abs(ch), 1) + '% <small>' + ref + '</small></span>';
+}
+
+// Etiqueta del % de una barra: dentro del relleno si cabe; si la barra es
+// corta, a su derecha en gris (blanco sobre el fondo claro no se leía).
+const G_LBL_MIN = 16;   // % de ancho mínimo para que el texto quepa dentro
+function gBarLbl(w, txt) {
+  return w >= G_LBL_MIN ? '' : '<span class="g-bar-out" style="left:calc(' + w + '% + 6px)">' + txt + '</span>';
 }
 
 // ── Avance vs Meta (línea del 100% antes del final + excedente) ──
@@ -394,14 +451,16 @@ function gMetaRow(nombre, actual, meta, color) {
   const a = actual || 0;
   const pct = meta > 0 ? (a / meta) * 100 : 0;
   const w = meta > 0 ? Math.min(100, pct / G_ESCALA_META) : 0;
-  const wFinal = a > 0 ? Math.max(11, w) : 0;
+  const wFinal = a > 0 ? Math.max(4, w) : 0;
+  const lbl = pct.toFixed(0) + '%';
   const num = fmtNum(a) + ' / ' + fmtNum(meta, 0) + ' TN' + (pct >= 100 ? ' · <span class="ok">✓ superada</span>' : '');
   const over = 'left:' + G_POS_100 + '%';
   return '<div>' +
     '<div class="g-meta-top"><span class="g-meta-name">' + nombre + '</span><span class="g-meta-num">' + num + '</span></div>' +
     '<div class="g-meta-track">' +
       '<div class="g-meta-over" style="' + over + '"></div>' +
-      '<div class="g-meta-fill" style="width:' + wFinal + '%;background:' + color + '">' + pct.toFixed(0) + '%</div>' +
+      '<div class="g-meta-fill" style="width:' + wFinal + '%;background:' + color + '">' + (wFinal >= G_LBL_MIN ? lbl : '') + '</div>' +
+      gBarLbl(wFinal, lbl) +
       '<div class="g-meta-goal" style="' + over + '"></div>' +
     '</div>' +
   '</div>';
@@ -413,18 +472,23 @@ function gZona(zonas, totalTN) {
     .filter(function(i) { return i.tn > 0; });
   items.sort(function(a, b) { return b.tn - a.tn; });
   if (!items.length) return '<div class="empty-state"><p>Sin datos de zona para este filtro</p></div>';
-  const total = totalTN > 0 ? totalTN : items.reduce(function(s, i) { return s + i.tn; }, 0) || 1;
+  // El % se calcula sobre lo que tiene zona registrada (así las barras suman 100%);
+  // lo que no tiene actividad se informa aparte en la nota.
+  const total = items.reduce(function(s, i) { return s + i.tn; }, 0) || 1;
+  const sinZona = Math.max(0, (totalTN || 0) - total);
   const rows = items.map(function(i) {
     const pct = (i.tn / total) * 100;
-    const w = Math.max(6, Math.min(100, pct));
+    const w = Math.max(4, Math.min(100, pct));
+    const lbl = pct.toFixed(0) + '%';
     const color = G_ZONA_COLOR[i.z] || '#c3c8d4';
     return '<div>' +
       '<div class="g-z-top"><span class="g-z-name">' + esc(i.z) + '</span><span class="g-z-val">' + fmtNum(i.tn) + ' TN</span></div>' +
-      '<div class="g-z-track"><div class="g-z-fill" style="width:' + w + '%;background:' + color + '">' + pct.toFixed(0) + '%</div></div>' +
+      '<div class="g-z-track"><div class="g-z-fill" style="width:' + w + '%;background:' + color + '">' + (w >= G_LBL_MIN ? lbl : '') + '</div>' + gBarLbl(w, lbl) + '</div>' +
     '</div>';
   }).join('');
-  return rows + '<div class="g-z-note">Total recuperado · ' + fmtNum(total) + ' TN en ' +
-    items.length + ' zona' + (items.length !== 1 ? 's' : '') + '</div>';
+  return rows + '<div class="g-z-note">Total con zona · ' + fmtNum(total) + ' TN en ' +
+    items.length + ' zona' + (items.length !== 1 ? 's' : '') +
+    (sinZona >= 0.005 ? ' · ' + fmtNum(sinZona) + ' TN sin actividad registrada' : '') + '</div>';
 }
 
 // ── Impacto Ambiental: un grupo de barras por métrica ──────
@@ -472,7 +536,9 @@ function gMateriales(distribucion) {
 function gEvolucionMats(porMesMat, meses) {
   _dashEvoPrep = _prepEvolucion(porMesMat, meses);
   if (!_dashEvoPrep) return '<div class="empty-state"><p>Sin datos para este filtro</p></div>';
-  if (_dashEvoPrep.empty) return '<div class="empty-state"><p>Elige al menos un material con el ⚙️</p></div>';
+  if (_dashEvoPrep.empty) return '<div class="empty-state"><p>' + (EVOLUCION_MATS && EVOLUCION_MATS.length
+    ? 'Los materiales elegidos no tienen datos para este filtro · cambia la selección con el ⚙️'
+    : 'Elige al menos un material con el ⚙️') + '</p></div>';
   return '<div class="g-chart" id="dash-evo"></div>' +
     '<div class="g-chart-hint">Pasa el cursor para ver el detalle · toca un material en la leyenda para mostrarlo u ocultarlo</div>';
 }
@@ -488,10 +554,11 @@ function _prepEvolucion(porMesMat, meses) {
   mats.sort(function(a, b) { return totalDe(b) - totalDe(a); });
   const shown = EVOLUCION_MATS ? mats.filter(function(n) { return EVOLUCION_MATS.includes(n); }) : mats;
   if (!shown.length) return { empty: true };
+  const conAnio = _perVariosAnios(meses);
   return {
     series: shown.map(function(n) { return { name: G_MAT_CORTO[n] || n, data: meses.map(function(m) { return +valor(n, m).toFixed(2); }) }; }),
     colors: shown.map(function(n) { return gMatColor(n); }),
-    categories: meses.map(function(m) { return m.substring(0, 3); }),
+    categories: meses.map(function(m) { return _perEtiqueta(m, conAnio); }),
   };
 }
 
@@ -507,6 +574,8 @@ function _mkSpark(id, serie, color) {
   const c = new ApexCharts(el, {
     chart: { type: 'area', height: 38, width: 104, sparkline: { enabled: true }, animations: { enabled: true, speed: 800 } },
     series: [{ name: '', data: serie.length ? serie : [0, 0] }],
+    // Con un solo período no hay línea que dibujar: se marca el punto
+    markers: { size: serie.length === 1 ? 3 : 0 },
     colors: [color], stroke: { curve: 'smooth', width: 2.2 },
     fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: .4, opacityTo: 0, stops: [0, 100] } },
     tooltip: { enabled: true, x: { show: false }, y: { formatter: function(v) { return fmtNum(v); }, title: { formatter: function() { return ''; } } }, marker: { show: false } },
@@ -519,7 +588,7 @@ function _mkEvolucion(id, p) {
     chart: Object.assign({}, G_APEX_BASE, { type: 'area', height: 330 }),
     series: p.series, colors: p.colors, stroke: { curve: 'smooth', width: 3 },
     fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: .22, opacityTo: .02, stops: [0, 95] } },
-    dataLabels: { enabled: false }, markers: { size: 0, hover: { size: 6 } },
+    dataLabels: { enabled: false }, markers: { size: p.categories.length === 1 ? 5 : 0, hover: { size: 6 } },
     xaxis: { categories: p.categories, axisBorder: { show: false }, axisTicks: { show: false }, labels: { style: { colors: '#a4abba', fontSize: '12px', fontWeight: 600 } } },
     yaxis: { labels: { formatter: function(v) { return fmtNum(v); }, style: { colors: '#a4abba', fontSize: '11px' } } },
     grid: { borderColor: '#eef1f7', xaxis: { lines: { show: false } } },
@@ -623,34 +692,62 @@ function _metaDot(color) {
   return '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' + color + ';margin-right:7px;vertical-align:middle"></span>';
 }
 
+// Las metas viven en Firestore: Configuracion/metas = { PET, Suave, Duro } (TN por año).
+// Se leen al cargar los catálogos (app.js → cargarCatalogos); sin documento se usan
+// los valores por defecto de METAS.
+async function cargarMetasDashboard() {
+  try {
+    const docs = await fsGetAll('Configuracion');
+    const d = docs.find(function(x) { return x._docId === 'metas'; });
+    if (!d) return;
+    ['PET', 'Suave', 'Duro'].forEach(function(k) {
+      const v = parseFloat(d[k]);
+      if (isFinite(v) && v > 0) METAS[k] = v;
+    });
+  } catch (e) { console.warn('cargarMetasDashboard:', e); }
+}
+
 function abrirEditarMetas() {
+  if (bloqueadoSoloLectura()) return;
   abrirModal(
     '<div class="modal" style="max-width:420px">' +
       '<div class="modal-head">' +
-        '<div><div class="modal-title">Editar metas anuales</div><div class="modal-sub">Las metas se usan para calcular el avance</div></div>' +
+        '<div><div class="modal-title">Editar metas anuales</div><div class="modal-sub">Las metas se usan para calcular el avance de cada año</div></div>' +
         '<button class="modal-close" onclick="cerrarModal()"></button>' +
       '</div>' +
       '<div class="modal-body">' +
         '<div class="form-group"><label class="form-label">' + _metaDot(G_INDIGO) + 'Meta PET (TN)</label>' +
-          '<input type="number" class="form-input" id="meta-pet" value="' + METAS.PET + '" min="0"></div>' +
-        '<div class="form-group"><label class="form-label">' + _metaDot(G_TEAL) + 'Meta Plástico Suave (TN)</label>' +
-          '<input type="number" class="form-input" id="meta-suave" value="' + METAS.Suave + '" min="0"></div>' +
-        '<div class="form-group"><label class="form-label">' + _metaDot(G_AMBAR) + 'Meta Plástico Duro (TN)</label>' +
-          '<input type="number" class="form-input" id="meta-duro" value="' + METAS.Duro + '" min="0"></div>' +
+          '<input type="number" class="form-input" id="meta-pet" value="' + METAS.PET + '" min="0" step="any"></div>' +
+        '<div class="form-group"><label class="form-label">' + _metaDot(G_AMBAR) + 'Meta Plástico Suave (TN)</label>' +
+          '<input type="number" class="form-input" id="meta-suave" value="' + METAS.Suave + '" min="0" step="any"></div>' +
+        '<div class="form-group"><label class="form-label">' + _metaDot(G_TEAL) + 'Meta Plástico Duro (TN)</label>' +
+          '<input type="number" class="form-input" id="meta-duro" value="' + METAS.Duro + '" min="0" step="any"></div>' +
       '</div>' +
       '<div class="modal-foot">' +
         '<button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>' +
-        '<button class="btn btn-primary" onclick="guardarMetas()">Guardar</button>' +
+        '<button class="btn btn-primary" id="btn-guardar-metas" onclick="guardarMetas()">Guardar</button>' +
       '</div>' +
     '</div>'
   );
 }
 
-function guardarMetas() {
-  METAS.PET   = parseFloat(document.getElementById('meta-pet').value)   || METAS.PET;
-  METAS.Suave = parseFloat(document.getElementById('meta-suave').value) || METAS.Suave;
-  METAS.Duro  = parseFloat(document.getElementById('meta-duro').value)  || METAS.Duro;
+async function guardarMetas() {
+  if (bloqueadoSoloLectura()) return;
+  const leer = function(id) { return parseFloat(document.getElementById(id).value); };
+  const nuevas = { PET: leer('meta-pet'), Suave: leer('meta-suave'), Duro: leer('meta-duro') };
+  const malas = Object.keys(nuevas).filter(function(k) { return !isFinite(nuevas[k]) || nuevas[k] <= 0; });
+  if (malas.length) { showToast('Cada meta debe ser un número mayor a 0'); return; }
+
+  const btn = document.getElementById('btn-guardar-metas');
+  if (btn) { btn.disabled = true; btn.textContent = 'Guardando…'; }
+  const r = await fsWrite(function() { return window.fb.setDoc(fsDoc('Configuracion', 'metas'), nuevas); });
+  if (!r.ok) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; }
+    showToast('No se pudieron guardar las metas' + (r.error ? ': ' + r.error : ''));
+    return;
+  }
+  Object.assign(METAS, nuevas);
   cerrarModal();
-  showToast('Metas actualizadas ✓');
+  showToast(r.offline ? 'Metas guardadas (se sincronizará) ✓' : 'Metas guardadas ✓');
   if (DASH_DATA) renderContenidoDashboard();
 }

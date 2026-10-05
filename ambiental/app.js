@@ -342,7 +342,9 @@ function mostrarFAB(icono, onclick, label) {
   if (!fab) return;
   fab.innerHTML = icoHTML(icono);
   fab.title = label || '';
-  fab.onclick = onclick;
+  // Sin argumentos: si se pasara el evento del clic, abrirForm*(id) lo tomaba
+  // como un id y el alta nueva terminaba diciendo "actualizada".
+  fab.onclick = function() { onclick(); };
   fab.classList.remove('hidden');
 }
 function ocultarFAB() {
@@ -357,14 +359,25 @@ function ocultarFAB() {
 // ============================================================
 
 async function cargarCatalogos() {
+  // Cada colección se carga por separado: si una falla (permisos, red), las
+  // demás igual se muestran y se avisa cuál faltó (antes quedaba todo vacío).
+  const fallidas = [];
+  const cargar = function(nombre) {
+    return fsGetAll(nombre).catch(function(e) {
+      console.error('Error cargando ' + nombre + ':', e);
+      fallidas.push(nombre);
+      return [];
+    });
+  };
   try {
     const resultados = await Promise.all([
-      fsGetAll('Asoc_Ambiente'),
-      fsGetAll('Compradores'),
-      fsGetAll('Materiales'),
-      fsGetAll('Entregas'),
-      fsGetAll('Diagnosticos'),
+      cargar('Asoc_Ambiente'),
+      cargar('Compradores'),
+      cargar('Materiales'),
+      cargar('Entregas'),
+      cargar('Diagnosticos'),
       cargarPeriodosOcultos(),
+      typeof cargarMetasDashboard === 'function' ? cargarMetasDashboard() : null,
     ]);
     CAT.asociaciones = resultados[0].map(asocFromFS)
       .sort(function(a, b) { return (a['Nombre'] || '').localeCompare(b['Nombre'] || ''); });
@@ -388,7 +401,9 @@ async function cargarCatalogos() {
   } catch (e) {
     console.error('Error cargando catálogos:', e);
     showToast('Error al cargar datos');
+    return;
   }
+  if (fallidas.length) showToast('No se pudo cargar: ' + fallidas.join(', '), 6000);
 }
 
 // ============================================================
@@ -481,26 +496,43 @@ async function asegurarCarpetaEntrega(data) {
 // CRUD ENTREGAS (Firestore)
 // ============================================================
 
+// Devuelve { ok, offline?, error?, docId, idEntrega }. Una entrega guardada en un
+// período oculto (Configuracion/periodos) se guarda en Firestore pero no entra
+// en CAT.entregas, igual que al cargar (antes aparecía hasta recargar).
 async function guardarEntregaFS(docId, data) {
   if (bloqueadoSoloLectura()) return { ok: false, error: 'sin_permiso' };
   await asegurarCarpetaEntrega(data);   // crea la carpeta si corresponde
   const f = entregaToFS(data);
+  const oculta = periodoOculto(f.anio, f.mes);
   if (docId) {
     const actual = CAT.entregas.find(function(e) { return e._docId === docId; });
     f.id_entrega = data['ID_Entrega'] || (actual ? actual['ID_Entrega'] : '');
     const r = await fsWrite(function() { return window.fb.updateDoc(fsDoc('Entregas', docId), f); });
     if (r.ok) {
       const idx = CAT.entregas.findIndex(function(e) { return e._docId === docId; });
-      if (idx >= 0) CAT.entregas[idx] = entregaFromFS(Object.assign({ _docId: docId }, f));
+      if (idx >= 0) {
+        if (oculta) CAT.entregas.splice(idx, 1);
+        else CAT.entregas[idx] = entregaFromFS(Object.assign({ _docId: docId }, f));
+      }
     }
-    return r;
+    return Object.assign({ docId: docId, idEntrega: f.id_entrega }, r);
   } else {
     f.id_entrega = 'ENT_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
     const ref = window.fb.doc(fsCol('Entregas'));   // ID autogenerado
     const r = await fsWrite(function() { return window.fb.setDoc(ref, f); });
-    if (r.ok) CAT.entregas.push(entregaFromFS(Object.assign({ _docId: ref.id }, f)));
-    return r;
+    if (r.ok && !oculta) CAT.entregas.push(entregaFromFS(Object.assign({ _docId: ref.id }, f)));
+    return Object.assign({ docId: r.ok ? ref.id : '', idEntrega: r.ok ? f.id_entrega : '' }, r);
   }
+}
+
+// Nombre y CI/RUC del comprador "unidos" a cada entrega: se recalculan tras
+// crear/editar/eliminar un comprador (si no, Pesos mostraba los datos viejos).
+function _refrescarCompradorEnEntregas() {
+  (CAT.entregas || []).forEach(function(e) {
+    const c = (CAT.compradores || []).find(function(x) { return x['ID_Comprador'] === e['ID_Comprador']; });
+    e['_nombreComprador'] = c ? c['Nombre'] : '';
+    e['_ciRucComprador']  = c ? c['CI/RUC'] : '';
+  });
 }
 
 async function eliminarEntregaFS(docId) {
@@ -524,6 +556,7 @@ async function guardarCompradorFS(docId, data) {
     if (r.ok) {
       const idx = CAT.compradores.findIndex(function(c) { return c._docId === docId; });
       if (idx >= 0) CAT.compradores[idx] = compradorFromFS(Object.assign({ _docId: docId }, f));
+      _refrescarCompradorEnEntregas();
     }
     return r;
   } else {
@@ -541,7 +574,10 @@ async function guardarCompradorFS(docId, data) {
 async function eliminarCompradorFS(docId) {
   if (bloqueadoSoloLectura()) return { ok: false, error: 'sin_permiso' };
   const r = await fsWrite(function() { return window.fb.deleteDoc(fsDoc('Compradores', docId)); });
-  if (r.ok) CAT.compradores = CAT.compradores.filter(function(c) { return c._docId !== docId; });
+  if (r.ok) {
+    CAT.compradores = CAT.compradores.filter(function(c) { return c._docId !== docId; });
+    _refrescarCompradorEnEntregas();
+  }
   return r;
 }
 
@@ -585,6 +621,11 @@ function navTo(seccion) {
   if (navEl) navEl.classList.add('active');
 
   closeFilterDrawer();
+  closeModMenu();
+  // Los gráficos de ApexCharts de la sección anterior se destruyen antes de
+  // vaciar el contenido (si no, quedan vivos escuchando el resize).
+  if (typeof _destruirDashApex === 'function') _destruirDashApex();
+  if (typeof PRECIOS !== 'undefined' && PRECIOS.destruir) PRECIOS.destruir();
   document.getElementById('main-content').innerHTML = '';
   ocultarFAB();
 

@@ -292,16 +292,22 @@ function renderProvinciasEnt() {
   }).join('') + '</div>';
 }
 
+// Posición del scroll en Nivel 1, para volver al mismo punto de la lista.
+let ENT_SCROLL_N1 = 0;
+
 function abrirAsociacionEntregas(idAsoc) {
+  ENT_SCROLL_N1 = window.scrollY || 0;
   ENT_ASOC_SEL = idAsoc;
   ENT_VISTA = 'lista';
   ENT_FILTROS_N2 = { material: [], anio: [], mes: [] };
   renderVistaEntregas();
+  window.scrollTo(0, 0);   // el Nivel 2 empieza arriba (antes quedaba a media página)
 }
 function volverAsociacionesEnt() {
   ENT_VISTA = 'asociaciones';
   ENT_ASOC_SEL = null;
   renderVistaEntregas();
+  window.scrollTo(0, ENT_SCROLL_N1);
 }
 
 // ── Nivel 2: entregas de la asociación abierta ──
@@ -441,8 +447,10 @@ function renderTablaEntregas() {
   if (!desk) return;
 
   if (!ENTREGAS_DATA.length) {
-    desk.innerHTML = `<div class="empty-state">${icoHTML('recycle').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"')}<p>No hay entregas con estos filtros</p></div>`;
-    if (mob)  mob.innerHTML = '';
+    // En las dos vistas: la de escritorio se oculta a ≤900px y el aviso no se veía
+    const vacio = `<div class="empty-state">${icoHTML('recycle').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"')}<p>No hay entregas con estos filtros</p></div>`;
+    desk.innerHTML = vacio;
+    if (mob)  mob.innerHTML = vacio;
     if (foot) foot.style.display = 'none';
     if (subEl) subEl.textContent = '0 entregas';
     return;
@@ -588,8 +596,12 @@ function verEntrega(id) {
   const e = ENTREGAS_DATA.find(r => r['ID_Entrega'] === id) || (CAT.entregas || []).find(r => r['ID_Entrega'] === id);
   if (!e) { showToast('Entrega no encontrada'); return; }
 
-  const MATS = ['PET','Plástico Suave','Plástico Duro','Lata Aluminio','Vidrio','Cartón',
-    'Chatarra','Cobre','Papel Archivo','Periódico','Soplado','Tetrapak','Suela','Bronce','Batería','Acero'];
+  // Materiales del catálogo (priorizables primero), no una lista fija: así un
+  // material nuevo también aparece en el detalle.
+  const MATS = (CAT.materiales || []).length
+    ? CAT.materiales.slice().sort((a, b) => (b['Priorizable'] === true) - (a['Priorizable'] === true)).map(m => m['Nombre'])
+    : ['PET','Plástico Suave','Plástico Duro','Lata Aluminio','Vidrio','Cartón',
+       'Chatarra','Cobre','Papel Archivo','Periódico','Soplado','Tetrapak','Suela','Bronce','Batería','Acero'];
 
   // Hermanos del grupo (si existen) — para mostrar todos los compradores juntos
   const hermanos = _cargarHermanos(id);
@@ -623,7 +635,7 @@ function verEntrega(id) {
           </div>` : ''}
         <div class="materiales-section" style="margin-bottom:0">
           <div class="materiales-section-title">Materiales entregados</div>
-          <div class="table-wrap" style="border-radius:14px;box-shadow:none;border:1px solid var(--border)"><table>
+          <div class="ent-det-tabla"><table>
             <thead><tr><th>Material</th><th style="text-align:right">Kilos</th><th style="text-align:right">Precio</th><th style="text-align:right">Valor</th></tr></thead>
             <tbody>${filasMat||'<tr><td colspan="4" style="text-align:center;color:var(--text-dim)">Sin materiales</td></tr>'}</tbody>
           </table></div>
@@ -647,7 +659,7 @@ function verEntrega(id) {
       <div class="modal-head">
         <div>
           <div class="modal-title">Detalle de entrega${esGrupo ? ` · ${hermanos.length} compradores` : ''}</div>
-          <div class="modal-sub">${esc(e['Mes']||'')} ${esc(e['Año']||'')} · ${esc(e['_nombreAsociacion']||'')}</div>
+          <div class="modal-sub">${esc(capMes(e['Mes']))} ${esc(e['Año']||'')} · ${esc(e['_nombreAsociacion']||'')}</div>
         </div>
         <button class="modal-close" onclick="cerrarModal()"></button>
       </div>
@@ -754,6 +766,23 @@ function _entQuitarVerificable(key) {
   _renderEntDocs();
 }
 
+// Fecha de hoy "AAAA-MM-DD" en hora LOCAL (toISOString usa UTC: después de las
+// 19:00 en Ecuador ya daba el día siguiente).
+function _hoyLocalISO() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// Años del formulario: 2024 → año actual + 2, más el de la entrega si quedara fuera.
+function _aniosFormEntrega(actual) {
+  const hasta = new Date().getFullYear() + 2;
+  const lista = [];
+  for (let a = 2024; a <= hasta; a++) lista.push(String(a));
+  const s = String(parseInt(actual, 10));
+  if (s !== 'NaN' && lista.indexOf(s) < 0) { lista.push(s); lista.sort(); }
+  return lista;
+}
+
 function abrirFormEntrega(id = null) {
   EVIDENCIAS_LISTA = [];
   COMPRADOR_IDX = 0;
@@ -793,20 +822,20 @@ function abrirFormEntrega(id = null) {
         <div class="form-grid-3">
           <div class="form-group">
             <label class="form-label">Fecha</label>
-            <input type="date" class="form-input" id="ent-fecha" readonly value="${primario?.['Fecha']?String(primario.Fecha).substring(0,10):new Date().toISOString().substring(0,10)}">
+            <input type="date" class="form-input" id="ent-fecha" readonly value="${primario?.['Fecha']?String(primario.Fecha).substring(0,10):_hoyLocalISO()}">
           </div>
           <div class="form-group">
             <label class="form-label">Año *</label>
             <select class="form-select" id="ent-anio">
               <option value="">Selecciona...</option>
-              ${['2024','2025','2026','2027','2028'].map(a=>`<option value="${a}" ${String(primario?.['Año'])===a?'selected':''}>${a}</option>`).join('')}
+              ${_aniosFormEntrega(primario?.['Año']).map(a=>`<option value="${a}" ${String(primario?.['Año'])===a?'selected':''}>${a}</option>`).join('')}
             </select>
           </div>
           <div class="form-group">
             <label class="form-label">Mes *</label>
             <select class="form-select" id="ent-mes">
               <option value="">Selecciona...</option>
-              ${['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map(m=>`<option value="${m}" ${primario?.['Mes']===m?'selected':''}>${m}</option>`).join('')}
+              ${['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'].map(m=>`<option value="${m}" ${mesCanonico(primario?.['Mes'])===m?'selected':''}>${m}</option>`).join('')}
             </select>
           </div>
         </div>
@@ -859,12 +888,12 @@ function abrirFormEntrega(id = null) {
         </div>
 
         <div id="ent-acta-pdf-wrap" style="display:none;margin-top:16px">
-          <button type="button" class="btn btn-glass" style="width:100%;justify-content:center" id="btn-acta-pdf" onclick="descargarActaPDF()">${icoHTML('download')}<span id="btn-acta-pdf-label">Descargar Acta de Validación (PDF)</span></button>
+          <button type="button" class="btn btn-glass ent-btn-pdf" style="width:100%;justify-content:center" id="btn-acta-pdf" onclick="descargarActaPDF()">${icoHTML('download')}<span id="btn-acta-pdf-label">Descargar Acta de Validación (PDF)</span></button>
           <div style="font-size:11.5px;color:var(--text-dim);margin-top:6px;text-align:center;line-height:1.5">Descarga el acta, imprímela y fírmala. Luego sube el PDF firmado como Verificable.</div>
         </div>
 
         <div id="ent-cac-pdf-wrap" style="display:none;margin-top:16px">
-          <button type="button" class="btn btn-glass" style="width:100%;justify-content:center" id="btn-cac-pdf" onclick="descargarComprobanteCAC()">${icoHTML('download')}<span id="btn-cac-pdf-label">Descargar Comprobante de Acopio Comunitario (PDF)</span></button>
+          <button type="button" class="btn btn-glass ent-btn-pdf" style="width:100%;justify-content:center" id="btn-cac-pdf" onclick="descargarComprobanteCAC()">${icoHTML('download')}<span id="btn-cac-pdf-label">Descargar Comprobante de Acopio Comunitario (PDF)</span></button>
           <div style="font-size:11.5px;color:var(--text-dim);margin-top:6px;text-align:center;line-height:1.5">Descarga el comprobante, imprímelo y fírmalo. Luego sube el PDF firmado como Verificable.</div>
         </div>
 
@@ -1078,6 +1107,7 @@ async function guardarEntrega(idPrimario) {
 
   // Recolectar bloques del DOM
   const bloques = [];
+  let hayNegativos = false;
   document.querySelectorAll('#cmp-container .cmp-block').forEach(bl => {
     const bIdx  = bl.getAttribute('data-block-idx');
     const docId = bl.getAttribute('data-doc-id') || '';
@@ -1090,18 +1120,26 @@ async function guardarEntrega(idPrimario) {
       const mid = partes.slice(3).join('-');
       const kg = parseFloat(inp.value || 0);
       const precio = parseFloat(document.getElementById(`mat-precio-${bIdx}-${mid}`)?.value || 0);
+      if (kg < 0 || precio < 0) hayNegativos = true;
       if (kg > 0) {
         const matReal = (CAT.materiales || []).find(m => m['Nombre'].replace(/[^a-zA-Z0-9]/g,'_') === mid);
         const nombreReal = matReal ? matReal['Nombre'] : mid.replace(/_/g,' ');
         mats.push({ nombre: nombreReal, kg: kg, precio: precio, venta: kg * precio });
       }
     });
-    bloques.push({ bIdx, docId, idEnt, idComp, ciRuc, mats });
+    bloques.push({ el: bl, bIdx, docId, idEnt, idComp, ciRuc, mats });
   });
 
   if (!bloques.length)   { showToast('Debe haber al menos un comprador'); return; }
   for (const b of bloques) {
     if (!b.idComp) { showToast('Todos los bloques deben tener un comprador seleccionado'); return; }
+  }
+  if (hayNegativos) { showToast('Los kilos y precios no pueden ser negativos'); return; }
+  const sinKilos = bloques.find(b => !b.mats.length);
+  if (sinKilos) {
+    const nom = (CAT.compradores.find(c => c['ID_Comprador'] === sinKilos.idComp) || {})['Nombre'] || 'un comprador';
+    showToast('Ingresa los kilos de al menos un material para ' + nom);
+    return;
   }
 
   const btn = document.getElementById('btn-guardar-entrega');
@@ -1109,9 +1147,12 @@ async function guardarEntrega(idPrimario) {
 
   try {
     // ── Identificador del grupo (reusar el existente o generar uno nuevo) ──
-    let groupId = '';
-    for (const s of EDITING_SIBLINGS) { if (s['ID_Grupo_Entrega']) { groupId = s['ID_Grupo_Entrega']; break; } }
+    // Se guarda en el formulario para que un reintento tras un error use el mismo.
+    const cont = document.getElementById('cmp-container');
+    let groupId = (cont && cont.dataset.grupo) || '';
+    if (!groupId) for (const s of EDITING_SIBLINGS) { if (s['ID_Grupo_Entrega']) { groupId = s['ID_Grupo_Entrega']; break; } }
     if (!groupId) groupId = 'GRP_' + Date.now() + '_' + Math.floor(Math.random() * 1000);
+    if (cont) cont.dataset.grupo = groupId;
 
     // ── Verificables: subir PDFs UNA sola vez, compartir referencias entre hermanos ──
     let carpetaCompartida = document.getElementById('ent-carpeta-compartida')?.value || '';
@@ -1137,6 +1178,8 @@ async function guardarEntrega(idPrimario) {
             const tmp = { ID_Asociacion: idAsoc, Mes: mes, 'Año': anio, ID_Carpeta_Evidencia: '' };
             await asegurarCarpetaEntrega(tmp);
             carpetaCompartida = tmp['ID_Carpeta_Evidencia'] || '';
+            const hid = document.getElementById('ent-carpeta-compartida');
+            if (hid && carpetaCompartida) hid.value = carpetaCompartida;
           }
           if (!carpetaCompartida) {
             showToast('No se pudo preparar la carpeta: la entrega se guarda sin los PDFs nuevos');
@@ -1148,6 +1191,11 @@ async function guardarEntrega(idPrimario) {
                 const fname = `${n.file}_${mes}${anio}.pdf`;
                 const up = await driveSubirArchivo(n.archivo, fname, carpetaCompartida, tok);
                 evidenciaMerged[n.key] = { id: up.id, url: up.webViewLink, nombre: fname };
+                // Ya subido: queda en el estado del formulario y se limpia el input,
+                // así un reintento tras un error no lo vuelve a subir.
+                if (ENT_EVIDENCIA_FORM) ENT_EVIDENCIA_FORM.docs[n.key] = evidenciaMerged[n.key];
+                const inp = document.getElementById('ent-doc-' + n.key);
+                if (inp) inp.value = '';
               } catch (err) { console.warn('Subida verificable:', err); showToast('No se pudo subir ' + n.file); }
             }
           }
@@ -1155,6 +1203,7 @@ async function guardarEntrega(idPrimario) {
         for (const idDrive of aEliminar) {
           try { await driveEliminarCarpeta(idDrive, tok); } catch (err) { console.warn('Papelera verificable:', err); }
         }
+        if (ENT_EVIDENCIA_FORM) ENT_EVIDENCIA_FORM.eliminar = [];
       }
     }
 
@@ -1191,7 +1240,18 @@ async function guardarEntrega(idPrimario) {
 
       const res = await guardarEntregaFS(b.docId || null, data);
       if (!res.ok) { ok = false; showToast('Error al guardar un bloque: ' + (res.error || '')); }
+      else if (!b.docId && res.docId) {
+        // Bloque nuevo ya creado: si hay que reintentar, se actualiza en vez de duplicarse
+        b.el.setAttribute('data-doc-id', res.docId);
+        b.el.setAttribute('data-id-entrega', res.idEntrega || '');
+      }
       if (b.docId) idsProcesados.add(b.docId);
+    }
+
+    if (!ok) {
+      // El formulario queda abierto con lo escrito para poder reintentar
+      renderVistaEntregas();
+      return;
     }
 
     // ── Eliminar hermanos que ya no están en el formulario ──
@@ -1201,7 +1261,9 @@ async function guardarEntrega(idPrimario) {
       }
     }
 
-    if (ok) showToast(idPrimario ? 'Entrega actualizada ✓' : 'Entrega creada ✓');
+    showToast(periodoOculto(anio, mes)
+      ? `Entrega guardada ✓ · ${mes} ${anio} está oculto en Configuraciones, por eso no se muestra`
+      : (idPrimario ? 'Entrega actualizada ✓' : 'Entrega creada ✓'), periodoOculto(anio, mes) ? 6000 : undefined);
     cerrarModal();
     renderVistaEntregas();
   } catch (e) {
@@ -1243,9 +1305,15 @@ function _arrayBufferABase64(buffer) {
 // jsPDF solo trae Helvetica/Times/Courier por defecto. Se cachea en memoria.
 async function _outfitFontsBase64() {
   if (_ACTA_FONTS_CACHE) return _ACTA_FONTS_CACHE;
+  // Si una descarga falla (404/500) se lanza error y NO se cachea: antes quedaba
+  // guardada una fuente inválida y el PDF fallaba hasta recargar la página.
+  const leer = (url) => fetch(url).then(r => {
+    if (!r.ok) throw new Error('No se pudo descargar ' + url + ' (' + r.status + ')');
+    return r.arrayBuffer();
+  });
   const [rBuf, bBuf] = await Promise.all([
-    fetch('assets/fonts/Outfit-Regular.ttf').then(r => r.arrayBuffer()),
-    fetch('assets/fonts/Outfit-Bold.ttf').then(r => r.arrayBuffer()),
+    leer('assets/fonts/Outfit-Regular.ttf'),
+    leer('assets/fonts/Outfit-Bold.ttf'),
   ]);
   _ACTA_FONTS_CACHE = { regular: _arrayBufferABase64(rBuf), bold: _arrayBufferABase64(bBuf) };
   return _ACTA_FONTS_CACHE;
@@ -1265,6 +1333,7 @@ function _registrarFuenteActa(doc, fonts) {
 async function _logoActaDataURL() {
   if (_ACTA_LOGO_DATAURL) return _ACTA_LOGO_DATAURL;
   const resp = await fetch('assets/logo-recircula.svg');
+  if (!resp.ok) throw new Error('logo ' + resp.status);
   const svgText = await resp.text();
   const url = URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml' }));
   try {
@@ -1293,12 +1362,19 @@ function _fechaDDMMYYYY(d) {
 // Lee del DOM los bloques de comprador ya llenados en el formulario (mismo
 // criterio que guardarEntrega: solo materiales con kg > 0), sin escribir nada.
 // Compartido por el Acta de Validación y el Comprobante de Acopio Comunitario.
+// bloques.sinComprador = cuántos bloques tienen kilos pero ningún comprador elegido
+// (quien llama avisa en vez de dejarlos fuera del PDF sin decir nada).
 function _recolectarBloquesPDF() {
   const bloques = [];
+  bloques.sinComprador = 0;
   document.querySelectorAll('#cmp-container .cmp-block').forEach(bl => {
     const bIdx = bl.getAttribute('data-block-idx');
     const idComp = document.getElementById('ent-comprador-' + bIdx)?.value || '';
-    if (!idComp) return;
+    if (!idComp) {
+      const conKilos = Array.from(bl.querySelectorAll(`[id^="mat-kg-${bIdx}-"]`)).some(inp => (parseFloat(inp.value) || 0) > 0);
+      if (conKilos) bloques.sinComprador++;
+      return;
+    }
     const nombreComprador = (CAT.compradores.find(c => c['ID_Comprador'] === idComp) || {})['Nombre'] || '';
     const ciRuc = document.getElementById('ent-ciruc-' + bIdx)?.value || '';
     const mats = [];
@@ -1428,26 +1504,51 @@ function _pdfFilaDatos(doc, x, y, cols, alturaFila) {
 // Fila "N° VOUCHER / FACTURA / OTROS": celda de etiqueta en color de acento,
 // y los números repartidos en columnas iguales a su derecha (sin borde, texto simple).
 // `labelLineas` es un array de líneas ya partidas (no depende de splitTextToSize/\n).
+// Reparte los números en una grilla: tantas columnas como quepan según el más
+// largo, y las filas que hagan falta (antes iban todos en una sola línea y con
+// varios números se pisaban y se salían del margen).
+const VOUCHER_LINEA = 15;
+function _pdfGrillaVouchers(doc, restoW, valores) {
+  const lista = (valores && valores.length) ? valores : ['—'];
+  doc.setFont('Outfit', 'normal'); doc.setFontSize(10.5);
+  const anchoMax = Math.max.apply(null, lista.map(v => doc.getTextWidth(v)));
+  const cols = Math.max(1, Math.min(lista.length, Math.floor(restoW / (anchoMax + 16))));
+  const colW = restoW / cols;
+  // Cada valor partido para que entre en su columna (un número larguísimo baja de línea)
+  const celdas = lista.map(v => doc.splitTextToSize(v, colW - 10));
+  const filas = [];
+  for (let i = 0; i < celdas.length; i += cols) filas.push(celdas.slice(i, i + cols));
+  const altFila = filas.map(f => Math.max.apply(null, f.map(c => c.length)) * VOUCHER_LINEA);
+  return { cols, colW, filas, altFila, altoTotal: altFila.reduce((s, h) => s + h, 0) };
+}
+
 function _pdfFilaVouchers(doc, x, y, contentW, labelLineas, valores, color, alturaFila) {
   const labelW = contentW * 0.24;
   doc.setFillColor.apply(doc, color);
   doc.rect(x, y, labelW, alturaFila, 'F');
-  doc.setFont('Outfit', 'bold'); doc.setFontSize(9.5); doc.setTextColor(255, 255, 255);
+  // Texto oscuro si el color de acento es claro (blanco sobre celeste no se leía)
+  const claro = (0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]) > 160;
+  doc.setFont('Outfit', 'bold'); doc.setFontSize(9.5);
+  if (claro) doc.setTextColor.apply(doc, ACTA_NAVY); else doc.setTextColor(255, 255, 255);
   let cyL = y + alturaFila / 2 - ((labelLineas.length - 1) * 12) / 2 + 3.5;
   labelLineas.forEach(l => { doc.text(l, x + labelW / 2, cyL, { align: 'center' }); cyL += 12; });
 
-  const restoW = contentW - labelW;
-  const lista = (valores && valores.length) ? valores : ['—'];
-  const colW = restoW / lista.length;
+  const g = _pdfGrillaVouchers(doc, contentW - labelW, valores);
   doc.setFont('Outfit', 'normal'); doc.setFontSize(10.5); doc.setTextColor(30, 32, 38);
-  lista.forEach((v, i) => {
-    doc.text(v, x + labelW + colW * i + colW / 2, y + alturaFila / 2 + 3.5, { align: 'center' });
+  let cy = y + (alturaFila - g.altoTotal) / 2;
+  g.filas.forEach((fila, fi) => {
+    fila.forEach((lineas, ci) => {
+      const cx = x + labelW + g.colW * ci + g.colW / 2;
+      lineas.forEach((l, li) => doc.text(l, cx, cy + VOUCHER_LINEA * li + 11, { align: 'center' }));
+    });
+    cy += g.altFila[fi];
   });
 }
 
-// Altura necesaria para la fila de vouchers, según cuántas líneas tenga la etiqueta.
-function _pdfAlturaFilaVouchers(labelLineas, alturaMin) {
-  return Math.max(alturaMin || 30, 12 + labelLineas.length * 12);
+// Altura necesaria para la fila de vouchers: la mayor entre la etiqueta y la grilla de números.
+function _pdfAlturaFilaVouchers(doc, contentW, labelLineas, valores, alturaMin) {
+  const g = _pdfGrillaVouchers(doc, contentW - contentW * 0.24, valores);
+  return Math.max(alturaMin || 30, 12 + labelLineas.length * 12, g.altoTotal + 14);
 }
 
 // Grilla Periodo/Asociación/Fecha de emisión/Provincia — compartida por el Acta
@@ -1496,9 +1597,12 @@ function _dibujarTablaConsolidado(doc, M, y, H, contentW, colW, b, colorAcento) 
   ], 24, colorAcento);
   y += 24;
 
+  // El TOTAL suma los valores tal como se imprimen (redondeados a 2 decimales),
+  // así siempre cuadra con las filas de arriba.
+  const r2 = (n) => Math.round(n * 100) / 100;
   let sumKg = 0, sumValor = 0;
   b.mats.forEach(m => {
-    sumKg += m.kg; sumValor += m.venta;
+    sumKg = r2(sumKg + r2(m.kg)); sumValor = r2(sumValor + r2(m.venta));
     _pdfFilaDatos(doc, M, y, [
       { texto: m.nombre, ancho: colW[0] },
       { texto: '$' + fmtNum(m.precio, 2), ancho: colW[1] },
@@ -1573,12 +1677,19 @@ function _construirComprobanteCAC(doc, logoDataUrl, cab, bloques, vouchers) {
 
   // Comprobantes emitidos (N° Voucher/Factura/Otros) — exclusivo de este comprobante.
   const labelVoucherLineas = ['N° VOUCHER /', 'FACTURA / OTROS'];
-  const alturaVoucher = _pdfAlturaFilaVouchers(labelVoucherLineas, 30);
+  const alturaVoucher = _pdfAlturaFilaVouchers(doc, contentW, labelVoucherLineas, vouchers, 30);
   if (y + 20 + alturaVoucher > H - M) { doc.addPage(); y = M; }
 
   doc.setFont('Outfit', 'bold'); doc.setFontSize(13); doc.setTextColor.apply(doc, CAC_CELESTE_COMPROBANTES);
   doc.text('COMPROBANTES EMITIDOS', M, y); y += 20;
   _pdfFilaVouchers(doc, M, y, contentW, labelVoucherLineas, vouchers, CAC_CELESTE_COMPROBANTES, alturaVoucher);
+}
+
+// Nombre de archivo seguro SIN perder letras: "Asociación Ñuñoa" → "Asociacion_Nunoa"
+// (antes se borraban las letras con tilde y la ñ: "Asociacin_uoa").
+function _nombreArchivo(s) {
+  return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_');
 }
 
 async function descargarActaPDF() {
@@ -1591,6 +1702,7 @@ async function descargarActaPDF() {
   if (!asoc)          { showToast('Selecciona una asociación'); return; }
   if (!anio || !mes)  { showToast('Año y mes son obligatorios'); return; }
   const bloques = _recolectarBloquesPDF();
+  if (bloques.sinComprador) { showToast('Hay ' + bloques.sinComprador + ' bloque(s) con kilos sin comprador: elígelo antes de descargar el acta'); return; }
   if (!bloques.length) { showToast('Agrega al menos un comprador con materiales antes de descargar el acta'); return; }
 
   const btn = document.getElementById('btn-acta-pdf');
@@ -1612,7 +1724,7 @@ async function descargarActaPDF() {
       provincia: provincia || asoc['Provincia'] || '',
       mes, anio,
     }, bloques);
-    const nomArch = (asoc['Nombre'] || 'Acta').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_');
+    const nomArch = _nombreArchivo(asoc['Nombre'] || 'Acta');
     doc.save(`Acta_${nomArch}_${mes}${anio}.pdf`);
   } catch (e) {
     console.error(e);
@@ -1634,6 +1746,7 @@ async function descargarComprobanteCAC() {
   if (!asoc)          { showToast('Selecciona una asociación'); return; }
   if (!anio || !mes)  { showToast('Año y mes son obligatorios'); return; }
   const bloques = _recolectarBloquesPDF();
+  if (bloques.sinComprador) { showToast('Hay ' + bloques.sinComprador + ' bloque(s) con kilos sin comprador: elígelo antes de descargar el comprobante'); return; }
   if (!bloques.length) { showToast('Agrega al menos un comprador con materiales antes de descargar el comprobante'); return; }
 
   const vouchers = (document.getElementById('ent-voucher')?.value || '')
@@ -1658,7 +1771,7 @@ async function descargarComprobanteCAC() {
       provincia: provincia || asoc['Provincia'] || '',
       mes, anio,
     }, bloques, vouchers);
-    const nomArch = (asoc['Nombre'] || 'Comprobante').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_');
+    const nomArch = _nombreArchivo(asoc['Nombre'] || 'Comprobante');
     doc.save(`Comprobante_CAC_${nomArch}_${mes}${anio}.pdf`);
   } catch (e) {
     console.error(e);
@@ -1674,7 +1787,10 @@ async function descargarComprobanteCAC() {
 // ============================================================
 
 async function exportarEntregasExcel(dataset) {
-  const datos = dataset || ENTREGAS_DATA;
+  // Desde Nivel 2 se exporta lo mismo que muestran las tarjetas: cada entrega
+  // con TODOS sus compradores (con filtro de material, ENTREGAS_DATA solo trae
+  // los compradores que tienen ese material y el Excel no cuadraba).
+  const datos = dataset || _agruparEntregasVista(ENTREGAS_DATA).reduce((a, g) => a.concat(g.hermanos), []);
   if (!datos || !datos.length) {
     showToast('No hay datos para exportar.');
     return;
@@ -1714,9 +1830,11 @@ async function exportarEntregasExcel(dataset) {
     const ws = XLSX.utils.aoa_to_sheet([header, ...filas]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Entregas');
-    const fecha = new Date().toISOString().substring(0, 10);
-    XLSX.writeFile(wb, `Entregas_${fecha}.xlsx`);
-    showToast(`${datos.length} entrega${datos.length !== 1 ? 's' : ''} exportada${datos.length !== 1 ? 's' : ''} ✓`);
+    XLSX.writeFile(wb, `Entregas_${_hoyLocalISO()}.xlsx`);   // fecha local (no UTC)
+    // Entregas = grupos (una entrega puede tener varios compradores = varias filas)
+    const nEnt = new Set(datos.map(e => e['ID_Grupo_Entrega'] || e['_docId'])).size;
+    showToast(`${nEnt} entrega${nEnt !== 1 ? 's' : ''} exportada${nEnt !== 1 ? 's' : ''}` +
+      (datos.length !== nEnt ? ` (${datos.length} filas, una por comprador)` : '') + ' ✓');
   } catch (e) {
     console.error(e);
     showToast('Error al exportar el Excel');
@@ -1856,6 +1974,23 @@ function exportarMatrizEntregas() {
     .ent-f-pend svg { width:14px; height:14px; flex-shrink:0; }
     .ent-f-pend span { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .ent-f-pend small { margin-left:auto; font-size:10.5px; color:var(--text-dim); white-space:nowrap; flex-shrink:0; }
+
+    /* Botones de Acta / CAC: el texto largo baja de línea en vez de salirse del botón */
+    .ent-btn-pdf { white-space:normal; text-align:center; line-height:1.3; }
+    .ent-btn-pdf svg { flex-shrink:0; }
+
+    /* Tabla de materiales del detalle: tabla real también en el celular (la
+       .table-wrap global se vuelve tarjetas sin encabezados a ≤768px) */
+    .ent-det-tabla { border:1px solid var(--border); border-radius:14px; overflow-x:auto; background:var(--white); }
+    .ent-det-tabla table { width:100%; border-collapse:collapse; }
+    .ent-det-tabla thead { background:#f8f8fc; border-bottom:1px solid var(--border); }
+    .ent-det-tabla th { text-align:left; font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:.8px; padding:12px 14px; white-space:nowrap; }
+    .ent-det-tabla td { padding:12px 14px; border-bottom:1px solid rgba(0,0,0,.04); font-size:13px; color:var(--text); white-space:nowrap; }
+    .ent-det-tabla tbody tr:last-child td { border-bottom:none; }
+    @media (max-width:768px) {
+      .ent-det-tabla th { padding:10px 8px; font-size:10px; letter-spacing:.4px; }
+      .ent-det-tabla td { padding:10px 8px; font-size:12px; }
+    }
 
     /* Verificables: chips en la ficha de detalle */
     .ent-docs-ver { display:flex; flex-wrap:wrap; gap:8px; }

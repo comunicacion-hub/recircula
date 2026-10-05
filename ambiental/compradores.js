@@ -51,6 +51,22 @@ function renderCompradores() {
     mostrarFAB('plus', abrirFormComprador, 'Nuevo comprador');
   }
   renderTablaCompradores();
+  updateFilterBadge('compradores');   // los filtros se conservan al volver: el botón debe indicarlo
+}
+
+// Filtro de nivel/provincia compartido por la tabla y el Excel. El nivel se
+// compara por GRUPO (igual que el reparto en tarjetas), así un valor no
+// canónico ("nivel 2", vacío) cae donde se muestra.
+function _compradoresFiltrados() {
+  let datos = (CAT.compradores || []).slice();
+  const fProv  = COMPRADORES_FILTROS.provincia || [];
+  const fNivel = COMPRADORES_FILTROS.nivel     || [];
+  if (fProv.length && !fProv.includes('__ALL__'))   datos = datos.filter(c => fProv.includes(c['Provincia']));
+  if (fNivel.length && !fNivel.includes('__ALL__')) datos = datos.filter(c => fNivel.includes(CMP_NIVELES[_grupoNivel(c['Nivel Intermediacion'] || c['Nivel'])].key));
+  return datos;
+}
+function _hayFiltrosCompradores() {
+  return Object.values(COMPRADORES_FILTROS).some(v => Array.isArray(v) && v.length && !v.includes('__ALL__'));
 }
 
 // ============================================================
@@ -90,13 +106,8 @@ function renderTablaCompradores() {
   const wrap = document.getElementById('compradores-table-wrap');
   if (!wrap) return;
 
-  let datos = (CAT.compradores || []).slice();
-  const fProv  = COMPRADORES_FILTROS.provincia || [];
-  const fNivel = COMPRADORES_FILTROS.nivel     || [];
-  const filtrarPorProv  = fProv.length  > 0 && !fProv.includes('__ALL__');
-  const filtrarPorNivel = fNivel.length > 0 && !fNivel.includes('__ALL__');
-  if (filtrarPorProv)  datos = datos.filter(c => fProv.includes(c['Provincia']));
-  if (filtrarPorNivel) datos = datos.filter(c => fNivel.includes(c['Nivel Intermediacion'] || c['Nivel']));
+  const datos = _compradoresFiltrados();
+  const conFiltros = _hayFiltrosCompradores();
 
   // Reparto en los 4 niveles
   const cols = [[], [], [], []];
@@ -132,7 +143,7 @@ function renderTablaCompradores() {
     const cnt   = lista.length;
     const cuerpo = cnt
       ? lista.map(c => fila(c, n.color)).join('')
-      : `<div class="cmp-lvl-empty">Aún no hay compradores en este nivel.</div>`;
+      : `<div class="cmp-lvl-empty">${conFiltros ? 'Ningún comprador de este nivel coincide con los filtros.' : 'Aún no hay compradores en este nivel.'}</div>`;
     return `<div class="card cmp-lvlcard">
       <div class="cmp-lvlcard-head">
         <div class="cmp-lvlcard-badge">
@@ -165,7 +176,7 @@ function verComprador(id) {
         <div style="display:flex;align-items:center;gap:14px;min-width:0">
           <span class="cmp-r-ava" style="width:48px;height:48px;border-radius:13px;font-size:17px;background:${_rgbaCmp(color, .12)};color:${color}">${esc(_inicialesCmp(c['Nombre']))}</span>
           <div style="min-width:0">
-            <div class="modal-title" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c['Nombre']||'')}</div>
+            <div class="modal-title" style="overflow-wrap:anywhere;line-height:1.25">${esc(c['Nombre']||'')}</div>
             <div class="modal-sub"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};margin-right:6px;vertical-align:middle"></span>${esc(niv.key)} · ${esc(niv.desc)}</div>
           </div>
         </div>
@@ -198,6 +209,14 @@ function verComprador(id) {
 function abrirFormComprador(id = null) {
   const c = id ? CAT.compradores.find(x => x['ID_Comprador'] === id) : null;
   const activo = !c || c['Activo'] === true;
+  // Si el comprador tiene un nivel o provincia fuera de la lista, se agrega como
+  // opción para no reescribirlo sin querer (antes pasaba a "Nivel 1" / se borraba).
+  const nivAct  = (c && (c['Nivel Intermediacion'] || c['Nivel'])) || '';
+  const provAct = (c && c['Provincia']) || '';
+  const niveles = ['Nivel 1','Nivel 2','Nivel 3','Transformador'];
+  const provs   = ['El Oro','Guayas','Manabí','Sucumbíos','Pichincha','Chimborazo'];
+  if (nivAct && !niveles.includes(nivAct)) niveles.push(nivAct);
+  if (provAct && !provs.includes(provAct)) provs.push(provAct);
 
   abrirModal(`
     <div class="modal" style="max-width:560px">
@@ -217,16 +236,16 @@ function abrirFormComprador(id = null) {
           <div class="form-group">
             <label class="form-label">Nivel intermediación</label>
             <select class="form-select" id="com-nivel">
-              ${['Nivel 1','Nivel 2','Nivel 3','Transformador'].map(n =>
-                `<option value="${n}" ${(c?.['Nivel Intermediacion']||c?.['Nivel'])===n?'selected':''}>${n}</option>`).join('')}
+              ${niveles.map(n =>
+                `<option value="${esc(n)}" ${nivAct===n?'selected':''}>${esc(n)}</option>`).join('')}
             </select>
           </div>
           <div class="form-group">
             <label class="form-label">Provincia</label>
             <select class="form-select" id="com-provincia">
               <option value="">Sin asignar</option>
-              ${['El Oro','Guayas','Manabí','Sucumbíos','Pichincha','Chimborazo'].map(p =>
-                `<option value="${p}" ${c?.['Provincia']===p?'selected':''}>${p}</option>`).join('')}
+              ${provs.map(p =>
+                `<option value="${esc(p)}" ${provAct===p?'selected':''}>${esc(p)}</option>`).join('')}
             </select>
           </div>
         </div>
@@ -270,6 +289,7 @@ async function guardarComprador(id) {
 
   const btn = document.getElementById('btn-guardar-com');
   if (btn) { btn.disabled = true; btn.textContent = 'Guardando...'; }
+  let exito = false;   // con éxito el botón queda bloqueado mientras el modal se cierra (evita doble alta)
 
   try {
     const actual = id ? (CAT.compradores.find(x => x['ID_Comprador'] === id) || {}) : {};
@@ -285,6 +305,7 @@ async function guardarComprador(id) {
     };
     const res = await guardarCompradorFS(docId, data);
     if (!res.ok) { showToast('Error: ' + (res.error || 'desconocido')); return; }
+    exito = true;
     showToast(res.offline ? 'Guardado (se sincronizará) ✓' : (id ? 'Comprador actualizado ✓' : 'Comprador creado ✓'));
     cerrarModal();
     renderTablaCompradores();
@@ -292,7 +313,7 @@ async function guardarComprador(id) {
     console.error(e);
     showToast('Error al guardar');
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = id ? 'Actualizar' : 'Guardar'; }
+    if (btn && !exito) { btn.disabled = false; btn.textContent = id ? 'Actualizar' : 'Guardar'; }
   }
 }
 
@@ -303,8 +324,17 @@ async function guardarComprador(id) {
 function confirmarEliminarComprador(id) {
   const c = CAT.compradores.find(x => x['ID_Comprador'] === id);
   if (!c) return;
+  // Entregas que lo usan: si se elimina, quedan sin comprador (nombre y CI/RUC vacíos)
+  const nEnt = (CAT.entregas || []).filter(e => e['ID_Comprador'] === id).length;
+  const aviso = nEnt
+    ? `<p style="margin-top:12px;padding:12px 14px;border-radius:12px;background:rgba(245,173,33,.12);color:#8a5a00;font-size:13px;line-height:1.55">
+        Tiene <b>${nEnt} entrega${nEnt !== 1 ? 's' : ''}</b> registrada${nEnt !== 1 ? 's' : ''}. Si lo eliminas, ${nEnt !== 1 ? 'esas entregas quedarán' : 'esa entrega quedará'} sin comprador.
+        Si ya no trabaja con las asociaciones, mejor márcalo como inactivo.
+      </p>`
+    : '';
+  const activo = c['Activo'] === true;
   abrirModal(`
-    <div class="modal" style="max-width:440px">
+    <div class="modal" style="max-width:460px">
       <div class="modal-head">
         <div class="modal-title">Eliminar comprador</div>
         <button class="modal-close" onclick="cerrarModal()"></button>
@@ -313,13 +343,26 @@ function confirmarEliminarComprador(id) {
         <p style="color:var(--text-muted);font-size:14px;line-height:1.6">
           ¿Seguro que quieres eliminar <strong>${esc(c['Nombre'])}</strong>? Esta acción no se puede deshacer.
         </p>
+        ${aviso}
       </div>
       <div class="modal-foot">
         <button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>
+        ${nEnt && activo ? `<button class="btn btn-glass" onclick="desactivarComprador('${jsEsc(id)}')">Marcar inactivo</button>` : ''}
         <button class="btn btn-danger" onclick="eliminarComprador('${jsEsc(id)}')">Eliminar</button>
       </div>
     </div>
   `);
+}
+
+// Alternativa a eliminar: lo deja inactivo y conserva sus entregas.
+async function desactivarComprador(id) {
+  const c = CAT.compradores.find(x => x['ID_Comprador'] === id);
+  if (!c || !c._docId) { showToast('No se encontró el comprador'); return; }
+  const res = await guardarCompradorFS(c._docId, Object.assign({}, c, { Activo: false }));
+  if (!res.ok) { showToast('Error: ' + (res.error || 'desconocido')); return; }
+  showToast(res.offline ? 'Marcado inactivo (se sincronizará) ✓' : 'Comprador marcado como inactivo ✓');
+  cerrarModal();
+  renderTablaCompradores();
 }
 
 async function eliminarComprador(id) {
@@ -344,13 +387,7 @@ async function eliminarComprador(id) {
 
 async function exportarCompradoresExcel() {
   // Mismo filtrado que la tabla
-  let datos = (CAT.compradores || []).slice();
-  const fProv  = COMPRADORES_FILTROS.provincia || [];
-  const fNivel = COMPRADORES_FILTROS.nivel     || [];
-  const filtrarPorProv  = fProv.length  > 0 && !fProv.includes('__ALL__');
-  const filtrarPorNivel = fNivel.length > 0 && !fNivel.includes('__ALL__');
-  if (filtrarPorProv)  datos = datos.filter(c => fProv.includes(c['Provincia']));
-  if (filtrarPorNivel) datos = datos.filter(c => fNivel.includes(c['Nivel Intermediacion'] || c['Nivel']));
+  const datos = _compradoresFiltrados();
 
   if (!datos.length) {
     showToast('No hay compradores para exportar');
@@ -373,8 +410,7 @@ async function exportarCompradoresExcel() {
     const ws = XLSX.utils.aoa_to_sheet([header, ...filas]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Compradores');
-    const fecha = new Date().toISOString().substring(0, 10);
-    XLSX.writeFile(wb, `Compradores_${fecha}.xlsx`);
+    XLSX.writeFile(wb, `Compradores_${_hoyLocalISO()}.xlsx`);   // fecha local (no UTC)
     showToast(`${datos.length} comprador${datos.length !== 1 ? 'es' : ''} exportado${datos.length !== 1 ? 's' : ''} ✓`);
   } catch (e) {
     console.error(e);
@@ -408,7 +444,9 @@ async function exportarCompradoresExcel() {
     .cmp-row.off { opacity:.55; }
     .cmp-r-ava { width:38px; height:38px; border-radius:11px; flex-shrink:0; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:800; letter-spacing:.3px; }
     .cmp-r-body { flex:1; min-width:0; display:flex; flex-direction:column; }
-    .cmp-r-top { display:flex; align-items:center; gap:8px; min-width:0; }
+    /* flex-wrap: si el nombre no cabe junto a "Inactivo", la etiqueta baja de
+       línea (antes el nombre quedaba en 2 letras en el celular) */
+    .cmp-r-top { display:flex; flex-wrap:wrap; align-items:center; gap:3px 8px; min-width:0; }
     .cmp-r-name { font-size:13.5px; font-weight:600; color:var(--text); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .cmp-r-off { flex-shrink:0; font-size:9.5px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:var(--text-dim); background:#eef1f6; padding:2px 7px; border-radius:20px; }
     .cmp-r-meta { font-size:11.5px; color:var(--text-muted); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px; }
@@ -420,7 +458,9 @@ async function exportarCompradoresExcel() {
 
     .cmp-lvl-empty { padding:14px 4px; color:var(--text-dim); font-size:12.5px; }
 
-    @media (max-width:900px) {
+    /* Acciones siempre visibles en pantallas chicas y en cualquier pantalla táctil
+       (una tablet de más de 900px no tiene hover) */
+    @media (max-width:900px), (hover:none) {
       .cmp-r-acts { opacity:1; }
     }
   `;
