@@ -8,6 +8,7 @@
 
 const DOMAIN  = 'redesconrostro.org';
 const DOMINIO_VISUALIZADOR = 'cbc.co'; // Tesalia (CBC): acceso Visualizador (solo lectura)
+const DOMINIO_PERSONAL = 'carlosandres.es'; // dominio personal: acceso Visualizador (igual que el inicio de sesión y ambiental)
 const HUB_URL = 'https://recircula.redesconrostro.org';
 const MODULO_ACTUAL = 'asociativo';   // último segmento de su url en la colección Modulos
 
@@ -320,10 +321,10 @@ async function establecerSesion(user) {
       if (parsed && parsed.rol) { SESSION = parsed; return true; }
     } catch (e) {}
   }
-  // Tesalia (CBC): Visualizador automatico aunque no esté en Usuarios.
+  // Tesalia (CBC) o dominio personal: Visualizador automatico aunque no esté en Usuarios.
   const emailLower = (user.email || '').toLowerCase();
-  if (emailLower.endsWith('@' + DOMINIO_VISUALIZADOR)) {
-    SESSION = { nombre: user.displayName || 'Tesalia', email: emailLower, rol: 'Visualizador', externo: true };
+  if (emailLower.endsWith('@' + DOMINIO_VISUALIZADOR) || emailLower.endsWith('@' + DOMINIO_PERSONAL)) {
+    SESSION = { nombre: user.displayName || 'Externo', email: emailLower, rol: 'Visualizador', externo: true };
     sessionStorage.setItem('rcr_session', JSON.stringify(SESSION));
     return true;
   }
@@ -389,12 +390,22 @@ function fechaOculta(fecha) {
 // ============================================================
 
 async function cargarDatos() {
+  // Cada colección por separado: si una falla (permisos, red), las demás igual
+  // se muestran y se avisa cuál faltó (antes quedaba todo vacío).
+  const fallidas = [];
+  const cargar = function (nombre) {
+    return fsGetAll(nombre).catch(function (e) {
+      console.error('Error cargando ' + nombre + ':', e);
+      fallidas.push(nombre);
+      return [];
+    });
+  };
   try {
     const res = await Promise.all([
-      fsGetAll('Asoc_Ambiente'),
-      fsGetAll('Asoc_Asociativo'),
-      fsGetAll('Diagnosticos'),
-      fsGetAll('Encuentros'),
+      cargar('Asoc_Ambiente'),
+      cargar('Asoc_Asociativo'),
+      cargar('Diagnosticos'),
+      cargar('Encuentros'),
       cargarPeriodosOcultos(),
     ]);
     CAT.asocAmbiente = res[0].map(asocAmbienteFromFS).sort(byNombre);
@@ -410,7 +421,25 @@ async function cargarDatos() {
   } catch (e) {
     console.error('Error cargando datos:', e);
     showToast('Error al cargar datos');
+    return;
   }
+  if (fallidas.length) showToast('No se pudo cargar: ' + fallidas.join(', '), 6000);
+}
+
+// Fecha de hoy "AAAA-MM-DD" en hora LOCAL (toISOString usa UTC: después de las
+// 19:00 en Ecuador ya daba el día siguiente). Para formularios y nombres de archivo.
+function _hoyLocalISO() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// Reemplaza un PDF en Drive: sube el nuevo y, SOLO si la subida funcionó, manda
+// el anterior a la papelera (antes se borraba primero y, si la subida fallaba,
+// el registro quedaba apuntando a un archivo en la papelera). Devuelve el meta nuevo.
+async function driveReemplazarArchivo(blob, filename, parentId, token, prevId) {
+  const up = await driveSubirArchivo(blob, filename, parentId, token);
+  if (prevId) { try { await driveEliminarCarpeta(prevId, token); } catch (e) { console.warn('Papelera archivo anterior:', e); } }
+  return { id: up.id, url: up.webViewLink, nombre: filename };
 }
 
 // Carga SheetJS bajo demanda para exportar a Excel.
@@ -458,6 +487,9 @@ function navTo(seccion) {
   if (navEl) navEl.classList.add('active');
 
   closeFilterDrawer();
+  closeModMenu();
+  // Los gráficos de Gráficos se destruyen al salir (si no, quedan vivos escuchando el resize)
+  if (typeof HOME !== 'undefined' && HOME.destruir) HOME.destruir();
   document.getElementById('main-content').innerHTML = '';
 
   switch (seccion) {
@@ -950,7 +982,8 @@ window.addEventListener('load', async function () {
 
   window.fb.onAuthStateChanged(window.fb.auth, async function (user) {
     var emailLower = (user && user.email) ? user.email.toLowerCase() : '';
-    var dominioOk = emailLower.endsWith('@' + DOMAIN) || emailLower.endsWith('@' + DOMINIO_VISUALIZADOR);
+    var dominioOk = emailLower.endsWith('@' + DOMAIN) || emailLower.endsWith('@' + DOMINIO_VISUALIZADOR)
+      || emailLower.endsWith('@' + DOMINIO_PERSONAL);
     if (!user || !dominioOk) {
       window.location.href = HUB_URL;
       return;

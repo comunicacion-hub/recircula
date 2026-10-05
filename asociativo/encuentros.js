@@ -174,16 +174,21 @@ function renderNivelListaEnc() {
   const add = puedeEditar();
   const asoc = (CAT.asocAmbiente || []).find(function (a) { return a.id_asociacion === ENC_ASOC_SEL; });
   const nombre = asoc ? (asoc.nombre || '') : '';
-  const BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>';
+  const prov = asoc ? (asoc.provincia || '') : '';
+  // Volver = botón redondo junto a las acciones, y el nombre de la asociación en un
+  // título visible (el .page-sub está oculto en toda la app).
   document.getElementById('main-content').innerHTML =
     '<div class="page-header">' +
-      '<div><div class="ent-title-row" style="display:flex;align-items:center;gap:12px">' +
-        '<button class="ent-back" onclick="volverAsociacionesEnc()" title="Volver">' + BACK + '</button>' +
-        '<div><div class="page-title">Encuentros</div><div class="page-sub">' + esc(nombre) + '</div></div>' +
-      '</div></div>' +
+      '<div><div class="page-title">Encuentros</div><div class="page-sub">' + esc(nombre) + '</div></div>' +
       '<div class="hdr-actions">' +
+        '<button class="hdr-circle" onclick="volverAsociacionesEnc()" title="Volver a asociaciones" aria-label="Volver">' + ICO_VOLVER + '</button>' +
         (add ? '<button class="hdr-circle hdr-circle-primary" onclick="abrirFormEncuentro()" title="Nuevo encuentro">' + icoHTML('plus') + '</button>' : '') +
       '</div>' +
+    '</div>' +
+    '<div class="n2-title">' +
+      (prov ? '<div class="n2-eye"><i style="background:' + _provColorAsoc(prov) + '"></i><span>' + esc(prov) + '</span></div>' : '') +
+      '<div class="n2-h">' + esc(nombre || 'Asociación') + '</div>' +
+      '<div class="n2-sub" id="enc-n2-sub"></div>' +
     '</div>' +
     '<div id="enc-table-wrap"></div>';
   cargarEncuentros();
@@ -210,6 +215,12 @@ function cargarEncuentros() {
 function renderTablaEncuentros() {
   const wrap = document.getElementById('enc-table-wrap');
   if (!wrap) return;
+  const sub = document.getElementById('enc-n2-sub');
+  if (sub) {
+    const n = ENCUENTROS_DATA.length;
+    const asist = ENCUENTROS_DATA.reduce(function (s, e) { return s + (parseFloat(e.num_asistentes) || 0); }, 0);
+    sub.textContent = n ? (n + ' encuentro' + (n !== 1 ? 's' : '') + ' · ' + fmtNum(asist) + ' asistentes') : 'Sin encuentros';
+  }
   if (!ENCUENTROS_DATA.length) {
     wrap.innerHTML = '<div class="empty-state">' +
       icoHTML('calendar').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"') +
@@ -319,7 +330,10 @@ function confirmarEliminarEncuentro(docId, folderId) {
 
 async function eliminarEncuentro(docId, folderId) {
   if (!docId) { showToast('No se encontró el encuentro'); return; }
-  // Papelera de la subcarpeta del encuentro (no la de la asociación)
+  // Primero el registro; la subcarpeta del encuentro (no la de la asociación) va a la
+  // papelera solo si se borró
+  const r = await fsWrite(function () { return window.fb.deleteDoc(fsDoc('Encuentros', docId)); });
+  if (!r.ok) { showToast('Error al eliminar: ' + (r.error || '')); return; }
   if (folderId) {
     const tok = driveToken();
     if (tok) {
@@ -327,8 +341,6 @@ async function eliminarEncuentro(docId, folderId) {
       catch (e) { console.warn('Drive papelera encuentro:', e); }
     }
   }
-  const r = await fsWrite(function () { return window.fb.deleteDoc(fsDoc('Encuentros', docId)); });
-  if (!r.ok) { showToast('Error al eliminar: ' + (r.error || '')); return; }
   CAT.encuentros = CAT.encuentros.filter(function (x) { return x._docId !== docId; });
   showToast(r.offline ? 'Eliminado (se sincronizará) ✓' : 'Encuentro eliminado ✓');
   cerrarModal();
@@ -366,7 +378,7 @@ function abrirFormEncuentro(docId) {
     return '<option value="' + t + '"' + (e && e.tipo_encuentro === t ? ' selected' : '') + '>' + t + '</option>';
   }).join('');
 
-  const hoy = new Date().toISOString().substring(0, 10);
+  const hoy = _hoyLocalISO();   // fecha local (toISOString daba el día siguiente desde las 19:00)
 
   abrirModal(
     '<div class="modal">' +
@@ -451,6 +463,12 @@ async function guardarEncuentro(docId) {
   if (!fecha) { showToast('Indicá la fecha'); return; }
   const tipo = (document.getElementById('enc-tipo') || {}).value || '';
   if (!tipo) { showToast('Elegí el tipo de encuentro'); return; }
+  const hIni = (document.getElementById('enc-hora-ini') || {}).value || '';
+  const hFin = (document.getElementById('enc-hora-fin') || {}).value || '';
+  if (hIni && hFin && hFin <= hIni) { showToast('La hora de fin debe ser posterior a la de inicio'); return; }
+  const asistRaw = ((document.getElementById('enc-asist') || {}).value || '').trim();
+  const asistN = asistRaw === '' ? 0 : Number(asistRaw);
+  if (isNaN(asistN) || asistN < 0 || Math.floor(asistN) !== asistN) { showToast('El N° de asistentes debe ser un número entero, 0 o mayor'); return; }
 
   const amb = CAT.asocAmbiente.find(function (a) { return a.id_asociacion === idAsoc; });
   const actual = docId ? CAT.encuentros.find(function (x) { return x._docId === docId; }) : null;
@@ -463,10 +481,10 @@ async function guardarEncuentro(docId) {
     nombre_encuentro:nombre,
     provincia:       amb ? amb.provincia : (actual ? actual.provincia : ((document.getElementById('enc-provincia') || {}).value || '')),
     fecha_encuentro: fecha,
-    hora_inicio:     (document.getElementById('enc-hora-ini') || {}).value || '',
-    hora_fin:        (document.getElementById('enc-hora-fin') || {}).value || '',
+    hora_inicio:     hIni,
+    hora_fin:        hFin,
     tipo_encuentro:  tipo,
-    num_asistentes:  (document.getElementById('enc-asist') || {}).value || 0,
+    num_asistentes:  asistN,
     invitados:       (document.getElementById('enc-invitados') || {}).value || '',
     resultados:      (document.getElementById('enc-resultados') || {}).value || '',
     documentos:      JSON.parse(JSON.stringify((_ENC_FORM && _ENC_FORM.documentos) ? _ENC_FORM.documentos : {})),
@@ -508,9 +526,8 @@ async function guardarEncuentro(docId) {
         try {
           const fname = n.file + '.pdf';
           const prev = o.documentos[n.key];
-          if (prev && prev.id) { try { await driveEliminarCarpeta(prev.id, tok); } catch (e) {} }
-          const up = await driveSubirArchivo(n.archivo, fname, o.id_carpeta_drive, tok);
-          o.documentos[n.key] = { id: up.id, url: up.webViewLink, nombre: fname };
+          // Sube primero; el anterior va a la papelera solo si la subida funcionó
+          o.documentos[n.key] = await driveReemplazarArchivo(n.archivo, fname, o.id_carpeta_drive, tok, prev && prev.id);
         } catch (e) { console.warn('Subida verificable:', e); showToast('No se pudo subir ' + n.file); }
       }
     }
@@ -524,18 +541,25 @@ async function guardarEncuentro(docId) {
   }
 
   const fs = encuentroToFS(o);
+  // Un encuentro en un mes oculto en configuraciones se guarda, pero no entra a la
+  // vista (igual que al cargar; antes aparecía hasta recargar).
+  const oculto = fechaOculta(fs.fecha_encuentro);
   let r;
   if (docId) {
     r = await fsWrite(function () { return window.fb.updateDoc(fsDoc('Encuentros', docId), fs); });
-    if (r.ok) { const i = CAT.encuentros.findIndex(function (x) { return x._docId === docId; }); if (i >= 0) CAT.encuentros[i] = encuentroFromFS(Object.assign({ _docId: docId }, fs)); }
+    if (r.ok) {
+      const i = CAT.encuentros.findIndex(function (x) { return x._docId === docId; });
+      if (i >= 0) { if (oculto) CAT.encuentros.splice(i, 1); else CAT.encuentros[i] = encuentroFromFS(Object.assign({ _docId: docId }, fs)); }
+    }
   } else {
     const ref = window.fb.doc(fsCol('Encuentros'));
     r = await fsWrite(function () { return window.fb.setDoc(ref, fs); });
-    if (r.ok) CAT.encuentros.push(encuentroFromFS(Object.assign({ _docId: ref.id }, fs)));
+    if (r.ok && !oculto) CAT.encuentros.push(encuentroFromFS(Object.assign({ _docId: ref.id }, fs)));
   }
 
   if (!r.ok) { showToast('Error al guardar: ' + (r.error || '')); if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; } return; }
-  showToast(r.offline ? 'Guardado (se sincronizará) ✓' : 'Guardado ✓');
+  showToast(oculto ? 'Guardado ✓ · ese mes está oculto en Configuraciones, por eso no se muestra'
+    : (r.offline ? 'Guardado (se sincronizará) ✓' : 'Guardado ✓'), oculto ? 6000 : undefined);
   cerrarModal();
   renderVistaEncuentros();
 }
@@ -556,7 +580,7 @@ async function exportarEncuentrosExcel() {
     ws['!cols'] = [{ wch: 24 }, { wch: 26 }, { wch: 14 }, { wch: 12 }, { wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 15 }, { wch: 16 }, { wch: 30 }, { wch: 36 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Encuentros');
-    XLSX.writeFile(wb, 'Encuentros_' + new Date().toISOString().substring(0, 10) + '.xlsx');
+    XLSX.writeFile(wb, 'Encuentros_' + _hoyLocalISO() + '.xlsx');   // fecha local (no UTC)
     showToast('Excel descargado ✓');
   } catch (e) { console.error('export encuentros:', e); showToast('Error al exportar'); }
 }

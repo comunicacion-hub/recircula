@@ -16,6 +16,21 @@ const HOME = (() => {
   let _fProvs = [];
   let _fCats  = [];
   let _charts = [];
+  let _radarAncho = '';   // tramo de ancho con el que se dibujó el radar (para redibujar al cambiar)
+
+  // Al cambiar el ancho de la ventana, el radar se redibuja solo si cambió de
+  // tramo (su radio depende del ancho de la tarjeta).
+  window.addEventListener('resize', debounceHome(function () {
+    if (CURRENT_SECTION !== 'home' || !_charts.length) return;
+    const el = document.getElementById('chEstado');
+    if (!el) return;
+    const w = el.clientWidth || 600;
+    const tramo = w < 440 ? 'angosto' : (Math.floor((w - 200) / 2) < 140 ? 'medio' : 'ancho');
+    if (tramo !== _radarAncho || tramo === 'medio') _initCharts();
+  }, 300));
+  function debounceHome(fn, ms) {
+    let t; return function () { clearTimeout(t); t = setTimeout(fn, ms); };
+  }
 
   const CATEGORIAS = ['Líderes de ReCircula', 'En Fortalecimiento', 'En Acompañamiento'];
   const MESES_ABR  = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
@@ -105,17 +120,28 @@ const HOME = (() => {
     return { y: y, m: m };
   }
 
+  // Encuentros con los MISMOS filtros que las asociaciones: provincia y categoría
+  // (la del diagnóstico vigente de su asociación). Antes la categoría no se aplicaba.
   function _encFiltrados() {
     return (CAT.encuentros || []).filter(function (e) {
-      return pasaFiltro(_fProvs, e.provincia);
+      return pasaFiltro(_fProvs, e.provincia) && pasaFiltro(_fCats, categoriaVigente(e.id_asociacion));
     });
   }
 
+  // Períodos = año + mes, como número ordenable (año * 12 + mes - 1): junio 2025
+  // y junio 2026 son puntos distintos (antes se sumaban en un solo "Jun").
+  function _perDe(p) { return p.y * 12 + (p.m - 1); }
   function _mesesVis() {
     const set = {};
-    _encFiltrados().forEach(function (e) { const p = _encFecha(e); if (p) set[p.m] = true; });
-    const keys = Object.keys(set).map(Number).sort(function (a, b) { return a - b; });
-    return keys.length ? keys : [1, 2, 3, 4, 5, 6];
+    _encFiltrados().forEach(function (e) { const p = _encFecha(e); if (p) set[_perDe(p)] = true; });
+    return Object.keys(set).map(Number).sort(function (a, b) { return a - b; });
+  }
+  // "Jun" si todo es del mismo año; "Jun 25" si hay varios años.
+  function _lblPeriodos(pers) {
+    const varios = new Set(pers.map(function (x) { return Math.floor(x / 12); })).size > 1;
+    return pers.map(function (x) {
+      return MESES_ABR[x % 12] + (varios ? ' ' + String(Math.floor(x / 12)).slice(2) : '');
+    });
   }
 
   // ── Datos para los Gráficos ──
@@ -134,20 +160,22 @@ const HOME = (() => {
     };
   }
 
+  // Incluye "Sin diagnóstico" (gris) cuando hay asociaciones sin diagnóstico, así
+  // las barras y los % del detalle suman el total.
   function _categoriaData() {
     const filtradas = _asociacionesFiltradas();
     const total = filtradas.length;
     const cuenta = { 'Líderes de ReCircula': 0, 'En Fortalecimiento': 0, 'En Acompañamiento': 0 };
+    let sinDiag = 0;
     filtradas.forEach(function (a) {
       const c = categoriaVigente(a.id_asociacion);
-      if (cuenta[c] !== undefined) cuenta[c]++;
+      if (cuenta[c] !== undefined) cuenta[c]++; else sinDiag++;
     });
-    return {
-      total: total,
-      names: CATEGORIAS,
-      values: CATEGORIAS.map(function (c) { return cuenta[c]; }),
-      colors: CATEGORIAS.map(function (c) { return CAT_COLOR[c]; })
-    };
+    const names = CATEGORIAS.slice();
+    const values = CATEGORIAS.map(function (c) { return cuenta[c]; });
+    const colors = CATEGORIAS.map(function (c) { return CAT_COLOR[c]; });
+    if (sinDiag) { names.push('Sin diagnóstico'); values.push(sinDiag); colors.push('#c3c8d4'); }
+    return { total: total, names: names, values: values, colors: colors };
   }
 
   function _estadoAsociativo() {
@@ -193,24 +221,26 @@ const HOME = (() => {
   }
 
   function _evolucionData() {
-    const meses = _mesesVis();
+    const pers = _mesesVis();
     const encs = _encFiltrados();
     const cEncs = {};
     const cAsist = {};
-    meses.forEach(function (m) { cEncs[m] = 0; cAsist[m] = 0; });
+    pers.forEach(function (x) { cEncs[x] = 0; cAsist[x] = 0; });
 
     encs.forEach(function (e) {
       const p = _encFecha(e);
-      if (!p || cEncs[p.m] === undefined) return;
-      cEncs[p.m]++;
-      cAsist[p.m] += parseFloat(e.num_asistentes) || 0;
+      if (!p) return;
+      const x = _perDe(p);
+      if (cEncs[x] === undefined) return;
+      cEncs[x]++;
+      cAsist[x] += parseFloat(e.num_asistentes) || 0;
     });
 
     return {
-      meses: meses.map(function (m) { return MESES_ABR[m - 1]; }),
-      encuentros: meses.map(function (m) { return cEncs[m]; }),
-      asistentes: meses.map(function (m) { return cAsist[m]; }),
-      hasData: encs.length > 0
+      meses: _lblPeriodos(pers),
+      encuentros: pers.map(function (x) { return cEncs[x]; }),
+      asistentes: pers.map(function (x) { return cAsist[x]; }),
+      hasData: pers.length > 0
     };
   }
 
@@ -250,7 +280,8 @@ const HOME = (() => {
 
     return {
       totAsoc: totAsoc,
-      asocPill: totAsoc ? (_provincias().length + ' provincias') : '0 registros',
+      // Provincias de las asociaciones FILTRADAS (antes contaba todas)
+      asocPill: totAsoc ? (provsData.names.length + ' provincia' + (provsData.names.length !== 1 ? 's' : '')) : '0 registros',
       asocSpark: asocSpark.length ? asocSpark : [0, 0],
 
       madurezTxt: madurezTxt,
@@ -436,17 +467,25 @@ const HOME = (() => {
     const el = document.getElementById('chEstado'); if (!el) return;
     const d = _estadoAsociativo();
     if (!d.count) { el.innerHTML = '<div class="empty-state"><p>Sin diagnósticos registrados</p></div>'; return; }
+    // El radio se ajusta al ancho real de la tarjeta (antes era fijo de 140 px y en
+    // el celular las etiquetas de los costados quedaban cortadas). En tarjetas
+    // angostas se usan las etiquetas cortas.
+    const w = el.clientWidth || 600;
+    const angosto = w < 440;
+    const radio = Math.max(60, Math.min(140, Math.floor((w - (angosto ? 140 : 200)) / 2)));
+    _radarAncho = angosto ? 'angosto' : (radio < 140 ? 'medio' : 'ancho');
+    const cortas = { Organizacional: 'Organiz.', Productivo: 'Product.', Empresarial: 'Empres.', Ambiental: 'Ambien.', Financiero: 'Financ.' };
     _push(el, {
-      chart: Object.assign({}, G_APEX_BASE, { type: 'radar', height: 350, offsetY: 4 }),
+      chart: Object.assign({}, G_APEX_BASE, { type: 'radar', height: angosto ? 300 : 350, offsetY: 4 }),
       series: [{ name: 'Madurez promedio', data: d.values }],
-      labels: d.names, colors: [G_INDIGO],
+      labels: angosto ? d.names.map(function (n) { return cortas[n] || n; }) : d.names, colors: [G_INDIGO],
       fill: { opacity: 0.26, colors: [G_INDIGO] },
       stroke: { width: 2.5, colors: [G_INDIGO] },
       markers: { size: 4, colors: ['#ffffff'], strokeColors: G_INDIGO, strokeWidth: 2, hover: { size: 6 } },
       grid: { padding: { top: 0, bottom: 0, left: 0, right: 0 } },
       yaxis: { min: 0, max: 100, tickAmount: 4, labels: { formatter: function (v) { return Math.round(v) + '%'; }, style: { colors: '#a4abba', fontSize: '10px' } } },
       xaxis: { labels: { style: { colors: ['#333', '#333', '#333', '#333', '#333'], fontSize: '12px', fontWeight: 600 } } },
-      plotOptions: { radar: { size: 140, offsetY: 6, polygons: { strokeColors: '#eef1f7', connectorColors: '#eef1f7', fill: { colors: ['#fafbfe', '#ffffff'] } } } },
+      plotOptions: { radar: { size: radio, offsetY: 6, polygons: { strokeColors: '#eef1f7', connectorColors: '#eef1f7', fill: { colors: ['#fafbfe', '#ffffff'] } } } },
       tooltip: { y: { formatter: function (v) { return fmtNum(v, 1) + '%'; } } },
     });
   }
@@ -524,7 +563,7 @@ const HOME = (() => {
     });
   }
 
-  return { render: render };
+  return { render: render, destruir: _destroyCharts };
 })();
 
 function renderHome() { HOME.render(); }

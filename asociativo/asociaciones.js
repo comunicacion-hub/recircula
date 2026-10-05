@@ -81,10 +81,11 @@ function _asocQuitarArchivo(key, idx) {
   _renderAsocDocs();
 }
 
-// Color por categoría (para badge y barra)
+// Color por categoría (para badge y barra). Fortalecimiento = cian, igual que en
+// Gráficos y en la etiqueta de categoría (antes aquí era índigo).
 const ASOC_CAT_COLOR = {
   'Líderes de ReCircula': '#18AE97',
-  'En Fortalecimiento':   '#506CFF',
+  'En Fortalecimiento':   '#0BA0DC',
   'En Acompañamiento':    '#F5AD21',
 };
 function _asocRgba(hex, a) {
@@ -305,7 +306,7 @@ function abrirFormAsociacion(docId) {
     ? '<input type="text" class="form-input" value="' + esc(a.nombre) + '" readonly>' +
       '<input type="hidden" id="asoc-asoc" value="' + esc(a.id_asociacion) + '">'
     : '<select class="form-select" id="asoc-asoc" onchange="onAsocChangeAsoc(this.value)">' +
-        '<option value="">Seleccioná una asociación…</option>' + _asocOptions('') + '</select>';
+        '<option value="">Seleccioná una asociación…</option>' + _asocOptionsSinFicha() + '</select>';
 
   abrirModal(
     '<div class="modal">' +
@@ -337,6 +338,17 @@ function abrirFormAsociacion(docId) {
 function _asocOptions(selId) {
   return CAT.asocAmbiente.map(function (a) {
     return '<option value="' + esc(a.id_asociacion) + '"' + (a.id_asociacion === selId ? ' selected' : '') + '>' + esc(a.nombre) + '</option>';
+  }).join('');
+}
+
+// Para una ficha NUEVA: solo las asociaciones que todavía no tienen ficha
+// (antes aparecían todas y el aviso "Ya existe" salía recién al guardar).
+function _asocOptionsSinFicha() {
+  const conFicha = new Set(CAT.asociaciones.map(function (a) { return a.id_asociacion; }));
+  const libres = CAT.asocAmbiente.filter(function (a) { return !conFicha.has(a.id_asociacion); });
+  if (!libres.length) return '<option value="" disabled>Todas las asociaciones ya tienen ficha</option>';
+  return libres.map(function (a) {
+    return '<option value="' + esc(a.id_asociacion) + '">' + esc(a.nombre) + '</option>';
   }).join('');
 }
 
@@ -477,12 +489,14 @@ function confirmarEliminarAsociacion(docId) {
 
 async function eliminarAsociacion(docId, carpetaId) {
   if (!docId) { showToast('No se encontró la ficha'); return; }
+  // Primero el registro y, solo si se borró, la carpeta a la papelera (antes era al
+  // revés: si el borrado fallaba, la ficha quedaba apuntando a una carpeta en la papelera).
+  const r = await fsWrite(function () { return window.fb.deleteDoc(fsDoc('Asoc_Asociativo', docId)); });
+  if (!r.ok) { showToast('Error al eliminar: ' + (r.error || '')); return; }
   if (carpetaId) {
     const tok = driveToken();
     if (tok) { try { await driveEliminarCarpeta(carpetaId, tok); } catch (e) { console.warn('Drive papelera asociación:', e); } }
   }
-  const r = await fsWrite(function () { return window.fb.deleteDoc(fsDoc('Asoc_Asociativo', docId)); });
-  if (!r.ok) { showToast('Error al eliminar: ' + (r.error || '')); return; }
   CAT.asociaciones = CAT.asociaciones.filter(function (x) { return x._docId !== docId; });
   showToast(r.offline ? 'Eliminada (se sincronizará) ✓' : 'Asociación eliminada ✓');
   cerrarModal();
@@ -506,7 +520,7 @@ async function exportarAsociacionesExcel() {
     ws['!cols'] = [{ wch: 26 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 16 }, { wch: 11 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 11 }, { wch: 18 }, { wch: 30 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Asociaciones');
-    XLSX.writeFile(wb, 'Asociaciones_' + new Date().toISOString().substring(0, 10) + '.xlsx');
+    XLSX.writeFile(wb, 'Asociaciones_' + _hoyLocalISO() + '.xlsx');   // fecha local (no UTC)
     showToast('Excel descargado ✓');
   } catch (e) { console.error('export asociaciones:', e); showToast('Error al exportar'); }
 }

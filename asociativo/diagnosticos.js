@@ -226,20 +226,28 @@ function renderNivelListaDiag() {
   const add = puedeEditar();
   const asoc = (CAT.asocAmbiente || []).find(function (a) { return a.id_asociacion === DIAG_ASOC_SEL; });
   const nombre = asoc ? (asoc.nombre || '') : '';
-  const BACK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>';
+  const prov = asoc ? (asoc.provincia || '') : '';
+  // Volver = botón redondo junto a las acciones (como en Pesos de ambiental), y el
+  // nombre de la asociación en un título visible (el .page-sub está oculto).
   document.getElementById('main-content').innerHTML =
     '<div class="page-header">' +
-      '<div><div class="ent-title-row" style="display:flex;align-items:center;gap:12px">' +
-        '<button class="ent-back" onclick="volverAsociacionesDiag()" title="Volver">' + BACK + '</button>' +
-        '<div><div class="page-title">Diagnósticos</div><div class="page-sub">' + esc(nombre) + '</div></div>' +
-      '</div></div>' +
+      '<div><div class="page-title">Diagnósticos</div><div class="page-sub">' + esc(nombre) + '</div></div>' +
       '<div class="hdr-actions">' +
+        '<button class="hdr-circle" onclick="volverAsociacionesDiag()" title="Volver a asociaciones" aria-label="Volver">' + ICO_VOLVER + '</button>' +
         (add ? '<button class="hdr-circle hdr-circle-primary" onclick="abrirFormDiagnostico()" title="Nuevo diagnóstico">' + icoHTML('plus') + '</button>' : '') +
       '</div>' +
+    '</div>' +
+    '<div class="n2-title">' +
+      (prov ? '<div class="n2-eye"><i style="background:' + _provColorAsoc(prov) + '"></i><span>' + esc(prov) + '</span></div>' : '') +
+      '<div class="n2-h">' + esc(nombre || 'Asociación') + '</div>' +
+      '<div class="n2-sub" id="diag-n2-sub"></div>' +
     '</div>' +
     '<div id="diag-table-wrap"></div>';
   cargarDiagnosticos();
 }
+
+// Flecha "volver" (compartida con Encuentros)
+const ICO_VOLVER = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>';
 
 // Rango de categoría para ordenar (Líderes primero → Acompañamiento último)
 function _catRank(d) {
@@ -261,6 +269,12 @@ function cargarDiagnosticos() {
 function renderTablaDiagnosticos() {
   const wrap = document.getElementById('diag-table-wrap');
   if (!wrap) return;
+  const sub = document.getElementById('diag-n2-sub');
+  if (sub) {
+    const n = DIAGNOSTICOS_DATA.length;
+    const vig = n ? categoriaVigente(DIAG_ASOC_SEL) : '';
+    sub.textContent = n ? (n + ' diagnóstico' + (n !== 1 ? 's' : '') + (vig ? ' · categoría vigente: ' + vig : '')) : 'Sin diagnósticos';
+  }
   if (!DIAGNOSTICOS_DATA.length) {
     wrap.innerHTML = '<div class="empty-state">' +
       icoHTML('clipboard').replace('<svg', '<svg style="width:48px;height:48px;opacity:0.4"') +
@@ -341,6 +355,10 @@ function verDiagnostico(docId) {
       ? '<a class="asoc-doc-chip" href="' + esc(f.url) + '" target="_blank" rel="noopener">' + icoHTML('view') + ' ' + esc(dd.lbl) + '</a>'
       : '<span class="asoc-doc-chip asoc-doc-chip-off">' + icoHTML('close') + ' ' + esc(dd.lbl) + '</span>';
   }).join('');
+  // Categoría y módulo débil RECALCULADOS (como en las tarjetas y la matriz), no
+  // los guardados: un registro viejo pudo grabarse con otros umbrales.
+  const catg = categoriaDesdePuntaje(parseFloat(d.valoracion_total));
+  const colCat = catg ? _asocColorCat(catg) : '#9aa2b1';
   abrirModal(
     '<div class="modal">' +
       '<div class="modal-head"><div><div class="modal-title">' + esc(d.nombre || 'Diagnóstico') + '</div>' +
@@ -348,11 +366,11 @@ function verDiagnostico(docId) {
         '<button class="modal-close" onclick="cerrarModal()"></button></div>' +
       '<div class="modal-body">' +
         '<div class="form-grid-2" style="margin-bottom:16px">' +
-          '<div><div class="form-label">Valoración total</div><div style="font-size:22px;font-weight:800;color:#0a9e83">' + pct(d.valoracion_total) + '</div></div>' +
-          '<div><div class="form-label">Categoría</div><div style="margin-top:4px">' + categoriaBadge(d.categoria) + '</div></div>' +
-          '<div><div class="form-label">Módulo más débil</div><div style="font-size:14px;font-weight:600">' + esc(d.modulo_debil || '—') + '</div></div>' +
+          '<div><div class="form-label">Valoración total</div><div style="font-size:22px;font-weight:800;color:' + colCat + '">' + pct(d.valoracion_total) + '</div></div>' +
+          '<div><div class="form-label">Categoría</div><div style="margin-top:4px">' + categoriaBadge(catg) + '</div></div>' +
+          '<div><div class="form-label">Módulo más débil</div><div style="font-size:14px;font-weight:600">' + esc(_diagMasDebil(d) || '—') + '</div></div>' +
         '</div>' +
-        '<div class="table-wrap" style="border-radius:14px;box-shadow:none;border:1px solid var(--border)"><table>' +
+        '<div class="ficha-tabla"><table>' +
           '<thead><tr><th>Módulo</th><th style="text-align:right">%</th></tr></thead><tbody>' +
             fila('Organizacional', d.p_organizacional) + fila('Productivo', d.p_productivo) + fila('Empresarial', d.p_empresarial) +
             fila('Ambiental', d.p_ambiental) + fila('Financiero', d.p_financiero) +
@@ -492,7 +510,7 @@ function _calcDesdeForm() {
 
 function _calcResumenHTML(d) {
   const c = d
-    ? { total: d.valoracion_total, debil: d.modulo_debil, categoria: d.categoria }
+    ? { total: d.valoracion_total, debil: _diagMasDebil(d), categoria: categoriaDesdePuntaje(parseFloat(d.valoracion_total)) }
     : { total: 0, debil: '—', categoria: 'En Acompañamiento' };
   return '<div class="diag-calc-item"><span>Valoración total</span><b id="diag-total">' + fmtNum(c.total, 1) + '%</b></div>' +
          '<div class="diag-calc-item"><span>Módulo más débil</span><b id="diag-debil">' + esc(c.debil || '—') + '</b></div>' +
@@ -512,9 +530,29 @@ async function guardarDiagnostico(docId) {
   const idAsoc = (document.getElementById('diag-asoc') || {}).value || '';
   if (!idAsoc) { showToast('Elegí una asociación'); return; }
   const anio = (document.getElementById('diag-anio') || {}).value || '';
-  if (!anio) { showToast('Indicá el año'); return; }
+  const anioN = parseInt(anio, 10);
+  if (!anio || isNaN(anioN) || String(anioN) !== String(anio).trim() || anioN < 2000 || anioN > 2100) {
+    showToast('Indicá un año válido (2000–2100)'); return;
+  }
   const tipo = (document.getElementById('diag-tipo') || {}).value || '';
   if (!tipo) { showToast('Elegí el tipo (Inicial/Cierre)'); return; }
+
+  // Los 5 módulos son obligatorios y van de 0 a 100: un módulo vacío contaba como 0
+  // y bajaba la valoración; un 150 la subía por encima de 100.
+  const MODS = [['diag-org', 'Organizacional'], ['diag-prod', 'Productivo'], ['diag-emp', 'Empresarial'], ['diag-amb', 'Ambiental'], ['diag-fin', 'Financiero']];
+  for (let i = 0; i < MODS.length; i++) {
+    const raw = ((document.getElementById(MODS[i][0]) || {}).value || '').trim();
+    const v = parseFloat(raw);
+    if (raw === '' || isNaN(v)) { showToast('Falta el puntaje de ' + MODS[i][1]); return; }
+    if (v < 0 || v > 100) { showToast('El puntaje de ' + MODS[i][1] + ' debe estar entre 0 y 100'); return; }
+  }
+
+  // Un solo diagnóstico por asociación + año + tipo (si hubiera dos, la categoría
+  // vigente salía de cualquiera de ellos).
+  const dupl = CAT.diagnosticos.find(function (x) {
+    return x._docId !== docId && x.id_asociacion === idAsoc && parseInt(x.anio, 10) === anioN && x.tipo === tipo;
+  });
+  if (dupl) { showToast('Ya existe un diagnóstico ' + tipo + ' ' + anioN + ' para esta asociación: edítalo en vez de crear otro'); return; }
 
   const amb = CAT.asocAmbiente.find(function (a) { return a.id_asociacion === idAsoc; });
   const actual = docId ? CAT.diagnosticos.find(function (x) { return x._docId === docId; }) : null;
@@ -569,9 +607,8 @@ async function guardarDiagnostico(docId) {
         try {
           const fname = n.file + '_' + anio + '_' + tipo + '.pdf';
           const prev = o.documentos[n.key];
-          if (prev && prev.id) { try { await driveEliminarCarpeta(prev.id, tok); } catch (e) {} }
-          const up = await driveSubirArchivo(n.archivo, fname, o.id_carpeta_drive, tok);
-          o.documentos[n.key] = { id: up.id, url: up.webViewLink, nombre: fname };
+          // Sube primero; el anterior va a la papelera solo si la subida funcionó
+          o.documentos[n.key] = await driveReemplazarArchivo(n.archivo, fname, o.id_carpeta_drive, tok, prev && prev.id);
         } catch (e) { console.warn('Subida documento:', e); showToast('No se pudo subir ' + n.file); }
       }
     }
@@ -585,18 +622,25 @@ async function guardarDiagnostico(docId) {
   }
 
   const fs = diagnosticoToFS(o); // calcula valoración/módulo débil/categoría
+  // Un diagnóstico de un año oculto en configuraciones se guarda, pero no entra a la
+  // vista (igual que al cargar; antes aparecía hasta recargar).
+  const oculto = periodoOculto(fs.anio);
   let r;
   if (docId) {
     r = await fsWrite(function () { return window.fb.updateDoc(fsDoc('Diagnosticos', docId), fs); });
-    if (r.ok) { const i = CAT.diagnosticos.findIndex(function (x) { return x._docId === docId; }); if (i >= 0) CAT.diagnosticos[i] = diagnosticoFromFS(Object.assign({ _docId: docId }, fs)); }
+    if (r.ok) {
+      const i = CAT.diagnosticos.findIndex(function (x) { return x._docId === docId; });
+      if (i >= 0) { if (oculto) CAT.diagnosticos.splice(i, 1); else CAT.diagnosticos[i] = diagnosticoFromFS(Object.assign({ _docId: docId }, fs)); }
+    }
   } else {
     const ref = window.fb.doc(fsCol('Diagnosticos'));
     r = await fsWrite(function () { return window.fb.setDoc(ref, fs); });
-    if (r.ok) CAT.diagnosticos.push(diagnosticoFromFS(Object.assign({ _docId: ref.id }, fs)));
+    if (r.ok && !oculto) CAT.diagnosticos.push(diagnosticoFromFS(Object.assign({ _docId: ref.id }, fs)));
   }
 
   if (!r.ok) { showToast('Error al guardar: ' + (r.error || '')); if (btn) { btn.disabled = false; btn.textContent = 'Guardar'; } return; }
-  showToast(r.offline ? 'Guardado (se sincronizará) ✓' : 'Guardado ✓');
+  showToast(oculto ? 'Guardado ✓ · el año ' + fs.anio + ' está oculto en Configuraciones, por eso no se muestra'
+    : (r.offline ? 'Guardado (se sincronizará) ✓' : 'Guardado ✓'), oculto ? 6000 : undefined);
   cerrarModal();
   renderVistaDiagnosticos();
 }
@@ -623,6 +667,9 @@ function confirmarEliminarDiagnostico(docId) {
 async function eliminarDiagnostico(docId) {
   const d = CAT.diagnosticos.find(function (x) { return x._docId === docId; });
   if (!d) { showToast('No se encontró el diagnóstico'); return; }
+  // Primero el registro; los documentos van a la papelera solo si se borró
+  const r = await fsWrite(function () { return window.fb.deleteDoc(fsDoc('Diagnosticos', docId)); });
+  if (!r.ok) { showToast('Error al eliminar: ' + (r.error || '')); return; }
   const tok = driveToken();
   if (tok) {
     for (let i = 0; i < DIAG_DOCS.length; i++) {
@@ -630,8 +677,6 @@ async function eliminarDiagnostico(docId) {
       if (f && f.id) { try { await driveEliminarCarpeta(f.id, tok); } catch (e) { console.warn('Papelera doc diag:', e); } }
     }
   }
-  const r = await fsWrite(function () { return window.fb.deleteDoc(fsDoc('Diagnosticos', docId)); });
-  if (!r.ok) { showToast('Error al eliminar: ' + (r.error || '')); return; }
   CAT.diagnosticos = CAT.diagnosticos.filter(function (x) { return x._docId !== docId; });
   showToast(r.offline ? 'Eliminado (se sincronizará) ✓' : 'Diagnóstico eliminado ✓');
   cerrarModal();
@@ -640,22 +685,30 @@ async function eliminarDiagnostico(docId) {
 
 // ── Exportar Excel ──
 async function exportarDiagnosticosExcel() {
-  if (!(CAT.diagnosticos || []).length) { showToast('No hay datos para exportar.'); return; }
+  // Respeta los filtros del Nivel 1 (provincia y categoría vigente de la asociación),
+  // igual que lo que se ve en pantalla (antes exportaba todo).
+  const fProv = DIAG_FILTROS.prov || [], fCat = DIAG_FILTROS.cat || [];
+  const datos = (CAT.diagnosticos || []).filter(function (d) {
+    const amb = (CAT.asocAmbiente || []).find(function (a) { return a.id_asociacion === d.id_asociacion; });
+    return pasaFiltro(fProv, amb ? amb.provincia : d.provincia) && pasaFiltro(fCat, categoriaVigente(d.id_asociacion));
+  });
+  if (!datos.length) { showToast('No hay datos para exportar.'); return; }
   try {
     await cargarSheetJS();
     if (!window.XLSX) { showToast('No se pudo cargar el exportador'); return; }
     const num = function (v) { return parseFloat(v) || 0; };
     const sino = function (d, key) { return _diagDoc(d, key) ? 'Sí' : 'No'; };
     const header = ['Asociación', 'Provincia', 'Año', 'Tipo', 'Organizacional', 'Productivo', 'Empresarial', 'Ambiental', 'Financiero', 'Valoración Total', 'Módulo Débil', 'Categoría', 'Diagnóstico inicial', 'Diagnóstico final', 'Observaciones'];
-    const filas = (CAT.diagnosticos || []).map(function (d) {
+    // Categoría y módulo débil recalculados, como en pantalla
+    const filas = datos.map(function (d) {
       return [d.nombre, d.provincia, num(d.anio), d.tipo, num(d.p_organizacional), num(d.p_productivo), num(d.p_empresarial), num(d.p_ambiental), num(d.p_financiero),
-        num(d.valoracion_total), d.modulo_debil || '', d.categoria || '', sino(d, 'diag_inicial'), sino(d, 'diag_final'), d.observaciones || ''];
+        num(d.valoracion_total), _diagMasDebil(d) || '', categoriaDesdePuntaje(parseFloat(d.valoracion_total)) || '', sino(d, 'diag_inicial'), sino(d, 'diag_final'), d.observaciones || ''];
     });
     const ws = XLSX.utils.aoa_to_sheet([header].concat(filas));
     ws['!cols'] = [{ wch: 26 }, { wch: 14 }, { wch: 7 }, { wch: 9 }, { wch: 13 }, { wch: 11 }, { wch: 12 }, { wch: 11 }, { wch: 11 }, { wch: 15 }, { wch: 16 }, { wch: 20 }, { wch: 16 }, { wch: 16 }, { wch: 30 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Diagnósticos');
-    XLSX.writeFile(wb, 'Diagnosticos_' + new Date().toISOString().substring(0, 10) + '.xlsx');
+    XLSX.writeFile(wb, 'Diagnosticos_' + _hoyLocalISO() + '.xlsx');   // fecha local (no UTC)
     showToast('Excel descargado ✓');
   } catch (e) { console.error('export diagnósticos:', e); showToast('Error al exportar'); }
 }
