@@ -15,6 +15,7 @@ const PERIODOS_DEFECTO = { '2026': [1, 2, 3, 4] };   // mismo valor que en los d
 let SESSION = null;
 let USUARIOS = [];
 let MODULOS  = [];
+let ASOCIACIONES = [];   // colección Asoc_Ambiente (asociaciones registradas)
 let PER_GUARDADO = {};   // { '2026': [1,2,3,4] } meses OCULTOS por año, tal como está en Firestore
 let PER_EDIT     = {};   // copia de trabajo: { '2026': [false x4, true x8] } true = se ve
 let CURRENT_SECTION = null;
@@ -69,9 +70,11 @@ async function iniciarApp(user) {
       fsGetAll('Usuarios'),
       fsGetAll('Modulos'),
       fsGetAll('Configuracion').catch(function(e) { console.warn('Configuracion:', e); return []; }),
+      fsGetAll('Asoc_Ambiente').catch(function(e) { console.warn('Asoc_Ambiente:', e); return []; }),
     ]);
     USUARIOS = res[0];
     MODULOS  = res[1];
+    ASOCIACIONES = res[3] || [];
     const per = res[2].find(function(d) { return d._docId === 'periodos'; });
     PER_GUARDADO = (per && per.ocultos && typeof per.ocultos === 'object') ? per.ocultos : PERIODOS_DEFECTO;
   } catch (e) {
@@ -101,7 +104,7 @@ async function iniciarApp(user) {
 }
 
 function pintarIconosNav() {
-  const map = { 'nav-usuarios': 'users', 'nav-modulos': 'grid', 'nav-periodos': 'calendar' };
+  const map = { 'nav-usuarios': 'users', 'nav-modulos': 'grid', 'nav-asociaciones': 'recycle', 'nav-periodos': 'calendar' };
   Object.keys(map).forEach(function(id) {
     const el = document.getElementById(id);
     if (el && !el.querySelector('svg')) el.insertAdjacentHTML('afterbegin', icoHTML(map[id]));
@@ -120,9 +123,10 @@ function navTo(seccion) {
   closeModMenu();
 
   switch (seccion) {
-    case 'usuarios': renderUsuarios(); break;
-    case 'modulos':  renderModulos();  break;
-    case 'periodos': renderPeriodos(); break;
+    case 'usuarios':     renderUsuarios();     break;
+    case 'modulos':      renderModulos();      break;
+    case 'asociaciones': renderAsociaciones(); break;
+    case 'periodos':     renderPeriodos();     break;
   }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -510,6 +514,238 @@ async function eliminarModulo(docId) {
   } catch (e) {
     console.error('eliminarModulo:', e);
     showToast('No se pudo quitar. Revisa tu conexión e intenta de nuevo.');
+  }
+}
+
+// ============================================================
+// ASOCIACIONES (colección Asoc_Ambiente)
+// Alta, edición y baja de las asociaciones registradas que usa el
+// dashboard ambiental. Mismos nombres de campo que lee ambiental:
+// id_asociacion, nombre, provincia, ciudad, tipo, estado,
+// num_recicladores, id_carpeta_drive, fecha_ingreso, observaciones.
+// ============================================================
+
+const ASO_TIPOS   = ['Formal', 'Informal'];
+const ASO_ESTADOS = ['Activa', 'Inactiva'];
+
+function _asocActiva(a) {
+  const v = String(a.estado || '').toLowerCase();
+  return v === '' || v.indexOf('activ') >= 0 && v.indexOf('inactiv') < 0;
+}
+
+function _asociacionesOrdenadas() {
+  return ASOCIACIONES.slice().sort(function(a, b) {
+    return String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es');
+  });
+}
+
+// Valores únicos de un campo, para los datalist de provincia y ciudad
+function _asoSugerencias(campo) {
+  const vistos = {};
+  ASOCIACIONES.forEach(function(a) {
+    const v = String(a[campo] || '').trim();
+    if (v) vistos[v] = true;
+  });
+  return Object.keys(vistos).sort(function(a, b) { return a.localeCompare(b, 'es'); });
+}
+
+function renderAsociaciones() {
+  const lista = _asociacionesOrdenadas();
+  const totalRecicladores = lista.reduce(function(acc, a) {
+    const n = parseInt(a.num_recicladores, 10);
+    return acc + (isNaN(n) ? 0 : n);
+  }, 0);
+
+  const filas = lista.map(function(a) {
+    const activa = _asocActiva(a);
+    const ubic = [a.ciudad, a.provincia].filter(Boolean).map(esc).join(', ');
+    const nrec = parseInt(a.num_recicladores, 10);
+    return '<div class="cfg-row cfg-row-mod' + (activa ? '' : ' inactivo') + '">' +
+      '<div class="cfg-who"><div class="cfg-mod-ico" style="color:#0778bf;background:#e6f1fb">' + icoHTML('recycle') + '</div>' +
+        '<div class="cfg-who-txt"><div class="cfg-name">' + esc(a.nombre || '—') + '</div>' +
+        '<div class="cfg-sub">' + (ubic || 'Sin ubicación') + (!isNaN(nrec) ? ' · ' + nrec + ' recicladores' : '') + '</div></div></div>' +
+      '<span class="badge ' + (String(a.tipo).toLowerCase() === 'formal' ? 'cfg-b-editor' : 'cfg-b-vis') + '">' + esc(a.tipo || 'Sin tipo') + '</span>' +
+      '<span class="badge ' + (activa ? 'badge-on' : 'badge-off') + '">' + (activa ? 'Activa' : 'Inactiva') + '</span>' +
+      '<div class="cfg-acts">' +
+        '<button class="icon-btn" onclick="abrirFormAsociacion(\'' + jsEsc(a._docId) + '\')" title="Editar" aria-label="Editar">' + icoHTML('edit') + '</button>' +
+        '<button class="icon-btn del" onclick="confirmarEliminarAsociacion(\'' + jsEsc(a._docId) + '\')" title="Eliminar" aria-label="Eliminar">' + icoHTML('trash') + '</button>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  _render(
+    _header('<button class="hdr-circle hdr-circle-primary" onclick="abrirFormAsociacion()" title="Agregar asociación" aria-label="Agregar asociación">' + icoHTML('plus') + '</button>') +
+    '<div class="card">' +
+      '<div class="cfg-card-head"><div>' +
+        '<div class="cfg-card-title">Asociaciones · ' + lista.length + '</div>' +
+        '<div class="cfg-card-sub">Las asociaciones registradas que usa el dashboard ambiental. ' + totalRecicladores + ' recicladores en total. Los cambios se ven al recargar el dashboard.</div>' +
+      '</div></div>' +
+      '<div class="cfg-rows">' + (filas || '<div class="cfg-empty">Todavía no hay asociaciones.</div>') + '</div>' +
+    '</div>'
+  );
+}
+
+// Borrador del formulario (tipo y estado se eligen con chips)
+let _asoDraft = null;
+
+function abrirFormAsociacion(docId) {
+  const a = docId ? ASOCIACIONES.find(function(x) { return x._docId === docId; }) : null;
+  if (docId && !a) return;
+  _asoDraft = {
+    docId:            docId || '',
+    nombre:           a ? (a.nombre || '') : '',
+    provincia:        a ? (a.provincia || '') : '',
+    ciudad:           a ? (a.ciudad || '') : '',
+    num_recicladores: a ? (a.num_recicladores != null ? a.num_recicladores : '') : '',
+    observaciones:    a ? (a.observaciones || '') : '',
+    fecha_ingreso:    a ? _asoFechaInput(a.fecha_ingreso) : _hoyISO(),
+    tipo:             a ? (a.tipo || 'Formal') : 'Formal',
+    estado:           a ? (a.estado || 'Activa') : 'Activa',
+  };
+  _pintarFormAsociacion();
+}
+
+// 'YYYY-MM-DD 00:00:00' (o similar) → 'YYYY-MM-DD' para el input date
+function _asoFechaInput(v) {
+  const s = String(v || '').trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? m[0] : '';
+}
+function _hoyISO() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function _pintarFormAsociacion() {
+  const d = _asoDraft;
+  const provOpts = _asoSugerencias('provincia').map(function(v) { return '<option value="' + esc(v) + '">'; }).join('');
+  const ciuOpts  = _asoSugerencias('ciudad').map(function(v) { return '<option value="' + esc(v) + '">'; }).join('');
+
+  abrirModal(
+    '<div class="modal" style="max-width:560px">' +
+      '<div class="modal-head"><div>' +
+        '<div class="modal-title">' + (d.docId ? 'Editar asociación' : 'Nueva asociación') + '</div>' +
+        '<div class="modal-sub">' + (d.docId ? 'Cambia sus datos' : 'Queda registrada para el dashboard ambiental') + '</div>' +
+      '</div><button class="modal-close" onclick="cerrarModal()"></button></div>' +
+      '<div class="modal-body">' +
+        '<div class="form-group"><label class="form-label" for="aso-nombre">Nombre *</label>' +
+          '<input type="text" class="form-input" id="aso-nombre" placeholder="Asociación ..." value="' + esc(d.nombre) + '"></div>' +
+        '<div class="form-group"><div class="form-grid-2">' +
+          '<div><label class="form-label" for="aso-provincia">Provincia</label>' +
+            '<input type="text" class="form-input" id="aso-provincia" list="aso-provincias" value="' + esc(d.provincia) + '">' +
+            '<datalist id="aso-provincias">' + provOpts + '</datalist></div>' +
+          '<div><label class="form-label" for="aso-ciudad">Ciudad</label>' +
+            '<input type="text" class="form-input" id="aso-ciudad" list="aso-ciudades" value="' + esc(d.ciudad) + '">' +
+            '<datalist id="aso-ciudades">' + ciuOpts + '</datalist></div>' +
+        '</div></div>' +
+        '<div class="form-group"><div class="form-grid-2">' +
+          '<div><label class="form-label" for="aso-nrec">Nº de recicladores</label>' +
+            '<input type="number" class="form-input" id="aso-nrec" min="0" step="1" placeholder="0" value="' + esc(d.num_recicladores) + '"></div>' +
+          '<div><label class="form-label" for="aso-fecha">Fecha de ingreso</label>' +
+            '<input type="date" class="form-input" id="aso-fecha" value="' + esc(d.fecha_ingreso) + '"></div>' +
+        '</div></div>' +
+        '<div class="form-group"><div class="form-label">Tipo</div><div class="filter-chips">' +
+          ASO_TIPOS.map(function(t) {
+            return '<button type="button" class="filter-chip' + (d.tipo === t ? ' on' : '') + '" onclick="_asoSet(\'tipo\', \'' + t + '\')">' + t + '</button>';
+          }).join('') +
+        '</div></div>' +
+        '<div class="form-group"><div class="form-label">Estado</div><div class="filter-chips">' +
+          ASO_ESTADOS.map(function(e) {
+            return '<button type="button" class="filter-chip' + (d.estado === e ? ' on' : '') + '" onclick="_asoSet(\'estado\', \'' + e + '\')">' + e + '</button>';
+          }).join('') +
+        '</div></div>' +
+        '<div class="form-group" style="margin-bottom:0"><label class="form-label" for="aso-obs">Observaciones</label>' +
+          '<textarea class="form-input" id="aso-obs" rows="2" placeholder="Opcional">' + esc(d.observaciones) + '</textarea></div>' +
+      '</div>' +
+      '<div class="modal-foot">' +
+        '<button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>' +
+        '<button class="btn btn-primary" id="aso-guardar" onclick="guardarAsociacion()">' + icoHTML('check') + (d.docId ? 'Guardar' : 'Agregar') + '</button>' +
+      '</div>' +
+    '</div>'
+  );
+}
+
+// Conserva lo escrito antes de repintar el formulario (al tocar los chips)
+function _asoLeerCampos() {
+  const g = function(id) { const el = document.getElementById(id); return el ? el.value : undefined; };
+  const campos = { nombre: 'aso-nombre', provincia: 'aso-provincia', ciudad: 'aso-ciudad',
+    num_recicladores: 'aso-nrec', fecha_ingreso: 'aso-fecha', observaciones: 'aso-obs' };
+  Object.keys(campos).forEach(function(k) { const v = g(campos[k]); if (v !== undefined) _asoDraft[k] = v; });
+}
+function _asoSet(campo, valor) { _asoLeerCampos(); _asoDraft[campo] = valor; _pintarFormAsociacion(); }
+
+async function guardarAsociacion() {
+  _asoLeerCampos();
+  const d = _asoDraft;
+  const nombre = String(d.nombre).trim();
+  if (!nombre) { showToast('Escribe el nombre de la asociación'); return; }
+
+  let nrec = parseInt(d.num_recicladores, 10);
+  if (isNaN(nrec) || nrec < 0) nrec = 0;
+  const fecha = _asoFechaInput(d.fecha_ingreso);
+
+  const campos = {
+    nombre:           nombre,
+    provincia:        String(d.provincia).trim(),
+    ciudad:           String(d.ciudad).trim(),
+    tipo:             d.tipo || '',
+    estado:           d.estado || '',
+    num_recicladores: nrec,
+    observaciones:    String(d.observaciones).trim(),
+    fecha_ingreso:    fecha ? fecha + ' 00:00:00' : '',
+  };
+
+  const btn = document.getElementById('aso-guardar'); if (btn) btn.disabled = true;
+  try {
+    if (d.docId) {
+      await window.fb.updateDoc(fsDoc('Asoc_Ambiente', d.docId), campos);
+      const i = ASOCIACIONES.findIndex(function(x) { return x._docId === d.docId; });
+      if (i >= 0) ASOCIACIONES[i] = Object.assign({}, ASOCIACIONES[i], campos);
+    } else {
+      const nuevo = Object.assign({
+        id_asociacion:   'ASO_' + Date.now(),
+        id_carpeta_drive: '',
+      }, campos);
+      const ref = await window.fb.addDoc(fsCol('Asoc_Ambiente'), nuevo);
+      ASOCIACIONES.push(Object.assign({ _docId: ref.id }, nuevo));
+    }
+    cerrarModal();
+    renderAsociaciones();
+    showToast(d.docId ? 'Asociación actualizada' : 'Asociación agregada');
+  } catch (e) {
+    console.error('guardarAsociacion:', e);
+    showToast('No se pudo guardar. Revisa tu conexión e intenta de nuevo.');
+    if (btn) btn.disabled = false;
+  }
+}
+
+function confirmarEliminarAsociacion(docId) {
+  const a = ASOCIACIONES.find(function(x) { return x._docId === docId; });
+  if (!a) return;
+  abrirModal(
+    '<div class="modal" style="max-width:440px">' +
+      '<div class="modal-head"><div class="modal-title">Eliminar asociación</div><button class="modal-close" onclick="cerrarModal()"></button></div>' +
+      '<div class="modal-body"><p style="color:var(--text-muted);font-size:14px;line-height:1.6">' +
+        '¿Seguro que quieres eliminar <strong>' + esc(a.nombre || 'esta asociación') + '</strong>? Dejará de aparecer en el dashboard ambiental. Esta acción no se puede deshacer.' +
+      '</p></div>' +
+      '<div class="modal-foot">' +
+        '<button class="btn btn-glass" onclick="cerrarModal()">Cancelar</button>' +
+        '<button class="btn btn-danger" onclick="eliminarAsociacion(\'' + jsEsc(docId) + '\')">Eliminar</button>' +
+      '</div>' +
+    '</div>'
+  );
+}
+
+async function eliminarAsociacion(docId) {
+  try {
+    await window.fb.deleteDoc(fsDoc('Asoc_Ambiente', docId));
+    ASOCIACIONES = ASOCIACIONES.filter(function(x) { return x._docId !== docId; });
+    cerrarModal();
+    renderAsociaciones();
+    showToast('Asociación eliminada');
+  } catch (e) {
+    console.error('eliminarAsociacion:', e);
+    showToast('No se pudo eliminar. Revisa tu conexión e intenta de nuevo.');
   }
 }
 
